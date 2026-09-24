@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#3d4f11">
+<title>SigoNet V2 · Field Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/sigonet.css">
+</head>
+<body>
+<div id="app"></div>
+
+<!-- Bibliotecas externas (PDF e Excel). Sem internet, o sistema funciona e
+     exporta em CSV; só a geração de PDF fica indisponível. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script src="js/config.js"></script>
+<script src="js/catalogos.js"></script>
+<script src="js/dados.js"></script>
+<script src="js/marca.js"></script>
+<script src="js/nucleo.js"></script>
+<script src="js/servidor.js"></script>
+<script src="js/telas-chamado.js"></script>
+<script src="js/telas-tecnico.js"></script>
+<script src="js/telas-gestao.js"></script>
+<script src="js/telas-portal.js"></script>
+<script>
+  SN.iniciar();
+</script>
+</body>
+</html>
