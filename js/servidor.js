@@ -13,16 +13,27 @@ SN.remoto = typeof SIGONET_SERVIDOR === 'string' && /^https?:\/\//.test(SIGONET_
 SN.CHAVES = { chamados: 'id', lpus: 'id', materiais: 'id', fibras: 'id', pagamentos: 'id', fechamentos: 'mes', disponibilidade: 'id',
   empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id' };
 
-SN.api = async (acao, dados) => {
+// Ações só de leitura podem ser repetidas com segurança quando o Google falha.
+const REPETIVEIS = ['USUARIOS', 'LOGIN', 'CARREGAR', 'SINCRONIZAR', 'STATUS_ACESSOS'];
+SN.api = async (acao, dados, tentativa = 1) => {
   const s = SN.sessao();
-  let r;
+  let j;
   try {
-    r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }) });
-  } catch (e) { const err = new Error('Sem conexão com o servidor.'); err.rede = true; throw err; }
-  const j = await r.json();
+    const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }) });
+    const txt = await r.text();
+    // Com o servidor ocupado o Google devolve uma página HTML de erro em vez de JSON.
+    try { j = JSON.parse(txt); } catch (e) { throw new Error('Servidor ocupado no momento. Tente de novo em alguns segundos.'); }
+  } catch (e) {
+    if (tentativa < 3 && REPETIVEIS.includes(acao)) { await new Promise(ok => setTimeout(ok, 1500 * tentativa)); return SN.api(acao, dados, tentativa + 1); }
+    const err = new Error(e instanceof TypeError ? 'Sem conexão com o servidor.' : e.message); err.rede = true; throw err;
+  }
   if (!j.ok) {
-    if (j.sessao) { localStorage.removeItem('sigonet_v2_sessao'); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
-    throw new Error(j.erro || 'Erro no servidor');
+    const err = new Error(j.erro || 'Erro no servidor');
+    if (j.sessao) {
+      err.sessao = true;
+      if (SN.sessao()) { localStorage.removeItem('sigonet_v2_sessao'); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
+    }
+    throw err;
   }
   return j;
 };
@@ -126,8 +137,10 @@ SN.enviarMudancas = async () => {
 SN.salvarAgora = async () => { clearTimeout(filaTimer); await SN.enviarMudancas(); while (enviando) await new Promise(r => setTimeout(r, 150)); };
 
 // ─────────── Receber o que outros alteraram ───────────
+let sincronizando = false;
 SN.sincronizar = async () => {
-  if (!SN.sessao() || enviando || pendente || !SN._ultimaSync) return;
+  if (!SN.sessao() || enviando || pendente || !SN._ultimaSync || sincronizando) return;
+  sincronizando = true;
   try {
     const r = await SN.api('SINCRONIZAR', { desde: SN._ultimaSync });
     let mudou = false;
@@ -146,7 +159,7 @@ SN.sincronizar = async () => {
       SN.db.assinaturas[n] = Math.max(SN.db.assinaturas[n] || 0, v); SN._assinEnviadas[n] = Math.max(SN._assinEnviadas[n] || 0, v); });
     SN._ultimaSync = r.servidorTs;
     if (mudou) SN.aoMudarBase();
-  } catch (e) { /* tenta no próximo ciclo */ }
+  } catch (e) { /* tenta no próximo ciclo */ } finally { sincronizando = false; }
 };
 
 // Indicador discreto no cabeçalho
@@ -164,7 +177,8 @@ if (SN.remoto) {
     const r = await SN.api('LOGIN', dados);
     if (r.primeiroAcesso) return { primeiroAcesso: true };
     localStorage.setItem('sigonet_v2_sessao', JSON.stringify({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 12 * 3600e3 }));
-    await SN.carregarRemoto();
+    // Se a base não carregar, não deixa a pessoa "meio logada": desfaz e mostra o erro.
+    try { await SN.carregarRemoto(); } catch (e) { localStorage.removeItem('sigonet_v2_sessao'); throw e; }
     SN.log('LOGIN', dados.tipo, dados.nome); SN.salvar();
     return { ok: true };
   };
@@ -174,7 +188,7 @@ if (SN.remoto) {
     localStorage.removeItem('sigonet_v2_sessao');
     await SN.prepararLogin().catch(() => { }); location.hash = '#/login'; SN.render();
   };
-  setInterval(SN.sincronizar, 20000);
+  setInterval(SN.sincronizar, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) SN.sincronizar(); });
 }
 
@@ -186,7 +200,8 @@ SN.iniciar = async () => {
     // Login antigo do modo teste (sem token do servidor) não vale aqui: descarta e pede login.
     if (SN.sessao() && !SN.sessao().token) localStorage.removeItem('sigonet_v2_sessao');
     if (SN.sessao() && SN.sessao().token) {
-      try { await SN.carregarRemoto(); } catch (e) { localStorage.removeItem('sigonet_v2_sessao'); }
+      // Só descarta o login se o servidor disse que a sessão venceu; falha passageira mostra "Tentar de novo".
+      try { await SN.carregarRemoto(); } catch (e) { if (!e.sessao) throw e; }
     }
     if (!SN.sessao()) await SN.prepararLogin();
     SN.render();
