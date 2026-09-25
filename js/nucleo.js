@@ -252,6 +252,25 @@ SN.metricas = c => {
   if (c.prazoLimite && t.conclusaoTecnica) sla = new Date(t.conclusaoTecnica) <= new Date(c.prazoLimite);
   return { mttd, mtta, mttr, tmc, sla };
 };
+// IRR (Índice de Recursos Repetitivos): um chamado é reincidente quando o mesmo
+// circuito (etiqueta) teve outro chamado encerrado nos 30 dias anteriores à sua
+// abertura. Só contam GTD e Manutenção; chamado sem etiqueta fica fora da conta.
+SN.IRR = { dias: 30, tipos: ['GTD', 'Manutenção'] };
+SN.etiquetaIrr = c => String(c.etiqueta || '').trim().toUpperCase();
+SN.entraNoIrr = c => !!SN.etiquetaIrr(c) && SN.IRR.tipos.includes(c.tipo) && c.status !== 'CANCELADO' && !!(c.tempos || {}).abertura;
+// Devolve o chamado anterior que torna "c" reincidente (o mais recente), ou null.
+SN.reincidencia = c => {
+  if (!SN.entraNoIrr(c)) return null;
+  const et = SN.etiquetaIrr(c), ab = new Date(c.tempos.abertura).getTime(), janela = SN.IRR.dias * 864e5;
+  let ant = null, antFim = 0;
+  SN.db.chamados.forEach(x => {
+    if (x.id === c.id || !SN.entraNoIrr(x) || SN.etiquetaIrr(x) !== et) return;
+    const fimIso = x.tempos.conclusaoTecnica || x.tempos.fechamento; if (!fimIso) return;
+    const fim = new Date(fimIso).getTime();
+    if (fim <= ab && ab - fim <= janela && fim > antFim) { ant = x; antFim = fim; }
+  });
+  return ant;
+};
 // Hora-homem da mão de obra própria (CLT/NETTURBO): calculada pelo sistema a
 // partir dos mesmos registros de tempo dos KPIs — nunca digitada.
 //   deslocamento = início do deslocamento → chegada em campo

@@ -125,7 +125,10 @@ SN.rota('/tec/os/:id', id => {
         <div class="campo"><label>Causa *</label><textarea class="inp" id="rCausa">${SN.esc(c.rfo.causa || '')}</textarea></div>
         <div class="campo"><label>Ação realizada *</label><textarea class="inp" id="rAcao">${SN.esc(c.rfo.acao || '')}</textarea></div>
         <div class="campo"><label>Solução *</label><textarea class="inp" id="rSol">${SN.esc(c.rfo.solucao || '')}</textarea></div>
-        <div class="campo"><label>Local da falha</label><input class="inp" id="rLocal" value="${SN.esc(c.rfo.localFalha || '')}"></div>
+        <div class="campo"><label>Local da falha</label>
+          <div style="display:flex;gap:6px"><input class="inp" id="rLocal" style="flex:1;min-width:0" placeholder="Escreva o endereço ou use o GPS" value="${SN.esc(c.rfo.localFalha || '')}">
+            <button type="button" class="btn" id="bGpsFalha" title="Pegar a localização atual pelo GPS do celular">📍 Usar GPS</button></div>
+          <div class="small muted" id="gpsFalhaInfo"></div></div>
         <div class="campo"><label>Observações</label><textarea class="inp" id="rObs">${SN.esc(c.rfo.obs || '')}</textarea></div>
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
         <label class="btn bloco" style="margin-top:8px">📷 Tirar / anexar fotos<input type="file" id="inFoto" accept="image/*,application/pdf" multiple capture="environment" hidden></label>
@@ -172,9 +175,44 @@ SN.rota('/tec/os/:id', id => {
       Object.assign(c, { cat2: cl.cat2 || '', cat3: cl.cat3 || '', cat4: cl.cat4 || '' });
     }
     c.rfo = { causa: SN.$('#rCausa').value.trim(), acao: SN.$('#rAcao').value.trim(), solucao: SN.$('#rSol').value.trim(),
-      localFalha: SN.$('#rLocal').value.trim(), obs: SN.$('#rObs').value.trim() };
+      localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: SN.$('#rObs').value.trim() };
     if (!c.tempos.diagnostico && (c.rfo.causa || c.rfo.acao)) c.tempos.diagnostico = SN.agora();
     return cl;
+  };
+  // Local da falha pelo GPS. O GPS do celular funciona sem internet: a coordenada
+  // é sempre guardada; com rede, também busca o endereço (OpenStreetMap) e preenche
+  // o campo. Sem rede, o técnico escreve o endereço à mão.
+  let gpsFalha = (c.rfo && c.rfo.gpsFalha) || null;
+  const mostrarGpsFalha = () => {
+    const el = SN.$('#gpsFalhaInfo'); if (!el) return;
+    el.innerHTML = gpsFalha ? `📍 ${SN.esc(gpsFalha.lat + ',' + gpsFalha.lng)}${gpsFalha.precisao ? ' · ±' + gpsFalha.precisao + ' m' : ''} ·
+      <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${gpsFalha.lat},${gpsFalha.lng}">abrir no mapa</a>` : '';
+  };
+  mostrarGpsFalha();
+  const bG = SN.$('#bGpsFalha');
+  if (bG) bG.onclick = async () => {
+    if (!navigator.geolocation) return SN.toast('Este aparelho não tem GPS disponível no navegador. Escreva o endereço.', 'erro');
+    bG.disabled = true; bG.textContent = 'Obtendo…';
+    try {
+      const pos = await new Promise((ok, falha) => navigator.geolocation.getCurrentPosition(ok, falha, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }));
+      gpsFalha = { lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6), precisao: Math.round(pos.coords.accuracy || 0), em: SN.agora() };
+      mostrarGpsFalha();
+      const inp = SN.$('#rLocal');
+      let endereco = '';
+      if (navigator.onLine) {
+        try {
+          const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=pt-BR&lat=${gpsFalha.lat}&lon=${gpsFalha.lng}`, { signal: AbortSignal.timeout(8000) });
+          const a = (await r.json()).address || {};
+          endereco = [[a.road, a.house_number].filter(Boolean).join(', '), a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state].filter(Boolean).join(' - ');
+        } catch (e) { /* sem endereço: fica só a coordenada */ }
+      }
+      // Não apaga o que o técnico já escreveu à mão.
+      if (endereco && (!inp.value.trim() || inp.dataset.auto === inp.value)) { inp.value = endereco; inp.dataset.auto = endereco; }
+      salvarRfo(); SN.salvar();
+      SN.toast(endereco ? 'Localização capturada.' : 'Coordenada salva. Sem rede para buscar o endereço: escreva-o no campo se quiser.', 'ok');
+    } catch (e) {
+      SN.toast(e.code === 1 ? 'GPS bloqueado: permita a localização para este site nas configurações do navegador.' : 'Não foi possível obter o GPS agora. Escreva o endereço no campo.', 'erro');
+    } finally { bG.disabled = false; bG.textContent = '📍 Usar GPS'; }
   };
   const bR = SN.$('#bSalvarRfo');
   if (bR) {

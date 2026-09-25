@@ -347,6 +347,10 @@ SN.rota('/chamado/:id', id => {
         ${c.status === 'CONCLUIDO_TECNICO' ? `<button class="btn perigo" id="bDev">Devolver ao técnico</button><button class="btn ok" id="bFechar">Fechar chamado</button>` : ''}
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' ? '<button class="btn perigo" id="bCanc">Cancelar</button>' : ''}
         <button class="btn" id="bPdf">PDF do atendimento</button></div></div>
+    ${(() => { const ant = SN.reincidencia(c); if (!ant) return '';
+      const dias = Math.round((new Date(c.tempos.abertura) - new Date(ant.tempos.conclusaoTecnica || ant.tempos.fechamento)) / 864e5);
+      return `<div class="aviso alerta" style="margin-bottom:12px">⚠ <b>Reincidente (IRR)</b>: a etiqueta ${SN.esc(SN.etiquetaIrr(c))} teve o chamado
+        <a href="#/chamado/${ant.id}">${ant.id}</a> encerrado ${dias} dia(s) antes desta abertura${ant.tecnico ? ` · atendido por ${SN.esc(SN.nomeExibicao(ant.tecnico))}` : ''}${ant.rfo && ant.rfo.causa ? ` · causa: ${SN.esc(ant.rfo.causa)}` : ''}.</div>`; })()}
     <div class="card"><div class="timeline">${etapas}</div></div>
     <div class="grid g6" style="margin-top:14px">
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(m.mttd)}</div><div class="sub">abertura → despacho</div></div>
@@ -378,7 +382,8 @@ SN.rota('/chamado/:id', id => {
       <div class="card"><h3>RFO · causa, ação e solução</h3>
         ${c.rfo && c.rfo.causa ? `<table class="tab"><tbody><tr><td class="muted">Causa</td><td>${SN.esc(c.rfo.causa)}</td></tr>
           <tr><td class="muted">Ação</td><td>${SN.esc(c.rfo.acao)}</td></tr><tr><td class="muted">Solução</td><td>${SN.esc(c.rfo.solucao)}</td></tr>
-          ${c.rfo.localFalha ? `<tr><td class="muted">Local da falha</td><td>${SN.esc(c.rfo.localFalha)}</td></tr>` : ''}
+          ${c.rfo.localFalha || c.rfo.gpsFalha ? `<tr><td class="muted">Local da falha</td><td>${SN.esc(c.rfo.localFalha || '')}
+            ${c.rfo.gpsFalha ? `${c.rfo.localFalha ? '<br>' : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}">📍 ${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}</a>` : ''}</td></tr>` : ''}
           ${c.rfo.obs ? `<tr><td class="muted">Observações</td><td>${SN.esc(c.rfo.obs)}</td></tr>` : ''}</tbody></table>` : '<p class="muted">Ainda não preenchido pelo técnico.</p>'}
         ${c.motivoDevolucao ? `<div class="aviso erro small" style="margin-top:8px">Devolvido: ${SN.esc(c.motivoDevolucao)}</div>` : ''}
         <h4 style="margin-top:12px">Fotos e evidências</h4><div class="fotos" id="fotosCh"></div></div>
@@ -430,7 +435,9 @@ SN.pdfChamado = (c, abrir) => {
   doc.linha('MTTD / MTTA', `${SN.dur(m.mttd)} / ${SN.dur(m.mtta)}`); doc.linha('MTTR / Em campo', `${SN.dur(m.mttr)} / ${SN.dur(m.tmc)}`);
   doc.linha('SLA', m.sla == null ? '—' : m.sla ? 'Dentro do prazo' : 'Fora do prazo');
   doc.secao('RFO');
-  doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); doc.linha('Solução', c.rfo.solucao); if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
+  doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); doc.linha('Solução', c.rfo.solucao);
+  if (c.rfo.localFalha || c.rfo.gpsFalha) doc.linha('Local da falha', [c.rfo.localFalha, c.rfo.gpsFalha && 'GPS ' + c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng].filter(Boolean).join(' · '));
+  if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
   if (abrir) window.open(doc.output('bloburl'));
   return doc;
 };

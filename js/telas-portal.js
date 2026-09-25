@@ -35,6 +35,14 @@ SN.rota('/portal', () => {
   const hojeMes = SN.agora().slice(0, 7) === f.mes ? new Date().getDate() : diasMes;
   const somaSt = st => lpusMes.filter(l => l.status === st).reduce((s, l) => s + SN.valorLpu(l), 0);
   const tiposLista = [...new Set(MATRIZ_SLA.map(m => m.tipo))];
+  // IRR do mês e do mês anterior (base: chamados GTD/Manutenção com etiqueta abertos no mês)
+  const irrDe = mes => { const base = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.abertura) === mes && SN.entraNoIrr(c));
+    const rep = base.map(c => ({ c, ant: SN.reincidencia(c) })).filter(x => x.ant);
+    return { base, rep, pct: base.length ? rep.length / base.length : null }; };
+  const mesAnt = (() => { const [a, m] = f.mes.split('-').map(Number); const x = new Date(a, m - 2, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); })();
+  const irr = irrDe(f.mes), irrAnt = irrDe(mesAnt);
+  const pctTxt = v => v == null ? '—' : SN.num(v * 100, 1) + '%';
+  const irrForaDoFiltro = f.tipo && !SN.IRR.tipos.includes(f.tipo);
   SN.casca('portal', `
     <div class="cab-pagina"><div><h1>Portal de Gestão</h1><p>Visão do ciclo completo: chamados, LPU, materiais e fibra — com relatórios do período e assinatura do fechamento.</p></div>
       <div class="acoes"><button class="btn" id="bRelCh">Relatório de chamados</button><button class="btn" id="bRelTec">Eficiência por técnico</button></div></div>
@@ -59,6 +67,23 @@ SN.rota('/portal', () => {
         ${hhTotal ? `<tr><td colspan="7"><b>Total hora-homem NETTURBO (automática)</b></td><td class="num"><b>${SN.num(hhTotal, 1)}</b></td></tr>` : ''}
         </tbody></table></div></div>
       <div class="card"><h3>Chamados por técnico</h3>${SN.barras(tecs.slice(0, 15).map(([t, o]) => [SN.nomeExibicao(t), o.n, o.emp]))}</div>
+    </div>
+    <div class="grid g2" style="margin-top:14px;grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
+      <div class="card"><div class="card-tit"><h3>IRR · Índice de Recursos Repetitivos</h3><span class="muted small">mesmo circuito com novo chamado em até ${SN.IRR.dias} dias</span></div>
+        ${irrForaDoFiltro ? `<p class="muted small">O IRR considera só ${SN.IRR.tipos.join(' e ')}. Escolha um desses segmentos ou "Todos" no filtro.</p>` : `
+        <div class="grid g3" style="margin-bottom:10px">
+          <div class="kpi destaque"><div class="rot">IRR do mês</div><div class="val" style="color:${irr.pct > .1 ? 'var(--erro)' : irr.pct > .05 ? 'var(--alerta)' : 'inherit'}">${pctTxt(irr.pct)}</div><div class="sub">${irr.rep.length} reincidentes de ${irr.base.length} chamados</div></div>
+          <div class="kpi"><div class="rot">Mês anterior</div><div class="val">${pctTxt(irrAnt.pct)}</div><div class="sub">${SN.mesNome(mesAnt)}</div></div>
+          <div class="kpi"><div class="rot">Circuitos reincidentes</div><div class="val">${new Set(irr.rep.map(x => SN.etiquetaIrr(x.c))).size}</div><div class="sub">etiquetas diferentes</div></div>
+        </div>
+        <div class="tabela-wrap" style="max-height:340px"><table class="tab small"><thead><tr><th>Etiqueta</th><th>Cliente</th><th>Chamado</th><th>Anterior</th><th class="num">Dias depois</th><th>Técnico anterior</th><th>Causa anterior</th></tr></thead><tbody>
+          ${irr.rep.slice().sort((a, b) => SN.etiquetaIrr(a.c).localeCompare(SN.etiquetaIrr(b.c)) || a.c.tempos.abertura.localeCompare(b.c.tempos.abertura)).map(({ c, ant }) =>
+            `<tr><td class="mono">${SN.esc(SN.etiquetaIrr(c))}</td><td>${SN.esc(c.cliente || '—')}</td><td><a href="#/chamado/${c.id}">${c.id}</a></td><td><a href="#/chamado/${ant.id}">${ant.id}</a></td>
+              <td class="num">${SN.num((new Date(c.tempos.abertura) - new Date(ant.tempos.conclusaoTecnica || ant.tempos.fechamento)) / 864e5, 0)}</td>
+              <td>${SN.esc(ant.tecnico ? SN.nomeExibicao(ant.tecnico) : '—')}</td><td>${SN.esc((ant.rfo && ant.rfo.causa) || '—')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted center">Nenhuma reincidência no mês.</td></tr>'}
+        </tbody></table></div>`}</div>
+      <div class="card"><div class="card-tit"><h3>Retornos por técnico</h3><span class="muted small">quem fez o atendimento anterior</span></div>
+        ${irrForaDoFiltro ? '<p class="muted small">—</p>' : SN.barras(SN.contar(irr.rep, x => x.ant.tecnico ? SN.nomeExibicao(x.ant.tecnico) : '').slice(0, 15))}</div>
     </div>
     <div class="grid g3" style="margin-top:14px">
       <div class="card"><h3>Por segmento</h3>${SN.barras(SN.contar(abertos, c => c.tipo || 'Sem classificação'))}</div>
@@ -96,18 +121,20 @@ SN.rota('/portal', () => {
         <ul class="small" style="padding-left:18px;margin:0">
           <li><b>MTTD</b>: abertura → despacho. <b>MTTA</b>: despacho → chegada em campo.</li>
           <li><b>MTTR</b>: abertura → conclusão técnica. <b>SLA</b>: conclusão técnica até o prazo limite (abertura + SLA da matriz, fixado na 1ª classificação).</li>
+          <li><b>IRR</b>: % dos chamados ${SN.IRR.tipos.join('/')} abertos no mês cujo circuito (etiqueta) teve outro chamado encerrado nos ${SN.IRR.dias} dias anteriores.</li>
           <li>Aprovação de LPU, baixa de materiais, cadastro de fibra e fechamento pelo NOC <b>não</b> entram no tempo operacional.</li>
         </ul></div>
     </div>`);
   SN.$('#pMes').onchange = e => { f.mes = e.target.value; SN.render(); };
   SN.$('#pTipo').onchange = e => { f.tipo = e.target.value; SN.render(); };
   SN.$('#pEmp').onchange = e => { f.emp = e.target.value; SN.render(); };
-  SN.$('#bRelCh').onclick = () => SN.exportar('chamados_' + f.mes, abertos.concat(concl.filter(c => !abertos.includes(c))).map(c => { const m = SN.metricas(c);
+  SN.$('#bRelCh').onclick = () => SN.exportar('chamados_' + f.mes, abertos.concat(concl.filter(c => !abertos.includes(c))).map(c => { const m = SN.metricas(c), ant = SN.reincidencia(c);
     return { Chamado: c.id, Origem: c.origem, ProtocoloNOC: c.protocoloNoc, ProtocoloOEM: c.protocoloOem, Cliente: c.cliente, Etiqueta: c.etiqueta, Cidade: c.cidade,
       Tipo: c.tipo, Cat1: c.cat1, Cat2: c.cat2, Cat3: c.cat3, Cat4: c.cat4, SLAh: c.slaHoras, Conta: c.conta, Empresa: c.empresa, Tecnico: c.tecnico,
       Apoio: c.apoio ? c.apoio.tecnico : '', Status: SN.STATUS[c.status].rot, Abertura: SN.dt(c.tempos.abertura), Despacho: SN.dt(c.tempos.atribuicao),
       Chegada: SN.dt(c.tempos.chegada), ConclusaoTecnica: SN.dt(c.tempos.conclusaoTecnica), Fechamento: SN.dt(c.tempos.fechamento), PrazoLimite: SN.dt(c.prazoLimite),
       MTTD_min: m.mttd, MTTA_min: m.mtta, MTTR_min: m.mttr, EmCampo_min: m.tmc, SLA: m.sla == null ? '' : m.sla ? 'Dentro' : 'Fora',
+      Reincidente: SN.entraNoIrr(c) ? (ant ? 'Sim' : 'Não') : '', ChamadoAnterior: ant ? ant.id : '',
       Causa: c.rfo.causa || '', Acao: c.rfo.acao || '', Solucao: c.rfo.solucao || '' }; }));
   SN.$('#bRelTec').onclick = () => SN.exportar('eficiencia_' + f.mes, tecs.map(([t, o]) => ({ Tecnico: t, Empresa: o.emp, Chamados: o.n, DentroSLA: o.d, ForaSLA: o.f,
     SLA_pct: Math.round(o.d / o.n * 100), MTTR_min: Math.round(SN.media(o.mttr) || 0), MTTA_min: Math.round(SN.media(o.mtta) || 0),
@@ -131,6 +158,7 @@ SN.rota('/portal', () => {
       doc.secao('Operação'); doc.linha('Chamados abertos', abertos.length); doc.linha('Concluídos', concl.length);
       doc.linha('SLA', ef == null ? '—' : `${SN.num(ef * 100)}% (${dentro} dentro / ${fora} fora)`);
       doc.linha('MTTD / MTTA / MTTR', `${SN.dur(SN.media(ms.map(x => x.m.mttd)))} / ${SN.dur(SN.media(ms.map(x => x.m.mtta)))} / ${SN.dur(SN.media(ms.map(x => x.m.mttr)))}`);
+      if (!irrForaDoFiltro) doc.linha('IRR (reincidência ' + SN.IRR.dias + ' dias)', `${pctTxt(irr.pct)} (${irr.rep.length} de ${irr.base.length})`);
       doc.secao('LPU por prestador (contabilizada)'); Object.entries(porEmp).forEach(([e, v]) => doc.linha(e, `${SN.brl(v)} · CNPJ ${SN.empresa(e).cnpj || '—'}`));
       doc.linha('TOTAL', SN.brl(total));
       doc.secao('Assinatura'); doc.linha('Responsável', SN.txtAssinatura(a));
