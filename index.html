@@ -40,6 +40,8 @@
 <script src="js/telas-preventiva-planejamento.js"></script>
 <script>
   SN.iniciar();
+  // Guarda o app no aparelho para abrir sem sinal (sw.js: rede primeiro, cópia só sem rede).
+  if ('serviceWorker' in navigator && SN.remoto) navigator.serviceWorker.register('sw.js').catch(() => { });
 </script>
 </body>
 </html>

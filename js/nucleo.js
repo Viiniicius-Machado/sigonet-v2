@@ -429,7 +429,7 @@ SN.login = async ({ tipo, nome, empresa, pin, complemento, novoComplemento }) =>
     reg.complementoHash = await SN.sha256(reg.nome + '|' + novoComplemento);
   } else if (reg.complementoHash !== await SN.sha256(reg.nome + '|' + complemento)) falha('Complemento incorreto.');
   delete tentativas[chave];
-  localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ tipo, nome, empresa: empresa || '', expira: Date.now() + 12 * 3600e3 }));
+  localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ tipo, nome, empresa: empresa || '', expira: Date.now() + 16 * 3600e3 }));
   reg.ultimoAcesso = SN.agora();
   SN.log('LOGIN', tipo, reg.nome); SN.salvar();
   return { ok: true };

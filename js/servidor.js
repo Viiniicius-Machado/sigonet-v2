@@ -73,8 +73,9 @@ SN.carregarRemoto = async () => {
   Object.keys(SN.CHAVES).forEach(col => { db[col] = tirarVersoes(col, r.db[col] || []); });
   db.seq = (r.db.config && r.db.config.seq) || {};
   db.assinaturas = (r.db.config && r.db.config.assinaturas) || {};
-  SN.db = db; SN._ultimaSync = r.db.servidorTs;
+  SN.db = db; SN._ultimaSync = r.db.servidorTs; SN.offline = false;
   fotografar();
+  SN.guardarLocal();
   SN.carregarStatusAcessos();
 };
 
@@ -101,8 +102,77 @@ SN.carregarStatusAcessos = async () => {
   try { SN._acessos = (await SN.api('STATUS_ACESSOS')).acessos || {}; SN._acessosTs = Date.now(); } catch (e) { }
 };
 
+// ─────────── Cópia no aparelho (IndexedDB) ───────────
+// Guarda a base, o que o servidor já tem (snap/versões) e a marca da última
+// sincronização, por pessoa. Serve para:
+//  - abrir o app SEM SINAL com a última cópia (as alterações sobem quando o sinal volta);
+//  - não perder o que foi feito sem sinal se o celular fechar a aba: ao abrir de novo,
+//    o que ainda não tinha subido é reaplicado sobre a base nova do servidor.
+const LOCAL_BD = 'sigonet_v2_local';
+const bdLocal = () => new Promise((ok, falha) => {
+  if (!window.indexedDB) return falha(new Error('sem IndexedDB'));
+  const r = indexedDB.open(LOCAL_BD, 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('estado');
+  r.onsuccess = () => ok(r.result); r.onerror = () => falha(r.error);
+});
+const chaveLocal = () => { const s = SN.sessao(); return s ? ['estado', s.tipo, s.empresa || '', s.nome].join('|') : null; };
+SN.lerLocal = async () => {
+  const k = chaveLocal(); if (!k) return null;
+  try { const bd = await bdLocal(); return await new Promise((ok, falha) => { const q = bd.transaction('estado').objectStore('estado').get(k); q.onsuccess = () => ok(q.result || null); q.onerror = () => falha(q.error); }); }
+  catch (e) { return null; }
+};
+SN.apagarLocal = async () => {
+  clearTimeout(timerLocal);
+  const k = chaveLocal(); if (!k) return;
+  try { const bd = await bdLocal(); bd.transaction('estado', 'readwrite').objectStore('estado').delete(k); } catch (e) { }
+};
+let timerLocal = null;
+SN.guardarLocal = () => { clearTimeout(timerLocal); timerLocal = setTimeout(async () => {
+  const k = chaveLocal(); if (!k || !SN.db || !SN._ultimaSync) return;
+  try {
+    const bd = await bdLocal();
+    bd.transaction('estado', 'readwrite').objectStore('estado').put({ db: SN.db, snap: SN._snap, ver: SN._ver, ultimaSync: SN._ultimaSync,
+      assin: SN._assinEnviadas, semResposta: SN._semResposta, ts: Date.now() }, k);
+  } catch (e) { /* aparelho sem espaço ou modo privado: segue só em memória */ }
+}, 1200); };
+// Depois de carregar do servidor: reaplica o que foi feito neste aparelho e não subiu.
+SN.recuperarPendentes = async () => {
+  const L = await SN.lerLocal(); if (!L || !L.db || !L.snap) return 0;
+  let recuperados = 0, conflitos = 0;
+  Object.entries(SN.CHAVES).forEach(([col, k]) => {
+    if (col === 'log' || col === 'integracoes') {
+      (L.db[col] || []).forEach(d => { if (!(L.snap[col] || {})[d[k]] && !(SN.db[col] || []).some(x => x[k] === d[k])) { (SN.db[col] = SN.db[col] || []).push(d); recuperados++; } });
+      return;
+    }
+    (L.db[col] || []).forEach(d => {
+      const id = d[k], local = snapDoc(col, d);
+      if ((L.snap[col] || {})[id] === local) return; // nada pendente neste registro
+      const lista = SN.db[col] = SN.db[col] || [], i = lista.findIndex(x => String(x[k]) === String(id));
+      const noServidor = i >= 0 ? snapDoc(col, lista[i]) : null;
+      if (noServidor === local) return; // já tinha subido (a resposta é que se perdeu)
+      const verAntes = (L.ver[col] || {})[id], verAgora = (SN._ver[col] || {})[id];
+      const meuEnvio = (L.semResposta && L.semResposta[col] || {})[id];
+      if (i < 0 || verAntes == null || verAntes === verAgora || (meuEnvio && meuEnvio === noServidor)) {
+        if (i >= 0) lista[i] = d; else lista.push(d);
+        if (meuEnvio) (SN._semResposta[col] = SN._semResposta[col] || {})[id] = meuEnvio;
+        recuperados++;
+      } else conflitos++; // outra pessoa mudou no servidor: vale a versão do servidor
+    });
+  });
+  if (recuperados) { SN.salvarRemoto(); SN.toast(recuperados + ' alteração(ões) feita(s) sem sinal recuperada(s) e enviada(s).', 'ok'); }
+  if (conflitos) SN.toast(conflitos + ' alteração(ões) feita(s) sem sinal não foram aplicadas: outra pessoa mudou o mesmo registro antes. Confira e refaça se precisar.', 'erro');
+  return recuperados;
+};
+// Sem sinal ao abrir: usa a última cópia do aparelho.
+SN.abrirOffline = async () => {
+  const L = await SN.lerLocal(); if (!L || !L.db) return false;
+  SN.db = L.db; SN._snap = L.snap || {}; SN._ver = L.ver || {}; SN._ultimaSync = L.ultimaSync; SN._assinEnviadas = L.assin || {}; SN._semResposta = L.semResposta || {};
+  SN.offline = true; pendente = true; // o que difere do servidor sobe quando o sinal voltar
+  return true;
+};
+
 // ─────────── Envio do que mudou ───────────
-let filaTimer = null, enviando = false, pendente = false;
+let filaTimer = null, enviando = false, pendente = false, avisoSemSinal = 0;
 SN.salvarRemoto = () => { pendente = true; clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 350); };
 SN.enviarMudancas = async () => {
   if (enviando) { filaTimer = setTimeout(SN.enviarMudancas, 500); return; }
@@ -126,7 +196,7 @@ SN.enviarMudancas = async () => {
   ops.forEach(o => { if (o.excluir) delete SN._snap[o.colecao][o.id]; else SN._snap[o.colecao][o.id] = o._s; });
   try {
     const r = await SN.api('SALVAR', { ops: ops.map(({ _s, ...o }) => o), assinaturas: Object.keys(assin).length ? assin : undefined });
-    Object.assign(SN._assinEnviadas, assin);
+    Object.assign(SN._assinEnviadas, assin); SN.offline = false;
     let conflitos = 0;
     r.resultados.forEach(x => {
       if (SN._semResposta[x.colecao]) delete SN._semResposta[x.colecao][x.id]; // teve resposta
@@ -144,9 +214,13 @@ SN.enviarMudancas = async () => {
   } catch (e) {
     ops.forEach(o => { if (!o.excluir) { delete SN._snap[o.colecao][o.id]; (SN._semResposta[o.colecao] = SN._semResposta[o.colecao] || {})[o.id] = o._s; } }); // volta a ser "pendente"
     pendente = true;
-    if (!e.message.includes('Sessão')) SN.toast('Não foi possível salvar agora (' + e.message + '). Vou tentar de novo.', 'erro');
+    if (!e.message.includes('Sessão') && (!e.rede || Date.now() - avisoSemSinal > 120000)) {
+      if (e.rede) avisoSemSinal = Date.now();
+      SN.toast(e.rede ? 'Sem sinal: as alterações ficam guardadas neste aparelho e sobem sozinhas quando o sinal voltar.' : 'Não foi possível salvar agora (' + e.message + '). Vou tentar de novo.', e.rede ? '' : 'erro');
+    }
+    SN.offline = !!e.rede;
     clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 5000 + Math.random() * 7000);
-  } finally { enviando = false; SN.indicadorSync(); }
+  } finally { enviando = false; SN.indicadorSync(); SN.guardarLocal(); }
 };
 // Aguarda tudo ser gravado (usado antes de ações que dependem do registro já existir no servidor).
 SN.salvarAgora = async () => { clearTimeout(filaTimer); await SN.enviarMudancas(); while (enviando) await new Promise(r => setTimeout(r, 150)); };
@@ -170,41 +244,58 @@ SN.sincronizar = async () => {
         SN._snap[col][id] = snapDoc(col, d); mudou = true;
       });
     });
+    // Saiu do recorte desta pessoa (ex.: chamado reatribuído a outra empresa): tira da
+    // tela e do "que o servidor tem" — senão o envio entenderia como exclusão.
+    Object.entries(r.fora || {}).forEach(([col, ids]) => {
+      const k = SN.CHAVES[col]; if (!k || !SN.db[col]) return;
+      ids.forEach(id => {
+        const i = SN.db[col].findIndex(x => String(x[k]) === String(id));
+        if (i >= 0 && snapDoc(col, SN.db[col][i]) !== (SN._snap[col] || {})[id]) return; // edição local pendente: deixa subir primeiro
+        if (i >= 0) { SN.db[col].splice(i, 1); mudou = true; }
+        if (SN._snap[col]) delete SN._snap[col][id]; if (SN._ver[col]) delete SN._ver[col][id];
+      });
+    });
     if (r.config && r.config.assinaturas) Object.entries(r.config.assinaturas).forEach(([n, v]) => {
       SN.db.assinaturas[n] = Math.max(SN.db.assinaturas[n] || 0, v); SN._assinEnviadas[n] = Math.max(SN._assinEnviadas[n] || 0, v); });
-    SN._ultimaSync = r.servidorTs;
+    SN._ultimaSync = r.servidorTs; SN.offline = false;
     if (mudou) SN.aoMudarBase();
-  } catch (e) { /* tenta no próximo ciclo */ } finally { sincronizando = false; }
+    SN.guardarLocal();
+  } catch (e) { if (e.rede) SN.offline = true; /* tenta no próximo ciclo */ } finally { sincronizando = false; SN.indicadorSync(); }
 };
 
 // Indicador discreto no cabeçalho
 SN.indicadorSync = () => {
   const el = document.getElementById('sync'); if (!el) return;
-  el.textContent = (enviando || pendente) ? '⟳ salvando…' : '● online';
-  el.title = (enviando || pendente) ? 'Enviando alterações para o servidor' : 'Tudo salvo no servidor';
+  el.textContent = SN.offline ? ((enviando || pendente) ? '○ sem sinal · guardado no aparelho' : '○ sem sinal') : (enviando || pendente) ? '⟳ salvando…' : '● online';
+  el.title = SN.offline ? 'Sem conexão com o servidor. O que você fizer fica guardado neste aparelho e sobe quando o sinal voltar.'
+    : (enviando || pendente) ? 'Enviando alterações para o servidor' : 'Tudo salvo no servidor';
 };
 window.addEventListener('beforeunload', ev => { if (SN.remoto && (enviando || pendente)) { ev.preventDefault(); ev.returnValue = ''; } });
 
 // ─────────── Substitui o armazenamento local quando há servidor ───────────
 if (SN.remoto) {
-  SN.salvar = () => { if (SN.sessao()) { SN.salvarRemoto(); SN.indicadorSync(); } }; // sem sessão não há o que gravar
+  SN.salvar = () => { if (SN.sessao()) { SN.salvarRemoto(); SN.indicadorSync(); SN.guardarLocal(); } }; // sem sessão não há o que gravar
   SN.login = async dados => {
     const r = await SN.api('LOGIN', dados);
     if (r.primeiroAcesso) return { primeiroAcesso: true };
-    localStorage.setItem('sigonet_v2_sessao', JSON.stringify({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 12 * 3600e3 }));
+    localStorage.setItem('sigonet_v2_sessao', JSON.stringify({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 16 * 3600e3 }));
     // Se a base não carregar, não deixa a pessoa "meio logada": desfaz e mostra o erro.
     try { await SN.carregarRemoto(); } catch (e) { localStorage.removeItem('sigonet_v2_sessao'); throw e; }
+    await SN.recuperarPendentes(); // o que ficou sem subir na sessão anterior neste aparelho
     SN.log('LOGIN', dados.tipo, dados.nome); SN.salvar();
     return { ok: true };
   };
   SN.sair = async () => {
     SN.log('LOGOUT', '', ''); await SN.salvarAgora().catch(() => { });
     const s = SN.sessao(); if (s) SN.api('LOGOUT').catch(() => { });
+    if (!pendente) await SN.apagarLocal(); // com algo ainda sem subir, a cópia fica para o próximo login
     localStorage.removeItem('sigonet_v2_sessao');
     await SN.prepararLogin().catch(() => { }); location.hash = '#/login'; SN.render();
   };
   setInterval(SN.sincronizar, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) SN.sincronizar(); });
+  // Sinal voltou: envia o que ficou guardado e busca as novidades na hora.
+  window.addEventListener('online', () => { if (SN.sessao()) { SN.salvarRemoto(); setTimeout(SN.sincronizar, 3000); } });
 }
 
 // Inicialização (chamada pelo index.html)
@@ -216,7 +307,14 @@ SN.iniciar = async () => {
     if (SN.sessao() && !SN.sessao().token) localStorage.removeItem('sigonet_v2_sessao');
     if (SN.sessao() && SN.sessao().token) {
       // Só descarta o login se o servidor disse que a sessão venceu; falha passageira mostra "Tentar de novo".
-      try { await SN.carregarRemoto(); } catch (e) { if (!e.sessao) throw e; }
+      // Aparelho já sabe que está sem rede: abre na hora com a cópia (sem esperar as tentativas).
+      if (navigator.onLine === false && await SN.abrirOffline()) { SN.render(); SN.salvarRemoto(); SN.toast('Sem sinal: abrindo a última cópia guardada neste aparelho. O que você fizer sobe quando o sinal voltar.'); SN.indicadorSync(); return; }
+      try { await SN.carregarRemoto(); await SN.recuperarPendentes(); }
+      catch (e) {
+        if (e.sessao) { /* sessão vencida: vai para o login */ }
+        else if (e.rede && await SN.abrirOffline()) { SN.render(); SN.salvarRemoto(); SN.toast('Sem sinal: abrindo a última cópia guardada neste aparelho. O que você fizer sobe quando o sinal voltar.'); SN.indicadorSync(); return; }
+        else throw e;
+      }
     }
     if (!SN.sessao()) await SN.prepararLogin();
     SN.render();
