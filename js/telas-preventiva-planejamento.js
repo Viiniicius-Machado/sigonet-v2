@@ -156,9 +156,10 @@
     if (SN.$('#bSalvarDesp')) SN.$('#bSalvarDesp').onclick = () => salvar(true);
     if (SN.$('#bVinc')) SN.$('#bVinc').onclick = async () => {
       const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
-      try { const r = await SN.vst.exec('VST_VINCULAR_CHAMADO', { id_chamado: f.vincular_chamado, rota: f });
+      const bt = SN.$('#bVinc'); bt.disabled = true; bt.textContent = 'Enviando…';
+      try { const r = await vincular(f.vincular_chamado, f);
         SN.toast(`Chamado ${f.vincular_chamado} ligado à rota ${r.rota.id_rota}.`, 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { });
-        form = null; aba = 'ROTAS'; await recarregar(); } catch (e) { SN.toast(e.message, 'erro'); }
+        form = null; aba = 'ROTAS'; await recarregar(); } catch (e) { bt.disabled = false; bt.textContent = '🔗 Criar rota ligada ao chamado'; SN.toast(e.message, 'erro'); }
     };
     SN.$('#bCancelar').onclick = () => { form = null; aba = 'ROTAS'; pintar(); };
   };
@@ -318,8 +319,31 @@
   };
 
   // ═══════════════════════════ Chamado do NOC → rota ═══════════════════════════
+  // Liga a rota ao chamado. O servidor é idempotente (chamado já ligado devolve a
+  // rota existente), então, se a resposta se perde no caminho (Google devolve
+  // página em vez de JSON, sinal cai), tenta de novo sem risco de duplicar.
+  const vincular = async (idChamado, rota) => {
+    for (let t = 1; ; t++) {
+      try {
+        const r = await SN.vst.api('VST_VINCULAR_CHAMADO', { id_chamado: idChamado, rota }, 120000);
+        if (!r.ok) throw new Error(r.erro || 'Erro no servidor');
+        return r;
+      } catch (e) {
+        if (!e.rede || t >= 3) throw e;
+        SN.toast('Sem resposta do servidor. Tentando de novo…');
+        await new Promise(ok => setTimeout(ok, 2500 * t));
+      }
+    }
+  };
+  const ocupado = (f, sim, texto) => SN.$$('.modal-rod .btn', f).forEach(b => { b.disabled = sim; if (b.classList.contains('prim')) { b.dataset.rot = b.dataset.rot || b.textContent; b.textContent = sim ? texto : b.dataset.rot; } });
+  let abrindo = false;
   SN.vst.transformarChamado = async c => {
-    let dd; try { dd = SN.vst.dados && !SN.vst.dados.offline ? SN.vst.dados : await SN.vst.carregar(); } catch (e) { return SN.toast(e.message, 'erro'); }
+    if (abrindo) return; // evita abrir duas janelas com clique duplo
+    abrindo = true;
+    let dd;
+    try { if (!(SN.vst.dados && !SN.vst.dados.offline)) SN.toast('Abrindo a Preventiva…'); dd = SN.vst.dados && !SN.vst.dados.offline ? SN.vst.dados : await SN.vst.carregar(); }
+    catch (e) { abrindo = false; return SN.toast(e.message, 'erro'); }
+    abrindo = false;
     const cf = VR.normalizarConfig(dd.config);
     let seg = 'AEREA';
     const r = { segmento: 'AEREA', cidade: c.cidade || '', prestador: c.empresa || '', tecnico: c.tecnico || '', data_planejada: String(c.tempos.abertura || hoje()).slice(0, 10),
@@ -354,10 +378,11 @@
       }
       r.segmento = 'AEREA';
       const v = VR.validarRota(r); if (!v.ok) { SN.toast(v.erros[0], 'erro'); return false; }
-      try { const x = await SN.vst.exec('VST_VINCULAR_CHAMADO', { id_chamado: c.id, rota: r });
+      ocupado(f, true, 'Enviando…');
+      try { const x = await vincular(c.id, r);
         SN.toast(`Chamado ligado à rota aérea ${x.rota.id_rota}. O técnico já vê a rota com o KMZ.`, 'ok');
         if (SN.sincronizar) await SN.sincronizar().catch(() => { }); setTimeout(() => SN.render(), 50); return null;
-      } catch (e) { SN.toast(e.message, 'erro'); return false; }
+      } catch (e) { ocupado(f, false); SN.toast(e.message, 'erro'); return false; }
     } }],
       aoAbrir: f => { const liga = () => { SN.$$('[data-tseg]', f).forEach(b => b.onclick = () => { seg = b.dataset.tseg; SN.$$('[data-tseg]', f).forEach(x => x.classList.toggle('sel', x === b)); campos(f); }); campos(f); }; liga(); } });
   };
