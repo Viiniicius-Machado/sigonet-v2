@@ -526,7 +526,7 @@ var VR = (function () {
   // ═══════════════════════════ Preventiva AÉREA ═══════════════════════════
   // A equipe recebe o KMZ da rota, percorre e aponta a produção (parciais e um
   // final). Os KPIs do mês contam pela data do apontamento.
-  R.normCidade = function (s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim(); };
+  R.normCidade = function (s) { return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim(); };
   R.regiaoDaCidade = function (cidade, config) {
     var cfg = R.normalizarConfig(config), c = R.normCidade(cidade);
     if (!c) return '';
@@ -711,7 +711,7 @@ var VR = (function () {
   var numCoord = function (v) { if (v == null || v === '') return null; var n = Number(String(v).trim().replace(',', '.')); return isFinite(n) ? n : null; };
   var achaCol = function (linha, preferida, candidatas) {
     var chaves = Object.keys(linha || {});
-    var norm = function (s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+    var norm = function (s) { return String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
     if (preferida) { for (var i = 0; i < chaves.length; i++) if (norm(chaves[i]) === norm(preferida)) return chaves[i]; }
     for (var j = 0; j < candidatas.length; j++) for (var k = 0; k < chaves.length; k++) if (norm(chaves[k]) === candidatas[j]) return chaves[k];
     return null;

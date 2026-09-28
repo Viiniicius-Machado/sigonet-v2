@@ -21,8 +21,11 @@ SN.vst.MENU = [
 ];
 // Entra no menu só o que já tem tela registrada (as fases seguintes registram as suas).
 SN.vst.registrarMenu = () => {
+  // Reconstrói o grupo a cada chamada (cada tela registra a sua, em qualquer ordem).
   const itens = SN.vst.MENU.filter(m => m.grupo || SN.rotas[m.href.slice(1)]);
-  if (itens.length > 1 && !SN.MENU.some(m => m.tela === itens[1].tela)) SN.MENU.push(...itens);
+  if (itens.length < 2) return;
+  for (let i = SN.MENU.length - 1; i >= 0; i--) if (SN.MENU[i] === SN.vst.MENU[0] || SN.vst.MENU.some(m => m.tela && m.tela === SN.MENU[i].tela)) SN.MENU.splice(i, 1);
+  SN.MENU.push(...itens);
 };
 
 SN.vst.disponivel = () => !!SN.remoto;

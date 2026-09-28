@@ -78,7 +78,7 @@ SN.rota('/tec', () => {
 SN.pendenciasPos = c => {
   const papel = SN.papelNo(c); if (!papel || !SN.faseModulos(c)) return [];
   const out = [];
-  const lpuLiberada = !(c.origem === 'Preventiva' && c.preventiva && !c.preventiva.lpu_sugerida); // Preventiva: só após aprovação das CS
+  const lpuLiberada = !(c.preventiva && c.preventiva.id_rota && !c.preventiva.lpu_sugerida); // Preventiva: só após aprovação das CS
   if (lpuLiberada && SN.podeLpu(c, papel) && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) out.push('LPU');
   const fib = SN.db.fibras.find(f => f.chamadoId === c.id);
   if (fib && fib.status === 'CORRECAO') out.push('Corrigir fibra');
@@ -96,7 +96,7 @@ SN.rota('/tec/os/:id', id => {
   const p = SN.prazoInfo(c);
   // Chamado gerado por rota de Preventiva: a jornada (chegada, RFO, conclusão) é
   // conduzida pela rota; aqui ficam só os apontamentos (LPU, materiais).
-  const prev = c.origem === 'Preventiva' && c.preventiva ? c.preventiva : null;
+  const prev = c.preventiva && c.preventiva.id_rota ? c.preventiva : null;
   const emCampo = ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) && !prev;
   const mod = SN.modulosDo(c.id);
   const lpu = mod.lpus.find(l => l.papel === papel), mat = mod.materiais.find(l => l.papel === papel), fib = mod.fibras[0];
@@ -282,7 +282,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   if (!c || !SN.podeLpu(c, papel)) { SN.toast('Sem acesso à LPU deste chamado.', 'erro'); return SN.navegar('#/tec'); }
   let l = SN.db.lpus.find(x => x.chamadoId === id && x.papel === papel);
   // Preventiva: só depois que todas as CS da rota forem aprovadas (só aprovada é paga).
-  const prev = c.origem === 'Preventiva' && c.preventiva ? c.preventiva : null;
+  const prev = c.preventiva && c.preventiva.id_rota ? c.preventiva : null;
   if (prev && !prev.lpu_sugerida && !l) { SN.toast('A LPU da Preventiva libera quando todas as CS da rota forem aprovadas.', 'erro'); return SN.navegar('#/tec/os/' + id); }
   const h = l ? l.cab : SN.cabecalhoDe(c, papel);
   const emp = SN.empresa(h.empresa), vinc = emp.vinculo;
