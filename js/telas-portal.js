@@ -22,8 +22,12 @@ SN.NATUREZAS = [
   ['Improdutivas', 'Improdutivas', c => SN.ehImprodutiva(c), 'chamados com classificação <b>improdutiva</b>, de qualquer segmento (use o filtro de segmento para separar)']
 ];
 SN.naturezaDe = k => SN.NATUREZAS.find(n => n[0] === k) || SN.NATUREZAS[0];
+// A visão por natureza só existe no segmento Manutenção (nos outros não há essa separação).
+SN.SEGMENTO_NATUREZA = 'Manutenção';
 SN.rota('/portal', () => {
   const f = SN.fPortal, d = SN.db;
+  const temNatureza = f.tipo === SN.SEGMENTO_NATUREZA;
+  if (!temNatureza) f.natureza = '';
   const meses = [...new Set([f.mes, SN.agora().slice(0, 7), ...d.chamados.map(c => SN.mesChave(c.tempos.abertura))])].filter(Boolean).sort().reverse();
   const filtraBase = c => (!f.tipo || c.tipo === f.tipo) && (!f.emp || c.empresa === f.emp);
   const filtra = c => filtraBase(c) && (!f.natureza || SN.naturezaDe(f.natureza)[2](c));
@@ -31,7 +35,10 @@ SN.rota('/portal', () => {
   const concl = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.conclusaoTecnica) === f.mes);
   const ms = concl.map(c => ({ c, m: SN.metricas(c) }));
   const dentro = ms.filter(x => x.m.sla === true).length, fora = ms.filter(x => x.m.sla === false).length;
-  const ef = concl.length ? dentro / concl.length : null;
+  const sla = concl.length ? dentro / concl.length : null;
+  // Eficiência: sobre o TOTAL do mês — dos chamados abertos no mês, quantos já foram resolvidos no prazo.
+  const noPrazo = abertos.filter(c => SN.metricas(c).sla === true).length;
+  const ef = abertos.length ? noPrazo / abertos.length : null;
   // Eficiência por técnico
   const porTec = {};
   ms.forEach(({ c, m }) => { const k = c.tecnico; const o = porTec[k] = porTec[k] || { emp: c.empresa, n: 0, d: 0, f: 0, mttr: [], mtta: [], hh: 0 };
@@ -64,7 +71,7 @@ SN.rota('/portal', () => {
     return { vol: ab.length, concl: co.length, mttd: SN.media(co.map(m => m.mttd)), mtta: SN.media(co.map(m => m.mtta)), mttr: SN.media(co.map(m => m.mttr)),
       dentro: dn, sla: co.length ? dn / co.length : null, irr: base.length ? rep / base.length : null, rep, base: base.length };
   };
-  const porNatureza = f.natureza ? [] : SN.NATUREZAS.filter(n => n[2]).map(n => [n[0], n[2]]).concat([['Demais ocorrências', c => !SN.NATUREZAS.some(n => n[2] && n[2](c))]]).map(([n, p]) => [n, resumoDe(p)]);
+  const porNatureza = f.natureza || !temNatureza ? [] : SN.NATUREZAS.filter(n => n[2]).map(n => [n[0], n[2]]).concat([['Demais ocorrências', c => !SN.NATUREZAS.some(n => n[2] && n[2](c))]]).map(([n, p]) => [n, resumoDe(p)]);
   const corIrr = v => v > .1 ? 'var(--erro)' : v > .05 ? 'var(--alerta)' : 'inherit';
   SN.casca('portal', `
     <div class="cab-pagina"><div><h1>Portal de Gestão</h1><p>Visão do ciclo completo: chamados, LPU, materiais e fibra — com relatórios do período e assinatura do fechamento.</p></div>
@@ -73,15 +80,15 @@ SN.rota('/portal', () => {
       <select class="inp" id="pMes">${meses.map(m => `<option value="${m}" ${m === f.mes ? 'selected' : ''}>${SN.mesNome(m)} (dia 1º a ${new Date(+m.slice(0, 4), +m.slice(5), 0).getDate()})</option>`).join('')}</select>
       <select class="inp" id="pTipo"><option value="">Todos os segmentos</option>${tiposLista.map(t => `<option ${t === f.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
       <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div>
-    <div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
-      ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>
+    ${temNatureza ? `<div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
+      ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>` : ''}
     <div class="kpis7">
       <div class="kpi destaque"><div class="rot">Volume</div><div class="val">${abertos.length}</div><div class="sub">chamados abertos no mês</div></div>
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho</div></div>
       <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo</div></div>
       <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → conclusão</div></div>
-      <div class="kpi"><div class="rot">SLA</div><div class="val">${ef == null ? '—' : SN.num(ef * 100) + '%'}</div><div class="sub">${dentro} dentro · ${fora} fora (${concl.length} concluídos)</div></div>
-      <div class="kpi"><div class="rot">Eficiência</div><div class="val">${ef == null ? '—' : SN.num(ef * 10, 1) + '/10'}</div><div class="sub">a cada 10 chamados, no prazo</div></div>
+      <div class="kpi"><div class="rot">SLA</div><div class="val">${sla == null ? '—' : SN.num(sla * 100) + '%'}</div><div class="sub">${dentro} dentro · ${fora} fora (${concl.length} concluídos)</div></div>
+      <div class="kpi"><div class="rot">Eficiência</div><div class="val">${ef == null ? '—' : SN.num(ef * 100) + '%'}</div><div class="sub">${noPrazo} de ${abertos.length} chamados do mês resolvidos no prazo</div></div>
       <a class="kpi" href="javascript:void 0" id="kIrr" title="Ver o detalhe do IRR" style="color:inherit;text-decoration:none"><div class="rot">IRR ↓</div>
         <div class="val" style="color:${irrForaDoFiltro ? 'inherit' : corIrr(irr.pct)}">${irrForaDoFiltro ? '—' : pctTxt(irr.pct)}</div>
         <div class="sub">${irrForaDoFiltro ? 'só ' + SN.IRR.tipos.join('/') : `${irr.rep.length} reincidentes de ${irr.base.length} · mês anterior ${pctTxt(irrAnt.pct)}`}</div></a>
@@ -154,13 +161,14 @@ SN.rota('/portal', () => {
         <h4 style="margin-top:14px">Como os indicadores são medidos</h4>
         <ul class="small" style="padding-left:18px;margin:0">
           <li><b>MTTD</b>: abertura → despacho. <b>MTTA</b>: despacho → chegada em campo.</li>
-          <li><b>MTTR</b>: abertura → conclusão técnica. <b>SLA</b>: conclusão técnica até o prazo limite (abertura + SLA da matriz, fixado na 1ª classificação).</li>
+          <li><b>MTTR</b>: abertura → conclusão técnica. <b>SLA</b>: conclusão técnica até o prazo limite (abertura + SLA da matriz, fixado na 1ª classificação), sobre os concluídos no mês.</li>
+          <li><b>Eficiência</b>: % do total de chamados abertos no mês que já foram resolvidos dentro do prazo (os ainda abertos contam como não resolvidos).</li>
           <li><b>IRR</b>: % dos chamados ${SN.IRR.tipos.join('/')} abertos no mês cujo circuito (etiqueta) teve outro chamado encerrado nos ${SN.IRR.dias} dias anteriores.</li>
           <li>Aprovação de LPU, baixa de materiais, cadastro de fibra e fechamento pelo NOC <b>não</b> entram no tempo operacional.</li>
         </ul></div>
     </div>`);
   SN.$('#pMes').onchange = e => { f.mes = e.target.value; SN.render(); };
-  SN.$('#pTipo').onchange = e => { f.tipo = e.target.value; SN.render(); };
+  SN.$('#pTipo').onchange = e => { f.tipo = e.target.value; if (f.tipo !== SN.SEGMENTO_NATUREZA) f.natureza = ''; SN.render(); };
   SN.$('#pEmp').onchange = e => { f.emp = e.target.value; SN.render(); };
   SN.$$('[data-nat]').forEach(b => b.onclick = () => { f.natureza = b.dataset.nat; SN.render(); });
   SN.$('#kIrr').onclick = () => { const c = SN.$('#cardIrr'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -192,7 +200,8 @@ SN.rota('/portal', () => {
     const doc = SN.novoPdf('Extrato de atividades · ' + SN.mesNome(f.mes));
     if (doc) {
       doc.secao('Operação'); if (f.natureza) doc.linha('Visão', f.natureza); doc.linha('Chamados abertos', abertos.length); doc.linha('Concluídos', concl.length);
-      doc.linha('SLA', ef == null ? '—' : `${SN.num(ef * 100)}% (${dentro} dentro / ${fora} fora)`);
+      doc.linha('SLA', sla == null ? '—' : `${SN.num(sla * 100)}% (${dentro} dentro / ${fora} fora)`);
+      doc.linha('Eficiência', ef == null ? '—' : `${SN.num(ef * 100)}% (${noPrazo} de ${abertos.length} chamados do mês no prazo)`);
       doc.linha('MTTD / MTTA / MTTR', `${SN.dur(SN.media(ms.map(x => x.m.mttd)))} / ${SN.dur(SN.media(ms.map(x => x.m.mtta)))} / ${SN.dur(SN.media(ms.map(x => x.m.mttr)))}`);
       if (!irrForaDoFiltro) doc.linha('IRR (reincidência ' + SN.IRR.dias + ' dias)', `${pctTxt(irr.pct)} (${irr.rep.length} de ${irr.base.length})`);
       doc.secao('LPU por prestador (contabilizada)'); Object.entries(porEmp).forEach(([e, v]) => doc.linha(e, `${SN.brl(v)} · CNPJ ${SN.empresa(e).cnpj || '—'}`));

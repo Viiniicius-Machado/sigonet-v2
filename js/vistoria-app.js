@@ -54,8 +54,14 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
   return j;
 };
 // Igual, mas lança erro quando o servidor recusa (para ações simples de tela).
+// Sem resposta (sinal caiu, Google devolveu página de erro): tenta de novo até 3
+// vezes — as ações VST_* do servidor são seguras para repetir (não duplicam).
 SN.vst.exec = async (acao, dados) => {
-  const r = await SN.vst.api(acao, dados);
+  let r;
+  for (let t = 1; ; t++) {
+    try { r = await SN.vst.api(acao, dados); break; }
+    catch (e) { if (!e.rede || t >= 3) throw e; await new Promise(ok => setTimeout(ok, 2000 * t + Math.random() * 2000)); }
+  }
   if (!r.ok) { const e = new Error(r.erro || 'Erro no servidor'); e.resp = r; throw e; }
   return r;
 };

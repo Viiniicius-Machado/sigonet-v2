@@ -14,18 +14,29 @@ SN.CHAVES = { chamados: 'id', lpus: 'id', materiais: 'id', fibras: 'id', pagamen
   empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id' };
 
 // Ações só de leitura podem ser repetidas com segurança quando o Google falha.
-const REPETIVEIS = ['USUARIOS', 'LOGIN', 'CARREGAR', 'SINCRONIZAR', 'STATUS_ACESSOS'];
+// Pedidos que podem ser repetidos sem efeito colateral (PROX_ID pode pular um número;
+// ANEXO pode deixar um arquivo a mais no Drive — nada que quebre).
+const REPETIVEIS = ['USUARIOS', 'LOGIN', 'CARREGAR', 'SINCRONIZAR', 'STATUS_ACESSOS', 'PROX_ID', 'ANEXO'];
+// Espera antes de tentar de novo, com sorteio: com 30 pessoas, ninguém insiste no mesmo segundo.
+const espera = (base, faixa) => new Promise(ok => setTimeout(ok, base + Math.random() * faixa));
 SN.api = async (acao, dados, tentativa = 1) => {
   const s = SN.sessao();
   let j;
   try {
-    const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }) });
+    // Tempo limite: um pedido pendurado não pode travar a fila de envio para sempre.
+    const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }),
+      signal: AbortSignal.timeout ? AbortSignal.timeout(acao === 'CARREGAR' || acao === 'ANEXO' ? 180000 : 90000) : undefined });
     const txt = await r.text();
     // Com o servidor ocupado o Google devolve uma página HTML de erro em vez de JSON.
     try { j = JSON.parse(txt); } catch (e) { throw new Error('Servidor ocupado no momento. Tente de novo em alguns segundos.'); }
   } catch (e) {
-    if (tentativa < 3 && REPETIVEIS.includes(acao)) { await new Promise(ok => setTimeout(ok, 1500 * tentativa)); return SN.api(acao, dados, tentativa + 1); }
-    const err = new Error(e instanceof TypeError ? 'Sem conexão com o servidor.' : e.message); err.rede = true; throw err;
+    if (tentativa < 3 && REPETIVEIS.includes(acao)) { await espera(1500 * tentativa, 2000); return SN.api(acao, dados, tentativa + 1); }
+    const err = new Error(e instanceof TypeError || e.name === 'TimeoutError' || e.name === 'AbortError' ? 'Sem conexão com o servidor.' : e.message); err.rede = true; throw err;
+  }
+  // Servidor sobrecarregado por um instante (muitos acessos simultâneos à planilha):
+  // leituras tentam de novo sozinhas, com espera sorteada.
+  if (!j.ok && !j.sessao && tentativa < 3 && REPETIVEIS.includes(acao) && /ocupado|simult|too many/i.test(j.erro || '')) {
+    await espera(2000 * tentativa, 3000); return SN.api(acao, dados, tentativa + 1);
   }
   if (!j.ok) {
     const err = new Error(j.erro || 'Erro no servidor');
@@ -43,6 +54,9 @@ SN._snap = {};   // coleção → chave → JSON do que o servidor já tem
 SN._ver = {};    // coleção → chave → versão
 SN._ultimaSync = '';
 SN._assinEnviadas = {};
+// Enviado sem resposta (coleção → id → JSON enviado). No reenvio vai junto como "alt":
+// se o servidor tiver exatamente isso, foi este aparelho que gravou e não é conflito.
+SN._semResposta = {};
 const snapDoc = (col, doc) => { const d = { ...doc }; delete d._v; return JSON.stringify(d); };
 const fotografar = () => {
   SN._snap = {}; Object.keys(SN.CHAVES).forEach(col => {
@@ -98,7 +112,7 @@ SN.enviarMudancas = async () => {
     const vistos = new Set();
     (SN.db[col] || []).forEach(d => {
       const id = d[k]; vistos.add(String(id)); const s = snapDoc(col, d);
-      if (snap[id] !== s) ops.push({ colecao: col, id, doc: JSON.parse(s), v: (SN._ver[col] || {})[id], _s: s });
+      if (snap[id] !== s) { const alt = (SN._semResposta[col] || {})[id]; ops.push({ colecao: col, id, doc: JSON.parse(s), v: (SN._ver[col] || {})[id], alt, _s: s }); }
     });
     // Auditoria e integrações nunca são apagadas no servidor (no navegador só guardamos as mais recentes).
     if (col === 'log' || col === 'integracoes') { Object.keys(snap).forEach(id => { if (!vistos.has(String(id))) delete snap[id]; }); return; }
@@ -115,6 +129,7 @@ SN.enviarMudancas = async () => {
     Object.assign(SN._assinEnviadas, assin);
     let conflitos = 0;
     r.resultados.forEach(x => {
+      if (SN._semResposta[x.colecao]) delete SN._semResposta[x.colecao][x.id]; // teve resposta
       const ver = SN._ver[x.colecao] = SN._ver[x.colecao] || {};
       if (x.conflito) {
         conflitos++;
@@ -127,10 +142,10 @@ SN.enviarMudancas = async () => {
     });
     if (conflitos) { SN.toast(`${conflitos} registro(s) tinham sido alterados por outra pessoa — a tela foi atualizada com a versão mais nova. Refaça sua alteração se precisar.`, 'erro'); SN.aoMudarBase(); }
   } catch (e) {
-    ops.forEach(o => { if (!o.excluir) delete SN._snap[o.colecao][o.id]; }); // volta a ser "pendente"
+    ops.forEach(o => { if (!o.excluir) { delete SN._snap[o.colecao][o.id]; (SN._semResposta[o.colecao] = SN._semResposta[o.colecao] || {})[o.id] = o._s; } }); // volta a ser "pendente"
     pendente = true;
     if (!e.message.includes('Sessão')) SN.toast('Não foi possível salvar agora (' + e.message + '). Vou tentar de novo.', 'erro');
-    clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 8000);
+    clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 5000 + Math.random() * 7000);
   } finally { enviando = false; SN.indicadorSync(); }
 };
 // Aguarda tudo ser gravado (usado antes de ações que dependem do registro já existir no servidor).

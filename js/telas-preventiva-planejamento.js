@@ -146,6 +146,7 @@
     const salvar = async despachar => {
       const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
       try {
+        if (!f.id_rota && !f.chave_cliente) f.chave_cliente = SN.vst.uid ? SN.vst.uid() : Date.now().toString(36) + Math.random().toString(36).slice(2); // reenvio não duplica a rota
         const r = await SN.vst.exec('VST_ROTA_SALVAR', { rota: f });
         if (despachar) await SN.vst.exec('VST_ROTA_STATUS', { id_rota: r.rota.id_rota, para: 'DESPACHADA' });
         SN.toast(despachar ? `Rota ${r.rota.id_rota} despachada: o chamado Preventiva está na fila do técnico.` : `Rota ${r.rota.id_rota} salva (planejada).`, 'ok');
