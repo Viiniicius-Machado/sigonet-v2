@@ -77,6 +77,7 @@ SN.carregarRemoto = async () => {
   fotografar();
   SN.guardarLocal();
   SN.carregarStatusAcessos();
+  if (SN.vst && SN.vst.preaquecer) SN.vst.preaquecer();
 };
 
 // Lista de nomes para a tela de login (sem PIN). Se a base estiver vazia, é o
@@ -301,7 +302,7 @@ if (SN.remoto) {
 // Inicialização (chamada pelo index.html)
 SN.iniciar = async () => {
   if (!SN.remoto) { SN.carregar(); SN.render(); return; }
-  document.getElementById('app').innerHTML = '<div class="login-wrap"><div class="center"><img src="' + MARCA.LOGO + '" alt="SigoNet" style="max-width:260px"><p class="muted">Conectando ao servidor…</p></div></div>';
+  document.getElementById('app').innerHTML = '<div class="abertura"><img src="' + MARCA.LOGO + '" alt="SigoNet"><p>Conectando ao servidor…</p></div>';
   try {
     // Login antigo do modo teste (sem token do servidor) não vale aqui: descarta e pede login.
     if (SN.sessao() && !SN.sessao().token) localStorage.removeItem('sigonet_v2_sessao');

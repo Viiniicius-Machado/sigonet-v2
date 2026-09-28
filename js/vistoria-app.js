@@ -35,7 +35,8 @@ SN.vst.semServidorHtml = '<div class="aviso alerta">A Preventiva precisa do serv
 // servidor recusa (ok:false com erros/fotos_pendentes). Só lança erro quando
 // não houve resposta (sem sinal, servidor ocupado) — err.rede = true.
 SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
-  const s = SN.sessao();
+  const s = SN.sessao(), grava = !/^VST_(CARREGAR|CS_BASE|LER_KMZ|FOTOS_B64)$/.test(acao);
+  if (grava) { SN.vst.cargaTs = 0; SN.vst.gravacoes++; }
   let j;
   try {
     const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }),
@@ -46,6 +47,7 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
     const err = new Error(e.name === 'TypeError' || e.name === 'TimeoutError' || e.name === 'AbortError' ? 'Sem conexão com o servidor.' : e.message);
     err.rede = true; throw err;
   }
+  if (grava) SN.vst.cargaTs = 0; // gravou algo: a próxima tela busca de novo
   if (!j.ok && j.sessao) {
     localStorage.removeItem('sigonet_v2_sessao');
     setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0);
@@ -68,13 +70,26 @@ SN.vst.exec = async (acao, dados) => {
 
 // Carga da tela (rotas, CS, vistorias, config). Guarda a última no aparelho:
 // sem sinal, a tela abre com ela.
+// Reaproveita a carga por 60 s: trocar de tela (Planejamento → Revisão → Dashboard)
+// e os re-renders da sincronização geral não vão ao servidor de novo. Qualquer
+// ação que grava (SN.vst.api) invalida; "⟳ Atualizar" força (forcar = true).
 SN.vst.dados = null;
-SN.vst.carregar = async () => {
+SN.vst.cargaTs = 0; SN.vst.gravacoes = 0;
+const VST_VALIDADE_CARGA = 60000;
+let cargaEmAndamento = null;
+SN.vst.carregar = async forcar => {
   const u = SN.usuario(), chave = 'carga|' + (u ? u.tipo + '|' + u.empresa + '|' + u.nome : '');
+  if (!forcar && SN.vst.dados && !SN.vst.dados.offline && SN.vst.dados.chave === chave && Date.now() - SN.vst.cargaTs < VST_VALIDADE_CARGA) return SN.vst.dados;
+  if (cargaEmAndamento && !forcar) return cargaEmAndamento; // duas telas pedindo juntas: uma ida só
+  const p = cargaEmAndamento = carregarDoServidor(u, chave);
+  try { return await p; } finally { if (cargaEmAndamento === p) cargaEmAndamento = null; }
+};
+const carregarDoServidor = async (u, chave) => {
+  const gravAntes = SN.vst.gravacoes;
   try {
     const r = await SN.vst.exec('VST_CARREGAR');
-    r.offline = false; r.carregadoEm = SN.agora();
-    SN.vst.dados = r;
+    r.offline = false; r.carregadoEm = SN.agora(); r.chave = chave;
+    SN.vst.dados = r; SN.vst.cargaTs = SN.vst.gravacoes === gravAntes ? Date.now() : 0; // gravou no meio: não reaproveita
     SN.VL.meta.set(chave, r).catch(() => { });
     if (u && u.tipo === 'tecnico') SN.vst.marcarTemRotas(r.rotas.length > 0);
     return r;
@@ -84,6 +99,13 @@ SN.vst.carregar = async () => {
     if (!c) throw e;
     c.offline = true; SN.vst.dados = c; return c;
   }
+};
+
+// Liderança com tela da Preventiva: já busca a carga em segundo plano logo depois de
+// entrar, para o primeiro clique no menu abrir sem esperar o servidor.
+SN.vst.preaquecer = () => {
+  if (!SN.vst.disponivel() || !SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela))) return;
+  setTimeout(() => { if (Date.now() - SN.vst.cargaTs >= VST_VALIDADE_CARGA) SN.vst.carregar().catch(() => { }); }, 2500);
 };
 
 // Resumo do que foi APROVADO na revisão (c.preventiva do chamado), com o item de

@@ -9,6 +9,7 @@ SN.rota('/login', () => {
   <div class="login-wrap"><div class="login-box">
     <div class="login-marca">
       <img class="login-logo" src="${MARCA.LOGO}" alt="SigoNet — Sistema Integrado de Gestão Operacional da Netturbo">
+      <p class="login-nome">Sistema Integrado de Gestão Operacional da Netturbo</p>
       <p class="small center">Field Desk · V2</p>
       <ul>
         <li>Chamado mede a operação: MTTD, MTTA, MTTR e SLA</li>

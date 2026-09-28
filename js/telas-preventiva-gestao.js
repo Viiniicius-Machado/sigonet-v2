@@ -72,7 +72,7 @@
             <td>${x.seg === 'AEREA' ? (x.doc.tipo === 'final' ? 'Apontamento final' : 'Apontamento parcial') + ' · ' + SN.num(x.doc.metros) + ' m' : 'CS ' + esc(x.doc.cs_nova ? 'fora do cadastro' : x.doc.id_cs)}</td>
             <td>${SN.vst.badgeVistoria(x.doc.status_revisao)}${x.doc.status_revisao === 'REJEITADA' ? '<div class="small muted">' + (x.doc.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ') + '</div>' : ''}</td>
             <td>${esc(x.doc.revisor || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Nenhuma revisão ainda.</p>'}</div>`);
-    SN.$('#rAtualizar').onclick = () => SN.render();
+    SN.$('#rAtualizar').onclick = () => { SN.vst.cargaTs = 0; SN.render(); };
     SN.$$('[data-f]').forEach(b => b.onclick = () => { filtroSeg = b.dataset.f; SN.render(); });
     SN.$$('[data-rev]').forEach(tr => tr.onclick = () => { const x = itens.find(i => i.id === tr.dataset.rev); if (x) abrirRevisao(x, d); });
   }, { tela: 'vst_revisao' });
