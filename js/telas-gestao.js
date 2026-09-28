@@ -68,8 +68,11 @@ SN.detalheLpu = id => {
   let itens = JSON.parse(JSON.stringify(l.itens || [])), assin = null;
   const hh = l.vinculo === 'CLT' ? SN.hhDaLpu(l) : null; // automática — nem o líder edita
   const catConta = SN.itensDaConta(l.cab.conta);
+  // LPU de Preventiva: mostra o que foi aprovado na revisão para comparar com o lançado.
+  const chPrev = (SN.db.chamados.find(x => x.id === l.chamadoId) || {}).preventiva;
   const corpo = () => `
     ${SN.htmlCabecalho(l.cab)}
+    ${chPrev && chPrev.lpu_sugerida ? `<div class="aviso info small">🧭 Preventiva ${SN.esc(chPrev.id_rota)} — aprovado na revisão: <b>${SN.vst.resumoAprovado(chPrev, true)}</b>.</div>` : ''}
     ${l.motivoReprovacao ? `<div class="aviso erro small">Última reprovação: ${SN.esc(l.motivoReprovacao)}</div>` : ''}
     ${hh ? SN.htmlHoraHomem(hh) : ''}
     <h4>Serviços</h4>

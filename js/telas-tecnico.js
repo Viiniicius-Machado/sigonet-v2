@@ -14,6 +14,7 @@ SN.cascaTec = (ativo, html, titulo) => {
     <div class="tec-corpo">${titulo ? `<h2>${titulo}</h2>` : ''}${html}</div>
     <nav class="tabbar">
       <a href="#/tec" class="${ativo === 'fila' ? 'ativo' : ''}"><span class="ico">📋</span>Minha fila</a>
+      ${SN.vst ? SN.vst.abaTec(ativo) : ''}
       <a href="#/tec/resumo" class="${ativo === 'resumo' ? 'ativo' : ''}"><span class="ico">📈</span>Meu resumo</a>
       ${fin ? `<a href="#/tec/financeiro" class="${ativo === 'fin' ? 'ativo' : ''}"><span class="ico">💰</span>Financeiro</a>` : ''}
     </nav></div>`;
@@ -41,6 +42,7 @@ SN.faseModulos = c => ['EM_CAMPO', 'DEVOLVIDO', 'CONCLUIDO_TECNICO', 'FECHADO'].
 SN.rota('/tec', () => {
   const u = SN.usuario();
   const minhas = SN.db.chamados.filter(c => SN.papelNo(c));
+  if (SN.vst && SN.vst.abrirDireto(minhas)) return; // só vistoria, nenhum chamado: abre as rotas de vistoria
   const ativas = minhas.filter(c => ['ATRIBUIDO', 'ACEITO', 'EM_DESLOCAMENTO', 'EM_CAMPO', 'DEVOLVIDO'].includes(c.status))
     .sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
   // Pós-atendimento: concluídas com LPU/materiais/fibra ainda por apontar (não bloqueiam o chamado).
@@ -76,7 +78,8 @@ SN.rota('/tec', () => {
 SN.pendenciasPos = c => {
   const papel = SN.papelNo(c); if (!papel || !SN.faseModulos(c)) return [];
   const out = [];
-  if (SN.podeLpu(c, papel) && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) out.push('LPU');
+  const lpuLiberada = !(c.origem === 'Preventiva' && c.preventiva && !c.preventiva.lpu_sugerida); // Preventiva: só após aprovação das CS
+  if (lpuLiberada && SN.podeLpu(c, papel) && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) out.push('LPU');
   const fib = SN.db.fibras.find(f => f.chamadoId === c.id);
   if (fib && fib.status === 'CORRECAO') out.push('Corrigir fibra');
   const lp = SN.db.lpus.find(l => l.chamadoId === c.id && l.papel === papel);
@@ -91,14 +94,17 @@ SN.rota('/tec/os/:id', id => {
   if (!c || !papel) { SN.toast('OS não encontrada na sua fila.', 'erro'); return SN.navegar('#/tec'); }
   const titular = papel === 'titular';
   const p = SN.prazoInfo(c);
-  const emCampo = ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status);
+  // Chamado gerado por rota de Preventiva: a jornada (chegada, RFO, conclusão) é
+  // conduzida pela rota; aqui ficam só os apontamentos (LPU, materiais).
+  const prev = c.origem === 'Preventiva' && c.preventiva ? c.preventiva : null;
+  const emCampo = ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) && !prev;
   const mod = SN.modulosDo(c.id);
   const lpu = mod.lpus.find(l => l.papel === papel), mat = mod.materiais.find(l => l.papel === papel), fib = mod.fibras[0];
   const libera = SN.faseModulos(c);
   const temFibra = TIPOS_COM_FIBRA.includes(c.tipo);
   const acao = {
     ATRIBUIDO: ['aceitar', '✅ Aceitar OS'], ACEITO: ['deslocar', '🚗 Iniciar deslocamento'], EM_DESLOCAMENTO: ['chegar', '📍 Cheguei no local']
-  }[c.status];
+  }[prev ? '' : c.status];
   SN.cascaTec('fila', `
     <a href="#/tec" class="small">← Minha fila</a>
     <div class="tec-os ${p.estourado ? 'estourado' : ''}" style="margin-top:8px">
@@ -117,6 +123,9 @@ SN.rota('/tec/os/:id', id => {
       </tbody></table>
     </div>
     ${c.status === 'DEVOLVIDO' ? `<div class="aviso erro" style="margin-bottom:10px">NOC devolveu: ${SN.esc(c.motivoDevolucao)}</div>` : ''}
+    ${prev ? `<div class="aviso info" style="margin-bottom:10px">🧭 Esta OS é a rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. O trabalho é feito na rota; a OS conclui sozinha quando tudo for aprovado na revisão.
+      ${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}
+      <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('#/tec/vistoria/${encodeURIComponent(prev.id_rota)}')">Abrir rota ${SN.esc(prev.id_rota)}</button></div>` : ''}
     ${titular && acao ? `<button class="btn prim lg bloco" id="bAcao">${acao[1]}</button>` : ''}
     ${titular && emCampo ? `
       <div class="card" style="margin-top:12px"><h3>Diagnóstico e tratamento</h3>
@@ -131,13 +140,17 @@ SN.rota('/tec/os/:id', id => {
           <div class="small muted" id="gpsFalhaInfo"></div></div>
         <div class="campo"><label>Observações</label><textarea class="inp" id="rObs">${SN.esc(c.rfo.obs || '')}</textarea></div>
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
-        <label class="btn bloco" style="margin-top:8px">📷 Tirar / anexar fotos<input type="file" id="inFoto" accept="image/*,application/pdf" multiple capture="environment" hidden></label>
+        <div class="grid g2" style="margin-top:8px;gap:8px">
+          <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço, lat/lng e logo (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
+          <label class="btn" title="Foto da galeria ou PDF, sem marca d'água">📎 Anexar arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
+        <p class="small muted" style="margin:4px 0 0">"Tirar foto" já sai com data, hora, endereço, coordenadas e a logo — não precisa do Timemark.</p>
         <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar RFO</button>
       </div>` : ''}
     ${libera ? `<div class="card" style="margin-top:12px"><h3>Apontamentos</h3>
       <p class="small muted">Cada um tem vida própria: salvar fecha a tela e segue para a gestão, sem prender o chamado.</p>
       <div class="modulos">
-        ${SN.podeLpu(c, papel) ? `<div class="modulo ${lpu ? 'feito' : ''}" data-go="#/tec/lpu/${c.id}/${papel}"><span class="ico">📄</span>LPU<span class="st">${lpu ? SN.LPU_STATUS[lpu.status].rot : 'Apontar serviços'}</span></div>`
+        ${prev && !prev.lpu_sugerida && !lpu ? `<div class="modulo bloq" title="Na Preventiva a LPU libera quando todas as CS forem aprovadas"><span class="ico">📄</span>LPU<span class="st">após aprovação das CS</span></div>`
+          : SN.podeLpu(c, papel) ? `<div class="modulo ${lpu ? 'feito' : ''}" data-go="#/tec/lpu/${c.id}/${papel}"><span class="ico">📄</span>LPU<span class="st">${lpu ? SN.LPU_STATUS[lpu.status].rot : 'Apontar serviços'}</span></div>`
           : `<div class="modulo bloq" title="A LPU da sua empresa é feita pelo responsável"><span class="ico">📄</span>LPU<span class="st">pelo responsável</span></div>`}
         <div class="modulo ${mat ? 'feito' : ''}" data-go="#/tec/mat/${c.id}/${papel}"><span class="ico">📦</span>Materiais<span class="st">${mat ? SN.MAT_STATUS[mat.status].rot : 'Apontar uso'}</span></div>
         ${temFibra ? `<div class="modulo ${fib ? 'feito' : ''}" data-go="#/tec/fibra/${c.id}"><span class="ico">🧵</span>Cadastro de fibra<span class="st">${fib ? SN.FIB_STATUS[fib.status].rot : 'Se houve fusão'}</span></div>`
@@ -223,6 +236,21 @@ SN.rota('/tec/os/:id', id => {
       for (const f of ev.target.files) { try { c.fotos.push(await SN.guardarArquivo(f, c.id)); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
       SN.hist(c, 'Evidências anexadas', ev.target.files.length + ' arquivo(s)'); SN.salvar(); SN.pintarFotos(SN.$('#tecFotos'), c.fotos);
     };
+    // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado) + logo NetTurbo.
+    SN.$('#inCam').onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      salvarRfo(); SN.toast('Processando foto (GPS e endereço)…');
+      try {
+        const r = await SN.VF.fotoCarimbada(f, `${c.id} · ${c.cliente || ''}${c.etiqueta ? ' · ' + c.etiqueta : ''}`);
+        const ax = await SN.guardarDataUrl(r.dataUrl, 'foto_' + r.agora.replace(/[-:T]/g, '').slice(0, 14) + '.jpg', 'imagem', c.id);
+        Object.assign(ax, { lat: r.pos ? r.pos.lat : '', lng: r.pos ? r.pos.lng : '', endereco: r.endereco || '', capturadaEm: r.agora });
+        c.fotos.push(ax);
+        SN.hist(c, 'Foto tirada no app', r.endereco || (r.pos ? r.pos.lat + ',' + r.pos.lng : 'sem GPS'));
+        SN.salvar(); SN.pintarFotos(SN.$('#tecFotos'), c.fotos);
+        if (!r.pos) SN.toast('Foto salva sem GPS: permita a localização para sair com endereço e coordenadas.', 'erro');
+      } catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
+      ev.target.value = '';
+    };
     SN.$('#bConcluir').onclick = async () => {
       const cl = salvarRfo();
       if (!c.rfo.causa || !c.rfo.acao || !c.rfo.solucao) { SN.salvar(); return SN.toast('Preencha causa, ação e solução para concluir (análise e tratamento são obrigatórios).', 'erro'); }
@@ -253,12 +281,21 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const c = SN.db.chamados.find(x => x.id === id);
   if (!c || !SN.podeLpu(c, papel)) { SN.toast('Sem acesso à LPU deste chamado.', 'erro'); return SN.navegar('#/tec'); }
   let l = SN.db.lpus.find(x => x.chamadoId === id && x.papel === papel);
+  // Preventiva: só depois que todas as CS da rota forem aprovadas (só aprovada é paga).
+  const prev = c.origem === 'Preventiva' && c.preventiva ? c.preventiva : null;
+  if (prev && !prev.lpu_sugerida && !l) { SN.toast('A LPU da Preventiva libera quando todas as CS da rota forem aprovadas.', 'erro'); return SN.navegar('#/tec/os/' + id); }
   const h = l ? l.cab : SN.cabecalhoDe(c, papel);
   const emp = SN.empresa(h.empresa), vinc = emp.vinculo;
   const editavel = !l || ['AGUARDANDO_LIDER', 'REPROVADA'].includes(l.status);
   const itens = SN.itensDaConta(h.conta);
   const qtd = {}; const fator = {};
   (l ? l.itens : []).forEach(i => { qtd[i.cod] = i.qtd; fator[i.cod] = i.fator; });
+  // LPU nova de Preventiva: já vem com as quantidades das CS aprovadas.
+  const foraDaConta = [];
+  if (!l && prev && prev.lpu_sugerida) Object.entries(prev.lpu_sugerida).forEach(([cod, q]) => {
+    if (!(q > 0)) return;
+    if (itens.some(i => i.cod === cod)) qtd[cod] = q; else foraDaConta.push(cod);
+  });
   const hh = SN.horaHomem(c, papel); // automática, vinda dos KPIs do chamado
   let assinatura = l ? l.assinaturaTecnico : null;
   SN.cascaTec('fila', `
@@ -267,6 +304,9 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     ${l && l.status === 'REPROVADA' ? `<div class="aviso erro" style="margin-bottom:10px">Reprovada: ${SN.esc(l.motivoReprovacao)}</div>` : ''}
     ${l && !editavel ? `<div class="aviso info" style="margin-bottom:10px">Status: ${SN.LPU_STATUS[l.status].rot}. Já está com a gestão — não pode mais ser editada.</div>` : ''}
     <div class="aviso info small" style="margin-bottom:10px">Aqui você registra apenas <b>o que foi feito (volume)</b>. O valor financeiro é tratado pela gestão.</div>
+    ${prev && prev.lpu_sugerida ? `<div class="aviso ok small" style="margin-bottom:10px">🧭 Preventiva ${SN.esc(prev.id_rota)}: quantidades calculadas do que foi <b>aprovado</b> na revisão —
+      ${SN.vst.resumoAprovado(prev)}. Confira, assine e envie.
+      ${foraDaConta.length ? `<br><b>Atenção:</b> ${foraDaConta.join(', ')} não está na conta desta OS — avise a gestão.` : ''}</div>` : ''}
     ${vinc === 'CLT' ? SN.htmlHoraHomem(hh) : ''}
     ${vinc === 'CONTRATO_FIXO' ? '<div class="aviso alerta small" style="margin-bottom:10px">Contrato fixo: a produção conta para a meta mensal, sem valor por item.</div>' : ''}
     <div class="card" style="margin-top:12px"><div class="card-tit"><h3>Serviços</h3><span class="badge" id="lpuCont"></span></div>
@@ -280,6 +320,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const pintar = () => {
     const q = SN.normal(SN.$('#lpuBusca').value);
     const vis = itens.filter(i => !q || SN.normal(i.cod + ' ' + i.desc).includes(q));
+    if (prev) vis.sort((a, b) => (qtd[b.cod] ? 1 : 0) - (qtd[a.cod] ? 1 : 0)); // Preventiva: itens preenchidos primeiro
     SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>
       <div class="c">${i.cod} · ${i.classe} · por ${i.medida}
       ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>

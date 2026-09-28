@@ -66,7 +66,7 @@ const CONTRATOS_FIXOS = [
 const CICLO_LPU = { diaPagamento: 15 };
 
 // Metas operacionais (mesma régua do V1).
-const METAS = { mttdMin: 60, tmcMin: 180, irrPct: 10, preventivaMetrosMes: 76000 };
+const METAS = { mttdMin: 60, tmcMin: 180, irrPct: 10, preventivaMetrosMes: 78000 };
 
 const MOTIVOS_DISPONIBILIDADE = {
   INATIVO: 'Inativo', FERIAS: 'Férias', TREINAMENTO: 'Treinamento', SUSPENSAO: 'Suspensão Disciplinar',

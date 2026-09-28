@@ -336,6 +336,8 @@ SN.rota('/chamado/:id', id => {
       <div class="nome">${n}</div><div class="hora">${ts ? SN.dt(ts) : '—'}</div>${dur != null ? `<div class="dur">+${SN.dur(dur)}</div>` : ''}</div>`;
   }).join('');
   const aberto = SN.STATUS[c.status].aberto;
+  // Chamado gerado por rota de Preventiva: despacho, conclusão e cancelamento vêm da rota.
+  const prev = c.origem === 'Preventiva' && c.preventiva ? c.preventiva : null;
   const linhaMod = (rotulo, lista, mapa, rota, valor) => `<tr><td><b>${rotulo}</b></td><td>${lista.length ? lista.map(x =>
     `<a href="#/${rota}/${x.id}">${x.id}</a> ${SN.badge(mapa, x.status)}${valor ? ' · ' + valor(x) : ''}${x.papel === 'apoio' ? ' <span class="badge">APOIO</span>' : ''}`).join('<br>') : '<span class="muted">Nenhum registro</span>'}</td></tr>`;
   SN.casca('chamados', `
@@ -343,10 +345,11 @@ SN.rota('/chamado/:id', id => {
       <h1>${c.id} · ${SN.esc(c.cliente)}</h1>
       <p>${SN.badgeStatus(c.status)} <span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${c.tipo ? `<span class="badge verde">${SN.esc(c.tipo)} · SLA ${c.slaHoras}h</span>` : '<span class="badge alerta">Sem classificação</span>'}</p></div>
       <div class="acoes">
-        ${aberto && c.status !== 'CONCLUIDO_TECNICO' ? `<button class="btn" id="bClass">${c.tipo ? 'Reclassificar' : 'Classificar'}</button><button class="btn prim" id="bAtr">${c.tecnico ? 'Reatribuir' : 'Atribuir técnico'}</button>` : ''}
-        ${c.status === 'CONCLUIDO_TECNICO' ? `<button class="btn perigo" id="bDev">Devolver ao técnico</button><button class="btn ok" id="bFechar">Fechar chamado</button>` : ''}
-        ${aberto && c.status !== 'CONCLUIDO_TECNICO' ? '<button class="btn perigo" id="bCanc">Cancelar</button>' : ''}
+        ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev ? `<button class="btn" id="bClass">${c.tipo ? 'Reclassificar' : 'Classificar'}</button><button class="btn prim" id="bAtr">${c.tecnico ? 'Reatribuir' : 'Atribuir técnico'}</button>` : ''}
+        ${c.status === 'CONCLUIDO_TECNICO' ? `${prev ? '' : '<button class="btn perigo" id="bDev">Devolver ao técnico</button>'}<button class="btn ok" id="bFechar">Fechar chamado</button>` : ''}
+        ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev ? '<button class="btn perigo" id="bCanc">Cancelar</button>' : ''}
         <button class="btn" id="bPdf">PDF do atendimento</button></div></div>
+    ${prev ? `<div class="aviso info" style="margin-bottom:12px">🧭 Chamado gerado pela rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. Despacho, chegada e conclusão técnica vêm da rota (conclui quando tudo for aprovado na revisão). Para cancelar, retire o despacho da rota.${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}</div>` : ''}
     ${(() => { const ant = SN.reincidencia(c); if (!ant) return '';
       const dias = Math.round((new Date(c.tempos.abertura) - new Date(ant.tempos.conclusaoTecnica || ant.tempos.fechamento)) / 864e5);
       return `<div class="aviso alerta" style="margin-bottom:12px">⚠ <b>Reincidente (IRR)</b>: a etiqueta ${SN.esc(SN.etiquetaIrr(c))} teve o chamado

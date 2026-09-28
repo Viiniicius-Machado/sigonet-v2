@@ -11,11 +11,22 @@ SN.barras = (pares, fmt) => {
 SN.contar = (lista, chave) => { const o = {}; lista.forEach(x => { const k = chave(x); if (k) o[k] = (o[k] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
 
 // ═══════════════════════════ Portal de Gestão ═══════════════════════════
-SN.fPortal = { mes: SN.agora().slice(0, 7), tipo: '', emp: '' };
+SN.fPortal = { mes: SN.agora().slice(0, 7), tipo: '', emp: '', natureza: '' };
+// Visões por natureza da ocorrência (Categoria 2 da matriz de SLA).
+// Improdutivas: qualquer classificação improdutiva, em todos os segmentos (combine com o filtro de segmento).
+SN.ehImprodutiva = c => /improdutiva/i.test([c.cat1, c.cat2, c.cat3].join('|'));
+SN.NATUREZAS = [
+  ['', 'Global', null, ''],
+  ['Rompimento', 'Rompimento', c => c.cat2 === 'Rompimento', 'só chamados com Categoria 2 = <b>Rompimento</b> (Manutenção · Rede Externa)'],
+  ['Massiva', 'Massiva', c => c.cat2 === 'Massiva', 'só chamados com Categoria 2 = <b>Massiva</b> (Manutenção · Rede Externa)'],
+  ['Improdutivas', 'Improdutivas', c => SN.ehImprodutiva(c), 'chamados com classificação <b>improdutiva</b>, de qualquer segmento (use o filtro de segmento para separar)']
+];
+SN.naturezaDe = k => SN.NATUREZAS.find(n => n[0] === k) || SN.NATUREZAS[0];
 SN.rota('/portal', () => {
   const f = SN.fPortal, d = SN.db;
   const meses = [...new Set([f.mes, SN.agora().slice(0, 7), ...d.chamados.map(c => SN.mesChave(c.tempos.abertura))])].filter(Boolean).sort().reverse();
-  const filtra = c => (!f.tipo || c.tipo === f.tipo) && (!f.emp || c.empresa === f.emp);
+  const filtraBase = c => (!f.tipo || c.tipo === f.tipo) && (!f.emp || c.empresa === f.emp);
+  const filtra = c => filtraBase(c) && (!f.natureza || SN.naturezaDe(f.natureza)[2](c));
   const abertos = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.abertura) === f.mes && c.status !== 'CANCELADO');
   const concl = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.conclusaoTecnica) === f.mes);
   const ms = concl.map(c => ({ c, m: SN.metricas(c) }));
@@ -43,6 +54,18 @@ SN.rota('/portal', () => {
   const irr = irrDe(f.mes), irrAnt = irrDe(mesAnt);
   const pctTxt = v => v == null ? '—' : SN.num(v * 100, 1) + '%';
   const irrForaDoFiltro = f.tipo && !SN.IRR.tipos.includes(f.tipo);
+  // KPIs lado a lado por natureza (Rompimento × Massiva × demais), no mês e filtros de segmento/empresa.
+  const resumoDe = pred => {
+    const ab = d.chamados.filter(c => filtraBase(c) && pred(c) && SN.mesChave(c.tempos.abertura) === f.mes && c.status !== 'CANCELADO');
+    const co = d.chamados.filter(c => filtraBase(c) && pred(c) && SN.mesChave(c.tempos.conclusaoTecnica) === f.mes).map(c => SN.metricas(c));
+    const dn = co.filter(m => m.sla === true).length;
+    const base = d.chamados.filter(c => filtraBase(c) && pred(c) && SN.mesChave(c.tempos.abertura) === f.mes && SN.entraNoIrr(c));
+    const rep = base.filter(c => SN.reincidencia(c)).length;
+    return { vol: ab.length, concl: co.length, mttd: SN.media(co.map(m => m.mttd)), mtta: SN.media(co.map(m => m.mtta)), mttr: SN.media(co.map(m => m.mttr)),
+      dentro: dn, sla: co.length ? dn / co.length : null, irr: base.length ? rep / base.length : null, rep, base: base.length };
+  };
+  const porNatureza = f.natureza ? [] : SN.NATUREZAS.filter(n => n[2]).map(n => [n[0], n[2]]).concat([['Demais ocorrências', c => !SN.NATUREZAS.some(n => n[2] && n[2](c))]]).map(([n, p]) => [n, resumoDe(p)]);
+  const corIrr = v => v > .1 ? 'var(--erro)' : v > .05 ? 'var(--alerta)' : 'inherit';
   SN.casca('portal', `
     <div class="cab-pagina"><div><h1>Portal de Gestão</h1><p>Visão do ciclo completo: chamados, LPU, materiais e fibra — com relatórios do período e assinatura do fechamento.</p></div>
       <div class="acoes"><button class="btn" id="bRelCh">Relatório de chamados</button><button class="btn" id="bRelTec">Eficiência por técnico</button></div></div>
@@ -50,14 +73,25 @@ SN.rota('/portal', () => {
       <select class="inp" id="pMes">${meses.map(m => `<option value="${m}" ${m === f.mes ? 'selected' : ''}>${SN.mesNome(m)} (dia 1º a ${new Date(+m.slice(0, 4), +m.slice(5), 0).getDate()})</option>`).join('')}</select>
       <select class="inp" id="pTipo"><option value="">Todos os segmentos</option>${tiposLista.map(t => `<option ${t === f.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
       <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div>
-    <div class="grid g6">
+    <div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
+      ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>
+    <div class="kpis7">
       <div class="kpi destaque"><div class="rot">Volume</div><div class="val">${abertos.length}</div><div class="sub">chamados abertos no mês</div></div>
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho</div></div>
       <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo</div></div>
       <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → conclusão</div></div>
       <div class="kpi"><div class="rot">SLA</div><div class="val">${ef == null ? '—' : SN.num(ef * 100) + '%'}</div><div class="sub">${dentro} dentro · ${fora} fora (${concl.length} concluídos)</div></div>
       <div class="kpi"><div class="rot">Eficiência</div><div class="val">${ef == null ? '—' : SN.num(ef * 10, 1) + '/10'}</div><div class="sub">a cada 10 chamados, no prazo</div></div>
+      <a class="kpi" href="javascript:void 0" id="kIrr" title="Ver o detalhe do IRR" style="color:inherit;text-decoration:none"><div class="rot">IRR ↓</div>
+        <div class="val" style="color:${irrForaDoFiltro ? 'inherit' : corIrr(irr.pct)}">${irrForaDoFiltro ? '—' : pctTxt(irr.pct)}</div>
+        <div class="sub">${irrForaDoFiltro ? 'só ' + SN.IRR.tipos.join('/') : `${irr.rep.length} reincidentes de ${irr.base.length} · mês anterior ${pctTxt(irrAnt.pct)}`}</div></a>
     </div>
+    ${porNatureza.length ? `<div class="card" style="margin-top:14px"><div class="card-tit"><h3>KPIs por natureza da ocorrência</h3><span class="muted small">classificação da matriz · clique para filtrar</span></div>
+      <div class="tabela-wrap"><table class="tab"><thead><tr><th>Natureza</th><th class="num">Volume</th><th class="num">Concluídos</th><th class="num">MTTD</th><th class="num">MTTA</th><th class="num">MTTR</th><th class="num">SLA</th><th class="num">IRR</th></tr></thead><tbody>
+      ${porNatureza.map(([n, r]) => `<tr class="${n === 'Demais ocorrências' ? '' : 'clic'}" ${n === 'Demais ocorrências' ? '' : `data-nat="${n}"`}><td><b>${n}</b></td><td class="num">${r.vol}</td><td class="num">${r.concl}</td>
+        <td class="num">${SN.dur(r.mttd)}</td><td class="num">${SN.dur(r.mtta)}</td><td class="num">${SN.dur(r.mttr)}</td>
+        <td class="num">${r.sla == null ? '—' : `<span class="badge ${r.sla >= .9 ? 'ok' : r.sla >= .7 ? 'alerta' : 'erro'}">${SN.num(r.sla * 100)}%</span>`}</td>
+        <td class="num" style="color:${corIrr(r.irr)}" title="${r.rep} reincidentes de ${r.base}">${pctTxt(r.irr)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="grid g2" style="margin-top:14px;grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
       <div class="card"><div class="card-tit"><h3>Eficiência por técnico</h3><span class="muted small">concluídos no mês</span></div>
         <div class="tabela-wrap" style="max-height:420px"><table class="tab"><thead><tr><th>Técnico</th><th>Empresa</th><th class="num">Chamados</th><th class="num">Dentro</th><th class="num">Fora</th><th class="num">SLA</th><th class="num">MTTR</th><th class="num" title="Hora-homem automática (CLT/NETTURBO)">h·h</th></tr></thead><tbody>
@@ -69,7 +103,7 @@ SN.rota('/portal', () => {
       <div class="card"><h3>Chamados por técnico</h3>${SN.barras(tecs.slice(0, 15).map(([t, o]) => [SN.nomeExibicao(t), o.n, o.emp]))}</div>
     </div>
     <div class="grid g2" style="margin-top:14px;grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
-      <div class="card"><div class="card-tit"><h3>IRR · Índice de Recursos Repetitivos</h3><span class="muted small">mesmo circuito com novo chamado em até ${SN.IRR.dias} dias</span></div>
+      <div class="card" id="cardIrr"><div class="card-tit"><h3>IRR · Índice de Recursos Repetitivos${f.natureza ? ' · ' + SN.esc(f.natureza) : ''}</h3><span class="muted small">mesmo circuito com novo chamado em até ${SN.IRR.dias} dias</span></div>
         ${irrForaDoFiltro ? `<p class="muted small">O IRR considera só ${SN.IRR.tipos.join(' e ')}. Escolha um desses segmentos ou "Todos" no filtro.</p>` : `
         <div class="grid g3" style="margin-bottom:10px">
           <div class="kpi destaque"><div class="rot">IRR do mês</div><div class="val" style="color:${irr.pct > .1 ? 'var(--erro)' : irr.pct > .05 ? 'var(--alerta)' : 'inherit'}">${pctTxt(irr.pct)}</div><div class="sub">${irr.rep.length} reincidentes de ${irr.base.length} chamados</div></div>
@@ -128,7 +162,9 @@ SN.rota('/portal', () => {
   SN.$('#pMes').onchange = e => { f.mes = e.target.value; SN.render(); };
   SN.$('#pTipo').onchange = e => { f.tipo = e.target.value; SN.render(); };
   SN.$('#pEmp').onchange = e => { f.emp = e.target.value; SN.render(); };
-  SN.$('#bRelCh').onclick = () => SN.exportar('chamados_' + f.mes, abertos.concat(concl.filter(c => !abertos.includes(c))).map(c => { const m = SN.metricas(c), ant = SN.reincidencia(c);
+  SN.$$('[data-nat]').forEach(b => b.onclick = () => { f.natureza = b.dataset.nat; SN.render(); });
+  SN.$('#kIrr').onclick = () => { const c = SN.$('#cardIrr'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  SN.$('#bRelCh').onclick = () => SN.exportar('chamados_' + f.mes + (f.natureza ? '_' + f.natureza : ''), abertos.concat(concl.filter(c => !abertos.includes(c))).map(c => { const m = SN.metricas(c), ant = SN.reincidencia(c);
     return { Chamado: c.id, Origem: c.origem, ProtocoloNOC: c.protocoloNoc, ProtocoloOEM: c.protocoloOem, Cliente: c.cliente, Etiqueta: c.etiqueta, Cidade: c.cidade,
       Tipo: c.tipo, Cat1: c.cat1, Cat2: c.cat2, Cat3: c.cat3, Cat4: c.cat4, SLAh: c.slaHoras, Conta: c.conta, Empresa: c.empresa, Tecnico: c.tecnico,
       Apoio: c.apoio ? c.apoio.tecnico : '', Status: SN.STATUS[c.status].rot, Abertura: SN.dt(c.tempos.abertura), Despacho: SN.dt(c.tempos.atribuicao),
@@ -155,7 +191,7 @@ SN.rota('/portal', () => {
     SN.log('FECHAMENTO_MENSAL', f.mes, SN.brl(total)); SN.salvar();
     const doc = SN.novoPdf('Extrato de atividades · ' + SN.mesNome(f.mes));
     if (doc) {
-      doc.secao('Operação'); doc.linha('Chamados abertos', abertos.length); doc.linha('Concluídos', concl.length);
+      doc.secao('Operação'); if (f.natureza) doc.linha('Visão', f.natureza); doc.linha('Chamados abertos', abertos.length); doc.linha('Concluídos', concl.length);
       doc.linha('SLA', ef == null ? '—' : `${SN.num(ef * 100)}% (${dentro} dentro / ${fora} fora)`);
       doc.linha('MTTD / MTTA / MTTR', `${SN.dur(SN.media(ms.map(x => x.m.mttd)))} / ${SN.dur(SN.media(ms.map(x => x.m.mtta)))} / ${SN.dur(SN.media(ms.map(x => x.m.mttr)))}`);
       if (!irrForaDoFiltro) doc.linha('IRR (reincidência ' + SN.IRR.dias + ' dias)', `${pctTxt(irr.pct)} (${irr.rep.length} de ${irr.base.length})`);
