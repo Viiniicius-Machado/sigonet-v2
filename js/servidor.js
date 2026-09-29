@@ -29,6 +29,9 @@ SN.api = async (acao, dados, tentativa = 1) => {
     const txt = await r.text();
     // Com o servidor ocupado o Google devolve uma página HTML de erro em vez de JSON.
     try { j = JSON.parse(txt); } catch (e) { throw new Error('Servidor ocupado no momento. Tente de novo em alguns segundos.'); }
+    // Google instável às vezes entrega a página de status (doGet) no lugar da resposta do pedido
+    // (visto no teste de carga). A resposta se perdeu: trata como "sem resposta" e tenta de novo.
+    if (j && j.sistema && j.hora && !j.erro) throw new Error('Resposta do servidor se perdeu.');
   } catch (e) {
     if (tentativa < 3 && REPETIVEIS.includes(acao)) { await espera(1500 * tentativa, 2000); return SN.api(acao, dados, tentativa + 1); }
     const err = new Error(e instanceof TypeError || e.name === 'TimeoutError' || e.name === 'AbortError' ? 'Sem conexão com o servidor.' : e.message); err.rede = true; throw err;
@@ -79,7 +82,9 @@ SN.carregarRemoto = async () => {
   SN.guardarLocal();
   SN.carregarStatusAcessos();
   if (SN.vst && SN.vst.preaquecer) SN.vst.preaquecer();
-  if (SN.reabastecerIds) setTimeout(SN.reabastecerIds, 3000); // técnico: números para criar registro sem sinal
+  // Técnico: números para criar registro sem sinal. Horário sorteado (1 a 6 min): no começo do
+  // turno todos entram juntos e o pedido usa a trava do servidor (teste de carga).
+  if (SN.reabastecerIds) setTimeout(SN.reabastecerIds, 60000 + Math.random() * 300000);
   setTimeout(SN.subirAnexos, 2500); // fotos que ficaram no aparelho (ex.: página recarregou ao abrir a câmera)
 };
 
@@ -331,10 +336,12 @@ if (SN.remoto) {
     const s = SN.sessao(); if (!s || s.tipo !== 'tecnico' || reabastecendo || SN.offline) return;
     reabastecendo = true;
     try {
-      for (const p of RESERVA_PREFIXOS) {
-        if ((lerReserva()[p] || []).length >= 2) continue;
-        const r = await SN.api('PROX_ID', { prefixo: p, qtd: RESERVA_QTD });
-        const res = lerReserva(); res[p] = (res[p] || []).concat(r.ids || [r.id]); gravarReserva(res);
+      const faltam = RESERVA_PREFIXOS.filter(p => (lerReserva()[p] || []).length < 2);
+      if (faltam.length) { // um pedido só para todos os tipos (uma trava no servidor)
+        const r = await SN.api('PROX_ID', { prefixo: faltam[0], prefixos: faltam, qtd: RESERVA_QTD });
+        const res = lerReserva(), por = r.porPrefixo || { [faltam[0]]: r.ids || [r.id] };
+        Object.keys(por).forEach(p => { res[p] = (res[p] || []).concat(por[p]); });
+        gravarReserva(res);
       }
     } catch (e) { /* sem sinal: tenta na próxima */ } finally { reabastecendo = false; }
   };
@@ -342,7 +349,7 @@ if (SN.remoto) {
   SN.novoId = async pref => {
     const semSinal = SN.offline || navigator.onLine === false;
     if (semSinal) { const id = usarReserva(pref); if (id) return id; }
-    try { const r = await SN.api('PROX_ID', { prefixo: pref }); setTimeout(SN.reabastecerIds, 1500); return r.id; }
+    try { const r = await SN.api('PROX_ID', { prefixo: pref }); setTimeout(SN.reabastecerIds, 5000 + Math.random() * 20000); return r.id; }
     catch (e) {
       if (!e.rede) throw e;
       SN.offline = true; SN.indicadorSync();

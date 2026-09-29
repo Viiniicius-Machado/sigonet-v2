@@ -43,6 +43,7 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
       signal: AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined });
     const txt = await r.text();
     try { j = JSON.parse(txt); } catch (e) { throw new Error('Servidor ocupado no momento.'); }
+    if (j && j.sistema && j.hora && !j.erro) throw new Error('Resposta do servidor se perdeu.'); // página de status no lugar da resposta (Google instável)
   } catch (e) {
     const err = new Error(e.name === 'TypeError' || e.name === 'TimeoutError' || e.name === 'AbortError' ? 'Sem conexão com o servidor.' : e.message);
     err.rede = true; throw err;
