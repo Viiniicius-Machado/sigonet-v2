@@ -88,10 +88,10 @@ SN.rota('/portal', () => {
   SN.casca('portal', `
     <div class="cab-pagina"><div><h1>Portal de Gestão</h1><p>Visão do ciclo completo: chamados, LPU, materiais e fibra — com relatórios do período e assinatura do fechamento.</p></div>
       <div class="acoes"><button class="btn" id="bRelCh">Relatório de chamados</button><button class="btn" id="bRelTec">Eficiência por técnico</button></div></div>
-    <div class="linha-form" style="margin-bottom:14px">
+    <div class="card card-filtros"><div class="filtros">
       <select class="inp" id="pMes">${meses.map(m => `<option value="${m}" ${m === f.mes ? 'selected' : ''}>${SN.mesNome(m)} (dia 1º a ${new Date(+m.slice(0, 4), +m.slice(5), 0).getDate()})</option>`).join('')}</select>
       <select class="inp" id="pTipo"><option value="">Todos os segmentos</option>${tiposLista.map(t => `<option ${t === f.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div>
+      <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div></div>
     ${temNatureza ? `<div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
       ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>` : ''}
     <div class="kpis7">
@@ -226,8 +226,8 @@ SN.rota('/portal', () => {
 }, { tela: 'portal' });
 
 // ═══════════════════════════ Cadastros e Acessos ═══════════════════════════
-SN.TELAS = { chamados: 'Chamados (NOC)', lpu: 'Gestão de LPU', servicedesk: 'Service Desk', materiais: 'Gestão de Materiais', fibra: 'Cadastro de Fibra',
-  portal: 'Portal de Gestão', cadastros: 'Cadastros e Acessos', auditoria: 'Auditoria' };
+SN.TELAS = { chamados: 'Chamados (NOC)', lpu: 'Gestão de LPU', servicedesk: 'Service Desk', materiais: 'Controle de Materiais', fibra: 'Cadastro de Fibra',
+  base: 'Base OEM', portal: 'Portal de Gestão', cadastros: 'Cadastros e Acessos', auditoria: 'Auditoria' };
 SN.abaCad = 'tecnicos';
 // Com servidor, PIN/complemento ficam só na planilha; a tela recebe apenas "configurado sim/não".
 SN.acessoOk = x => SN.remoto ? !!(SN._acessos[x.id] && SN._acessos[x.id].configurado) : !!x.complementoHash;
@@ -277,14 +277,12 @@ SN.rota('/cadastros', () => {
     <div class="card"><h3>Onde os dados ficam</h3><p class="small">Conectado ao servidor do V2: os registros ficam na planilha <b>SigoNet V2 - Base</b> (uma aba por assunto)
       e fotos, PDFs e NFs na pasta do Drive <b>SigoNet V2 - Anexos</b>. O V1 não é alterado.</p>
       <p class="small muted">Endereço: <span class="mono">${SN.esc(SIGONET_SERVIDOR)}</span></p>
-      <div class="acoes"><button class="btn" id="bBackup">Baixar cópia (.json)</button></div></div>
-    <div class="card"><h3>Zerar operação</h3><p class="small muted">Apaga chamados, LPUs, materiais, fibras e pagamentos da planilha (para começar do zero depois dos testes).
-      Cadastros, PINs e auditoria são mantidos. A demonstração fica desativada na base real.</p>
-      <button class="btn perigo" id="bZerar">Zerar operação</button></div></div>` : `<div class="grid g2">
+      <div class="acoes"><button class="btn" id="bBackup">Baixar cópia (.json)</button></div></div></div>` : `<div class="grid g2">
     <div class="card"><h3>Backup da base</h3><p class="small muted">Modo teste: os dados ficam só neste navegador. Para a equipe usar junto, configure o servidor (README → Servidor).</p>
-      <div class="acoes"><button class="btn" id="bBackup">Baixar backup (.json)</button><label class="btn">Restaurar backup<input type="file" id="inRest" accept=".json" hidden></label></div></div>
+      <div class="acoes"><button class="btn" id="bBackup">Baixar backup (.json)</button></div></div>
     <div class="card"><h3>Demonstração</h3><p class="small muted">Gera chamados fictícios no mês atual (marcados como "Demo") com os técnicos reais, para testar telas e indicadores.</p>
-      <div class="acoes"><button class="btn" id="bDemo">Gerar dados de demonstração</button><button class="btn perigo" id="bZerar">Zerar base</button></div></div></div>`;
+      <div class="acoes"><button class="btn" id="bDemo">Gerar dados de demonstração</button></div></div></div>`;
+  // Sem "Zerar" nem "Restaurar backup": nenhuma opção da tela apaga ou substitui a base inteira.
   SN.casca('cadastros', `<div class="cab-pagina"><div><h1>Cadastros e Acessos</h1><p>Tudo editável aqui — sem mexer em código.</p></div></div>
     <div class="abas">${abas.map(([k, r]) => `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>${html}`);
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaCad = b.dataset.aba; SN.render(); });
@@ -299,20 +297,7 @@ SN.rota('/cadastros', () => {
   if (q('bBackup')) {
     q('bBackup').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(SN.db)], { type: 'application/json' }));
       a.download = 'sigonet_v2_backup_' + SN.agora().slice(0, 10) + '.json'; a.click(); SN.log('BACKUP', ''); SN.salvar(); };
-    if (q('inRest')) q('inRest').onchange = async ev => { try { const nova = JSON.parse(await ev.target.files[0].text()); if (nova.versao !== 1 || !nova.chamados) throw 0;
-      if (!await SN.confirmar('Restaurar backup', 'Substituir a base atual pelo backup? (anexos/fotos não vêm no backup)', 'Restaurar', 'perigo')) return;
-      SN.db = nova; SN.log('RESTAURAR_BACKUP', ''); SN.salvar(); SN.render(); } catch (e) { SN.toast('Arquivo de backup inválido.', 'erro'); } };
     if (q('bDemo')) q('bDemo').onclick = () => { SN.gerarDemo(); SN.toast('Dados de demonstração gerados.', 'ok'); };
-    q('bZerar').onclick = async () => { if (!SN.ehGestor()) return SN.toast('Só Gestor/Gerente.', 'erro');
-      if (SN.remoto) {
-        if (!await SN.confirmar('Zerar operação no servidor', 'Apagar da planilha TODOS os chamados, LPUs, materiais, fibras e pagamentos? Não tem volta. Cadastros, PINs e auditoria ficam.', 'Apagar tudo', 'perigo')) return;
-        try { await SN.salvarAgora(); await SN.api('ZERAR_OPERACAO'); SN.log('ZERAR_OPERACAO', ''); await SN.carregarRemoto(); SN.toast('Operação zerada.', 'ok'); SN.render(); }
-        catch (e) { SN.toast(e.message, 'erro'); }
-        return;
-      }
-      if (!await SN.confirmar('Zerar base', 'Apagar TODOS os chamados, LPUs, materiais, fibras e pagamentos? Os cadastros (técnicos, prestadores, liderança, PINs) são mantidos.', 'Apagar tudo', 'perigo')) return;
-      Object.assign(SN.db, { chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], integracoes: [], seq: { CH: 0, LPU: 0, MAT: 0, FIB: 0, PAG: 0 } });
-      await SN.anexos.limpar(); SN.log('ZERAR_BASE', ''); SN.salvar(); SN.render(); };
   }
 }, { tela: 'cadastros' });
 
@@ -458,7 +443,7 @@ SN.gerarDemo = () => {
         assinaturaSD: lst === 'CONTABILIZADA' ? { nome: 'Giselle Silva', papel: 'Service Desk', ts: c.tempos.conclusaoTecnica, n: 1 } : null, historico: [] });
       if (rnd(2)) SN.db.materiais.push({ id: SN.proxId('MAT'), chamadoId: c.id, papel: 'titular', cab: SN.cabecalhoDe(c, 'titular'), cliente: c.cliente,
         itens: [{ tipo: 'INS', cod: 'INS000093', desc: 'CABO ÓPTICO ASU80 SM CFOA NR - 12FO', qtd: 50 + rnd(200), seriais: [] }, { tipo: 'INS', cod: 'INS000044', desc: 'PLAQUETA DE IDENTIFICAÇÃO DE FO - NETTURBO', qtd: 1 + rnd(8), seriais: [] }],
-        obs: '', status: pick(['REGISTRADO', 'CONFERIDO', 'BAIXADO_SAP']), registradoEm: c.tempos.conclusaoTecnica, historico: [] });
+        obs: '', status: pick(['REGISTRADO', 'CONFERIDO']), registradoEm: c.tempos.conclusaoTecnica, historico: [] });
       if (TIPOS_COM_FIBRA.includes(c.tipo) && rnd(3) === 0) SN.db.fibras.push({ id: SN.proxId('FIB'), chamadoId: c.id, cab: SN.cabecalhoDe(c, 'titular'), cliente: c.cliente,
         ceos: [{ numero: String(1000 + rnd(8999)), tipoCaixa: 'Nova', modelo: '', gps: '', nomA: 'CB-' + rnd(99), caboA: '12F', nomB: 'CB-' + rnd(99), caboB: '12F', splitter: '',
           ligacoes: Array.from({ length: 12 }, (_, k) => ({ de: 'A' + (k + 1), para: 'B' + (k + 1) })), obs: '' }],

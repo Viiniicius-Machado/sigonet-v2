@@ -52,11 +52,11 @@
       && (!filtro.q || SN.normal([r.id_rota, r.cidade, r.cluster, r.motivo, r.prestador, r.tecnico, r.id_chamado, r.notificacao].join(' ')).includes(SN.normal(filtro.q))))
       .sort((a, b) => String(b.criada_em || b.data_planejada).localeCompare(String(a.criada_em || a.data_planejada)));
     SN.$('#pCorpo').innerHTML = `
-      <div class="linha-form" style="margin-bottom:12px">
+      <div class="card card-filtros"><div class="filtros">
         <select class="inp" id="fSeg"><option value="">Todos os segmentos</option>${L.segmentos.map(([k, r]) => `<option value="${k}" ${filtro.seg === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
         <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(L.status_rota).map(([k, v]) => `<option value="${k}" ${filtro.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
-        <input class="inp" id="fQ" placeholder="Buscar (rota, cidade, prestador, chamado…)" value="${esc(filtro.q)}">
-        <button class="btn prim" id="bNova">➕ Nova rota</button></div>
+        <input class="inp busca" id="fQ" placeholder="Buscar (rota, cidade, prestador, chamado…)" value="${esc(filtro.q)}">
+        <button class="btn prim" id="bNova">➕ Nova rota</button></div></div>
       <div class="card"><div class="card-tit"><h3>Rotas (${vis.length})</h3><span class="small muted">${d.rotas.filter(r => r.importado_planilha).length} rotas do histórico da planilha ficam só no Dashboard</span></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Rota</th><th>Segmento</th><th>Onde / o quê</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Andamento</th><th></th></tr></thead><tbody>
         ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>

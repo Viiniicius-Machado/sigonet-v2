@@ -192,7 +192,7 @@ SN.enviarMudancas = async () => {
     const vistos = new Set();
     (SN.db[col] || []).forEach(d => {
       const id = d[k]; vistos.add(String(id)); const s = snapDoc(col, d);
-      if (snap[id] !== s) { const alt = (SN._semResposta[col] || {})[id]; ops.push({ colecao: col, id, doc: JSON.parse(s), v: (SN._ver[col] || {})[id], alt, _s: s }); }
+      if (snap[id] !== s) { const alt = (SN._semResposta[col] || {})[id]; ops.push({ colecao: col, id, doc: JSON.parse(s), v: (SN._ver[col] || {})[id], alt, _s: s, _ant: snap[id] }); }
     });
     // Auditoria e integrações nunca são apagadas no servidor (no navegador só guardamos as mais recentes).
     if (col === 'log' || col === 'integracoes') { Object.keys(snap).forEach(id => { if (!vistos.has(String(id))) delete snap[id]; }); return; }
@@ -205,18 +205,28 @@ SN.enviarMudancas = async () => {
   // marca como enviado já (se falhar, desfaz e tenta de novo)
   ops.forEach(o => { if (o.excluir) delete SN._snap[o.colecao][o.id]; else SN._snap[o.colecao][o.id] = o._s; });
   try {
-    const r = await SN.api('SALVAR', { ops: ops.map(({ _s, ...o }) => o), assinaturas: Object.keys(assin).length ? assin : undefined });
+    const r = await SN.api('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o), assinaturas: Object.keys(assin).length ? assin : undefined });
     Object.assign(SN._assinEnviadas, assin); SN.offline = false;
     let conflitos = 0;
     r.resultados.forEach(x => {
       if (SN._semResposta[x.colecao]) delete SN._semResposta[x.colecao][x.id]; // teve resposta
+      SN._errosEnvio[x.colecao + '|' + x.id] = x.erro || '';
       const ver = SN._ver[x.colecao] = SN._ver[x.colecao] || {};
       if (x.conflito) {
         conflitos++;
         const k = SN.CHAVES[x.colecao], lista = SN.db[x.colecao], i = lista.findIndex(d => String(d[k]) === String(x.id));
         if (i >= 0) lista[i] = x.atual; else lista.push(x.atual);
         ver[x.id] = x.v; SN._snap[x.colecao][x.id] = snapDoc(x.colecao, x.atual);
-      } else if (x.erro) { SN.toast(`Não gravado (${x.colecao} ${x.id}): ${x.erro}`, 'erro'); }
+      } else if (x.erro) {
+        SN.toast(`Não gravado (${x.colecao} ${x.id}): ${x.erro}`, 'erro');
+        // Recusado por permissão: a tela volta ao que está no servidor (não fica parecendo gravado).
+        const op = ops.find(o => o.colecao === x.colecao && String(o.id) === String(x.id));
+        if (/permiss/i.test(x.erro) && op && op._ant) {
+          const k = SN.CHAVES[x.colecao], lista = SN.db[x.colecao], i = lista.findIndex(d => String(d[k]) === String(x.id));
+          if (i >= 0) lista[i] = JSON.parse(op._ant);
+          SN._snap[x.colecao][x.id] = op._ant; SN.aoMudarBase && SN.aoMudarBase();
+        }
+      }
       else if (x.excluido) delete ver[x.id];
       else ver[x.id] = x.v;
     });
@@ -231,6 +241,13 @@ SN.enviarMudancas = async () => {
     SN.offline = !!e.rede;
     clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 5000 + Math.random() * 7000);
   } finally { enviando = false; SN.indicadorSync(); SN.guardarLocal(); }
+};
+// Resultado do último envio de um registro: erro do servidor ('' = gravou) e se ainda falta subir.
+SN._errosEnvio = {};
+SN.erroEnvio = (col, id) => SN._errosEnvio[col + '|' + id] || '';
+SN.pendenteEnvio = (col, id) => {
+  const k = SN.CHAVES[col], d = (SN.db[col] || []).find(x => String(x[k]) === String(id));
+  return !!d && (SN._snap[col] || {})[id] !== snapDoc(col, d);
 };
 // Aguarda tudo ser gravado (usado antes de ações que dependem do registro já existir no servidor).
 SN.salvarAgora = async () => { clearTimeout(filaTimer); await SN.enviarMudancas(); while (enviando) await new Promise(r => setTimeout(r, 150)); };

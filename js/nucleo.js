@@ -497,7 +497,7 @@ SN.MAT_STATUS = {
   REGISTRADO:      { rot: 'Registrado', cls: 'alerta' },
   CONFERIDO:       { rot: 'Conferido', cls: 'info' },
   DIVERGENTE:      { rot: 'Divergente', cls: 'erro' },
-  BAIXADO_SAP:     { rot: 'Baixa SAP (261)', cls: 'verde' },
+  BAIXADO_SAP:     { rot: 'Baixa informada (Elleven)', cls: 'verde' }, // chave antiga mantida: registros existentes continuam válidos
   ALOCADO_CLIENTE: { rot: 'Alocado ao cliente', cls: 'ok' }
 };
 SN.FIB_STATUS = {
@@ -520,17 +520,11 @@ SN.int = {
     return resposta;
   },
   ellevenStatus(c, status) { return this.registrar('ERP Elleven', 'Atualizar status OS', { os: c.id, protocolo: c.protocoloOem || c.protocoloNoc, status }, { ok: true }); },
-  sapEstoque(cod) {
-    let h = 0; for (const ch of cod) h = (h * 31 + ch.charCodeAt(0)) % 997;
-    return { deposito: 'DEP-CAMPINAS', qtd: 5 + (h % 120) };
-  },
-  sapBaixa261(reg) {
-    const doc = '49' + String(Date.now()).slice(-8);
-    return this.registrar('SAP', 'Movimento 261 (consumo)', { registro: reg.id, chamado: reg.chamadoId, itens: reg.itens.map(i => ({ cod: i.cod, qtd: i.qtd })) }, { ok: true, documento: doc });
-  },
-  sapAlocarCliente(reg) {
-    return this.registrar('SAP', 'Alocação ao cliente', { registro: reg.id, cliente: reg.cliente, seriais: reg.itens.flatMap(i => i.seriais || []) }, { ok: true });
-  }
+  // ESTOQUE: o Elleven é o sistema oficial (onde está o material e a quem ele está
+  // vinculado). Não há integração de estoque ativa: o SigoNet não consulta saldo nem
+  // executa baixa. A baixa é feita no Elleven e aqui só se INFORMA a referência dela
+  // (Gestão de Materiais). Nada de saldo ou documento inventado.
+  estoqueIntegrado: false
 };
 
 // ═══════════════════════════ Autenticação ═══════════════════════════
@@ -673,9 +667,10 @@ SN.MENU = [
   { grupo: 'Gestões vinculadas' },
   { tela: 'lpu', rot: 'Gestão de LPU', ico: '📄', href: '#/lpu' },
   { tela: 'servicedesk', rot: 'Service Desk', ico: '🎧', href: '#/servicedesk' },
-  { tela: 'materiais', rot: 'Gestão de Materiais', ico: '📦', href: '#/materiais' },
+  { tela: 'materiais', rot: 'Controle de Materiais', ico: '📦', href: '#/materiais' },
   { tela: 'fibra', rot: 'Cadastro de Fibra', ico: '🧵', href: '#/fibra' },
   { grupo: 'Gestão' },
+  { tela: 'base', rot: 'Base OEM', ico: '🗂️', href: '#/base' },
   { tela: 'portal', rot: 'Portal de Gestão', ico: '📊', href: '#/portal' },
   { tela: 'cadastros', rot: 'Cadastros e Acessos', ico: '👥', href: '#/cadastros' },
   { tela: 'auditoria', rot: 'Auditoria', ico: '🕑', href: '#/auditoria' }

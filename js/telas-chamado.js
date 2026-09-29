@@ -91,7 +91,7 @@ SN.rota('/inicio', () => {
     ['chamados', '#/chamados', '📞', 'Chamados (NOC)', 'Abertura, classificação, despacho e fechamento. Mede MTTD/MTTA/MTTR/SLA.', 'não atribuídos'],
     ['lpu', '#/lpu', '📄', 'Gestão de LPU', 'Líder confere, edita (com log), aprova ou reprova e envia ao Service Desk.', 'aguardando líder'],
     ['servicedesk', '#/servicedesk', '🎧', 'Service Desk', 'Contabilização, conta contábil, tratativa de pagamento e NF.', 'pendências'],
-    ['materiais', '#/materiais', '📦', 'Gestão de Materiais', 'Conferência, baixa SAP (mov. 261) e alocação ao cliente.', 'em aberto'],
+    ['materiais', '#/materiais', '📦', 'Controle de Materiais', 'Busca por dia, semana, mês e ano; conferência e registro da baixa feita no Elleven.', 'em aberto'],
     ['fibra', '#/fibra', '🧵', 'Cadastro de Fibra', 'Validação do líder e cadastro GEOGRID pela sala técnica.', 'em fila'],
     ['portal', '#/portal', '📊', 'Portal de Gestão', 'Indicadores, eficiência por técnico, relatórios e fechamento mensal.', ''],
     ['cadastros', '#/cadastros', '👥', 'Cadastros e Acessos', 'Técnicos, prestadores/CNPJ, liderança, telas, disponibilidade e budgets.', ''],

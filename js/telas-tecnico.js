@@ -437,7 +437,7 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
       <div class="chips" id="chTipo"><button class="chip sel" data-t="INS">INS · insumo</button><button class="chip" data-t="ATN">ATN · patrimônio (serial)</button></div>
       <input class="inp" id="matBusca" placeholder="Buscar por código ou descrição" style="margin-top:8px">
       <div id="matRes" style="margin-top:6px;max-height:320px;overflow:auto"></div>
-      <p class="small muted">Saldo do depósito consultado no SAP (simulado até a integração ficar ativa).</p></div>
+      <p class="small muted">Aqui você só aponta o que usou no chamado. O saldo e a baixa oficiais ficam no Elleven: este apontamento não reserva nem baixa material.</p></div>
     <div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="matObs">${SN.esc(reg ? reg.obs : '')}</textarea></div>
     <button class="btn prim lg bloco" id="bSalvarMat">Salvar materiais</button>` : ''}`);
   const pintarItens = () => {
@@ -456,8 +456,8 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   const buscar = () => {
     const q = SN.normal(SN.$('#matBusca').value);
     const res = q.length < 2 ? [] : CATALOGO_MATERIAIS.filter(m => m.t === tipo && SN.normal(m.c + ' ' + m.d).includes(q)).slice(0, 40);
-    SN.$('#matRes').innerHTML = res.map(m => { const e = SN.int.sapEstoque(m.c); return `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d">${SN.esc(m.d)}</div>
-      <div class="c">${m.c} · ${e.deposito}: ${e.qtd} disp.</div></div><button class="btn sm" data-add="${m.c}">+ Adicionar</button></div>`; }).join('')
+    SN.$('#matRes').innerHTML = res.map(m => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d">${SN.esc(m.d)}</div>
+      <div class="c">${m.c}</div></div><button class="btn sm" data-add="${m.c}">+ Adicionar</button></div>`).join('')
       || `<p class="muted small">${q.length < 2 ? 'Digite ao menos 2 letras.' : 'Nada encontrado.'}</p>`;
     SN.$$('[data-add]').forEach(b => b.onclick = async () => {
       const m = SN.material(b.dataset.add);
@@ -487,7 +487,7 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
     reg.itens = itens; reg.obs = SN.$('#matObs').value.trim(); reg.status = 'REGISTRADO'; reg.motivo = ''; reg.registradoEm = SN.agora();
     SN.hist(reg, novo ? 'Registro pelo técnico' : 'Correção pelo técnico', novo ? itens.length + ' item(ns)' : SN.diff({ itens: antes }, { itens }));
     SN.hist(c, 'Materiais registrados', reg.id); SN.log(novo ? 'REGISTRAR_MATERIAL' : 'CORRIGIR_MATERIAL', reg.id, c.id); SN.salvar();
-    SN.toast('Materiais salvos. A gestão de materiais segue com a baixa.', 'ok'); SN.navegar('#/tec/os/' + c.id);
+    SN.toast('Materiais apontados. A baixa oficial é feita no Elleven pela gestão de materiais.', 'ok'); SN.navegar('#/tec/os/' + c.id);
   };
 }, { familia: 'tecnico' });
 

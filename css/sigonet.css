@@ -325,3 +325,95 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 @media (max-width:820px){ .kpis7{grid-template-columns:repeat(2,minmax(0,1fr))} }
 /* Barras em cartões estreitos (grade de 3): nome menor para a barra aparecer */
 .grid.g3 .barra{grid-template-columns:minmax(80px,42%) 1fr 44px}
+
+/* ── Barra de filtros compacta (telas de lista/base) ──
+   Cada controle ocupa só o que precisa; a busca estica. (.linha-form é para formulários.) */
+.filtros{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.filtros > .inp, .filtros > select.inp{width:auto;min-width:0;flex:0 1 210px;padding:7px 10px;font-size:.88rem}
+.filtros > select.inp{flex:0 1 auto;min-width:170px;max-width:260px;text-overflow:ellipsis}
+.filtros > .inp.busca{flex:1 1 280px}
+.filtros > .btn{flex:0 0 auto}
+.filtros .rotulo-periodo{font-weight:600;color:var(--texto);margin-left:4px;white-space:nowrap}
+.filtros + .filtros{margin-top:10px;padding-top:10px;border-top:1px dashed var(--borda)}
+.card.card-filtros{padding:12px 14px;margin-bottom:12px}
+/* Seletor segmentado (Dia | Semana | Mês | Ano | Tudo) */
+.seg{display:inline-flex;border:1px solid var(--borda-forte);border-radius:9px;overflow:hidden;background:#fff;flex:0 0 auto}
+.seg button{border:0;background:transparent;padding:7px 13px;font-size:.85rem;cursor:pointer;color:var(--texto-2);border-right:1px solid var(--borda)}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--verde-bg);color:var(--verde-escuro)}
+.seg button.sel{background:var(--verde);color:#fff;font-weight:600}
+/* Navegação de data: ◀ [data] ▶ Hoje, tudo junto */
+.nav-data{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto}
+.nav-data .btn{padding:6px 9px;font-size:.8rem;border-radius:8px;min-width:0}
+.nav-data input.inp{width:148px;padding:6px 8px;font-size:.88rem}
+@media (max-width:820px){ .filtros > .inp, .filtros > select.inp{flex:1 1 100%;max-width:none} .seg{width:100%} .seg button{flex:1;padding:7px 6px} }
+
+/* Título da página: o texto quebra, os botões ficam sempre à direita */
+.cab-pagina > div:first-child{flex:1 1 420px;min-width:0}
+/* Indicadores numa faixa única e fina (telas de base/lista), com divisórias */
+.kpis-c{display:flex;flex-wrap:nowrap;background:#fff;border:1px solid var(--borda);border-radius:var(--raio);box-shadow:var(--sombra);margin-bottom:10px;overflow:hidden}
+.kpis-c .kpi{flex:1 1 0;min-width:0;border:0;border-left:1px solid var(--borda);margin-left:-1px;border-radius:0;box-shadow:none;padding:9px 14px;background:transparent}
+.kpis-c .kpi.destaque{background:var(--verde-bg)}
+.kpis-c .kpi .rot{font-size:.66rem}
+.kpis-c .kpi .val{font-size:1.3rem;margin-top:1px;line-height:1.25}
+.kpis-c .kpi .sub{font-size:.72rem;margin-top:0}
+/* Status à esquerda e visões à direita, na mesma linha */
+.barra-vis{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.barra-vis .abas{margin-bottom:0;gap:4px}
+.barra-vis .aba{padding:4px 11px;font-size:.8rem}
+.kpis-c .kpi .val{white-space:nowrap} /* número nunca é cortado nem quebrado; o rótulo pode quebrar */
+@media (max-width:1250px){ .kpis-c .kpi{padding:8px 10px} .kpis-c .kpi .val{font-size:1rem} .kpis-c .kpi .rot{font-size:.6rem;letter-spacing:.03em} .kpis-c .kpi .sub{font-size:.68rem} }
+@media (max-width:820px){ .kpis-c{flex-wrap:wrap} .kpis-c .kpi{flex:1 1 45%;border-top:1px solid var(--borda);margin-top:-1px} }
+.kpis-c .kpi .sub{overflow-wrap:anywhere}
+
+/* ═══════════════ Visual da gestão · opção A "Grafite" (js/tema.js) ═══════════════
+   Escolhido em 2026-09-29. Página fina — topo baixo e sem degradê, sem sombras,
+   cantos retos, menu enxuto, títulos menores, abas discretas. O app do técnico fica fora
+   (tema.js só liga data-tema fora do .app-tec). */
+html[data-tema]{--raio:6px;--sombra:none}
+html[data-tema] body{font-size:13.5px}
+html[data-tema] h1{font-size:1.2rem;font-weight:650;letter-spacing:-.01em}
+html[data-tema] h3{font-size:.95rem}
+html[data-tema] .topbar{padding:6px 18px;box-shadow:none;min-height:46px}
+html[data-tema] .topbar-logo{height:26px;filter:none}
+html[data-tema] .marca-sub{font-size:.72rem;opacity:.7}
+html[data-tema] .chip-user{border-radius:6px;padding:4px 10px;font-size:.78rem}
+html[data-tema] .sidebar{width:208px;flex-basis:208px;padding:12px 8px}
+html[data-tema] .sidebar a{padding:7px 10px;border-radius:6px;font-size:.86rem;gap:9px}
+html[data-tema] .sidebar a.ativo{box-shadow:inset 2px 0 0 var(--verde)}
+html[data-tema] .sidebar .ico{width:18px;display:inline-flex;justify-content:center;opacity:.85}
+html[data-tema] .sidebar .grupo{font-size:.64rem;margin:16px 10px 5px}
+html[data-tema] .conteudo{padding:18px 24px 50px}
+html[data-tema] .cab-pagina{margin-bottom:12px}
+html[data-tema] .cab-pagina p{font-size:.84rem}
+html[data-tema] .card{padding:14px}
+html[data-tema] .btn{border-radius:6px;padding:6px 12px;font-size:.84rem}
+html[data-tema] .inp{border-radius:6px}
+html[data-tema] .aba{border-radius:6px;padding:5px 11px;font-weight:500;font-size:.84rem}
+html[data-tema] .aba.ativa{font-weight:600}
+html[data-tema] .badge{border-radius:4px;font-weight:600;padding:1px 7px}
+html[data-tema] .kpi{padding:12px}
+html[data-tema] .kpi .val{font-size:1.4rem}
+html[data-tema] .hub{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+html[data-tema] .hub-card{border-radius:8px;padding:14px 16px;border-top:1px solid var(--borda)}
+html[data-tema] .hub-card:hover{border-color:var(--verde)}
+html[data-tema] .hub-card .ico{display:inline-flex;width:32px;height:32px;align-items:center;justify-content:center;border-radius:7px;background:var(--verde-bg);color:var(--verde-escuro)}
+html[data-tema] .hub-card .ico svg{width:18px;height:18px}
+html[data-tema] .hub-card h3{margin:10px 0 3px}
+html[data-tema] .tab th{font-size:.7rem;letter-spacing:.04em;padding:8px 10px}
+html[data-tema] .tab td{padding:7px 10px}
+html[data-tema] .seg,html[data-tema] .kpis-c{border-radius:6px}
+html[data-tema] .aviso{border-radius:6px}
+
+/* Cores do Grafite — menu escuro, conteúdo claro, verde SigoNet só como destaque.
+   Sóbrio e profissional; lembra ferramentas de gestão (ERP/BI). */
+html[data-tema="a"]{--verde:#5c7d1a;--verde-escuro:#3d5410;--verde-bg:#eef3e3;--verde-borda:#d3e0b5;
+  --bg:#f4f5f3;--bg-2:#eceeea;--borda:#e1e4dd;--borda-forte:#cdd2c7;--texto:#1b1f1a;--texto-2:#454b42;--texto-3:#7b8178;--topbar:#161a15}
+html[data-tema="a"] .sidebar{background:#1f241e;border-right-color:#1f241e}
+html[data-tema="a"] .sidebar a{color:#b9c0b4}
+html[data-tema="a"] .sidebar a:hover{background:#2b3229;color:#fff}
+html[data-tema="a"] .sidebar a.ativo{background:#2f372c;color:#fff;box-shadow:inset 2px 0 0 #a8c93c}
+html[data-tema="a"] .sidebar .grupo{color:#6f776b}
+html[data-tema="a"] .topbar{border-bottom:1px solid #2a3027}
+
+html[data-tema] .nav-data .btn{padding:5px 9px;font-size:.78rem}
