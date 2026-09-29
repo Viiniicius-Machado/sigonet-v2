@@ -600,6 +600,32 @@ SN.pedirTexto = (titulo, rotulo, obrig = true) => SN.modal({
   aoAbrir: f => SN.$('#mTxt', f).focus()
 });
 
+// ═══════════════════════════ Carregando: foguete SigoNet ═══════════════════════════
+// Foguete desenhado em SVG (nítido em qualquer tela, ~2 KB) com as cores da marca;
+// a animação é CSS (.foguete em sigonet.css). Só aparece se a espera passar de ~¼ s,
+// e fica parado para quem pede "reduzir movimento" no aparelho.
+let seqFoguete = 0;
+SN.foguete = () => { const n = ++seqFoguete;
+  return `<svg class="foguete" viewBox="0 0 120 120" role="img" aria-label="Carregando">
+  <defs><linearGradient id="fgC${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f1f9dc"/><stop offset=".45" stop-color="#a8c93c"/><stop offset="1" stop-color="#5c7d1a" stop-opacity="0"/></linearGradient>
+    <linearGradient id="fgB${n}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6f8f3"/><stop offset=".55" stop-color="#e3e8de"/><stop offset="1" stop-color="#b9c2b1"/></linearGradient></defs>
+  <g class="fg-rastros"><line x1="28" y1="30" x2="28" y2="46"/><line x1="92" y1="18" x2="92" y2="30" style="animation-delay:.3s"/><line x1="20" y1="70" x2="20" y2="80" style="animation-delay:.55s"/><line x1="100" y1="58" x2="100" y2="72" style="animation-delay:.15s"/></g>
+  <g class="fg-nave">
+    <path class="fg-chama" d="M51 83 Q60 116 69 83 Z" fill="url(#fgC${n})"/>
+    <path d="M48 60 L35 83 L50 78 Z" fill="#5c7d1a"/><path d="M72 60 L85 83 L70 78 Z" fill="#5c7d1a"/>
+    <path d="M60 12 C75 25 77 50 72 80 L48 80 C43 50 45 25 60 12 Z" fill="url(#fgB${n})" stroke="#1f241e" stroke-width="1.6"/>
+    <path d="M52.5 29 Q60 23.5 67.5 29" fill="none" stroke="#a8c93c" stroke-width="3.2" stroke-linecap="round"/>
+    <circle cx="60" cy="48" r="8.5" fill="#1f241e" stroke="#a8c93c" stroke-width="3"/><circle cx="57" cy="45" r="2.2" fill="#e9f7c8" opacity=".85"/>
+    <path d="M60 60 L60 76" stroke="#c9d0c3" stroke-width="1.4"/>
+    <rect x="51" y="79" width="18" height="5" rx="1.6" fill="#1f241e"/>
+  </g></svg>`; };
+SN.carregando = msg => `<div class="carregando">${SN.foguete()}<p>${SN.esc(msg || 'Carregando…')}</p></div>`;
+// Cobre a tela enquanto uma ação demora (ex.: entrar e carregar a base). Devolve a função que tira.
+SN.cobrirCarregando = msg => {
+  const el = document.createElement('div'); el.className = 'carregando-sobre'; el.innerHTML = SN.carregando(msg);
+  document.body.appendChild(el); return () => el.remove();
+};
+
 // ═══════════════════════════ Exportação / PDF ═══════════════════════════
 SN.exportar = (nome, linhas) => {
   if (!linhas.length) return SN.toast('Nada para exportar no filtro atual.');

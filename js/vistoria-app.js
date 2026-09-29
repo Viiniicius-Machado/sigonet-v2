@@ -36,6 +36,8 @@ SN.vst.semServidorHtml = '<div class="aviso alerta">A Preventiva precisa do serv
 // não houve resposta (sem sinal, servidor ocupado) — err.rede = true.
 SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
   const s = SN.sessao(), grava = !/^VST_(CARREGAR|CS_BASE|LER_KMZ|FOTOS_B64)$/.test(acao);
+  // Ninguém logado (ex.: saiu enquanto uma busca estava agendada): nem vai ao servidor.
+  if (!s || !s.token) { const e = new Error('Sem sessão.'); e.sessao = true; throw e; }
   if (grava) { SN.vst.cargaTs = 0; SN.vst.gravacoes++; }
   let j;
   try {
@@ -50,8 +52,12 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
   }
   if (grava) SN.vst.cargaTs = 0; // gravou algo: a próxima tela busca de novo
   if (!j.ok && j.sessao) {
-    localStorage.removeItem('sigonet_v2_sessao');
-    setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0);
+    // Só derruba a sessão que fez o pedido: se outra pessoa já entrou neste aparelho, não mexe nela.
+    const atual = SN.sessao();
+    if (atual && atual.token === s.token) {
+      localStorage.removeItem('sigonet_v2_sessao');
+      setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0);
+    }
     const err = new Error(j.erro); err.sessao = true; throw err;
   }
   return j;
@@ -106,7 +112,11 @@ const carregarDoServidor = async (u, chave) => {
 // entrar, para o primeiro clique no menu abrir sem esperar o servidor.
 SN.vst.preaquecer = () => {
   if (!SN.vst.disponivel() || !SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela))) return;
-  setTimeout(() => { if (Date.now() - SN.vst.cargaTs >= VST_VALIDADE_CARGA) SN.vst.carregar().catch(() => { }); }, 2500);
+  const quem = (SN.sessao() || {}).token;
+  setTimeout(() => { // só se a mesma pessoa ainda estiver logada (saiu ou trocou de usuário: não busca)
+    if (!quem || (SN.sessao() || {}).token !== quem) return;
+    if (Date.now() - SN.vst.cargaTs >= VST_VALIDADE_CARGA) SN.vst.carregar().catch(() => { });
+  }, 2500);
 };
 
 // Resumo do que foi APROVADO na revisão (c.preventiva do chamado), com o item de

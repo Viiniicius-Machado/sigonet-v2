@@ -32,7 +32,7 @@ SN.rota('/portal', () => {
   const anterior = m => { const [a, n] = m.split('-').map(Number); const x = new Date(a, n - 2, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
   const faltam = [f.mes, anterior(f.mes)].filter(m => SN.foraDaJanela(m) && !(d.periodos || {})[m]);
   if (faltam.length) {
-    SN.casca('portal', `<p class="muted">Buscando ${SN.mesNome(f.mes)} no servidor…</p>`);
+    SN.casca('portal', SN.carregando(`Buscando ${SN.mesNome(f.mes)} no servidor…`));
     const aqui = () => SN.rotaAtual && SN.rotaAtual.hash === '/portal';
     Promise.all(faltam.map(SN.garantirMes)).then(() => { if (aqui()) SN.render(); },
       e => { SN.toast('Não foi possível buscar ' + SN.mesNome(f.mes) + ' (' + e.message + ').', 'erro'); f.mes = SN.agora().slice(0, 7); if (aqui()) SN.render(); });

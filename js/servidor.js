@@ -45,7 +45,9 @@ SN.api = async (acao, dados, tentativa = 1) => {
     const err = new Error(j.erro || 'Erro no servidor');
     if (j.sessao) {
       err.sessao = true;
-      if (SN.sessao()) { localStorage.removeItem('sigonet_v2_sessao'); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
+      // Só derruba a sessão que fez o pedido (resposta atrasada de quem já saiu não derruba quem entrou depois).
+      const atual = SN.sessao();
+      if (atual && s && atual.token === s.token) { localStorage.removeItem('sigonet_v2_sessao'); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
     }
     throw err;
   }
@@ -384,7 +386,7 @@ if (SN.remoto) {
 // Inicialização (chamada pelo index.html)
 SN.iniciar = async () => {
   if (!SN.remoto) { SN.carregar(); SN.render(); return; }
-  document.getElementById('app').innerHTML = '<div class="abertura"><img src="' + MARCA.LOGO + '" alt="SigoNet"><p>Conectando ao servidor…</p></div>';
+  document.getElementById('app').innerHTML = '<div class="abertura">' + SN.foguete() + '<img class="abertura-letras" src="' + MARCA.LETRAS + '" alt="SigoNet"><p>Conectando ao servidor…</p></div>';
   try {
     // Login antigo do modo teste (sem token do servidor) não vale aqui: descarta e pede login.
     if (SN.sessao() && !SN.sessao().token) localStorage.removeItem('sigonet_v2_sessao');

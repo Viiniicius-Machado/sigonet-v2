@@ -22,7 +22,7 @@
 
   SN.rota('/vst/planejamento', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_planejamento', SN.vst.semServidorHtml);
-    SN.casca('vst_planejamento', '<p class="muted">Carregando…</p>');
+    SN.casca('vst_planejamento', SN.carregando('Carregando o planejamento…'));
     try { d = await SN.vst.carregar(); } catch (e) { return SN.casca('vst_planejamento', `<div class="aviso erro">${esc(e.message)}</div>`); }
     if (location.hash !== '#/vst/planejamento') return;
     pintar();

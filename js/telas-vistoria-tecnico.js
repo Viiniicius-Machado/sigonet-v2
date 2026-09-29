@@ -13,7 +13,7 @@
   // ═══════════════════════════ Lista de rotas ═══════════════════════════
   SN.rota('/tec/vistorias', async () => {
     if (!SN.vst.disponivel()) return SN.cascaTec('vst', SN.vst.semServidorHtml, 'Preventiva');
-    SN.cascaTec('vst', '<p class="muted">Carregando rotas…</p>', 'Minhas rotas de preventiva');
+    SN.cascaTec('vst', SN.carregando('Carregando rotas…'), 'Minhas rotas de preventiva');
     let d;
     try { d = await SN.vst.carregar(); }
     catch (e) { return SN.cascaTec('vst', `<div class="aviso erro">${esc(e.message)}</div>`, 'Minhas rotas de preventiva'); }

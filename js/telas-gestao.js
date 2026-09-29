@@ -398,7 +398,7 @@ SN.ligarPeriodo = redesenhar => { const P = SN.periodo;
 SN.buscarPeriodo = (ativo, prefixoHash, redesenhar, perForcado) => { const P = SN.periodo; if (!P.ref) P.ref = SN.dataIsoLocal(new Date());
   const faltam = SN.mesesDoPeriodo(perForcado || P.per, P.ref).filter(m => SN.foraDaJanela(m) && !(SN.db.periodos || {})[m]);
   if (!faltam.length) return false;
-  SN.casca(ativo, `<p class="muted">Buscando ${faltam.length} mês(es) no servidor…</p>`);
+  SN.casca(ativo, SN.carregando(`Buscando ${faltam.length} mês(es) no servidor…`));
   const aqui = () => SN.rotaAtual && SN.rotaAtual.hash.startsWith(prefixoHash);
   Promise.all(faltam.map(SN.garantirMes)).then(() => { if (aqui()) redesenhar(); },
     e => { SN.toast('Não foi possível buscar o período no servidor (' + e.message + ').', 'erro'); P.per = 'mes'; P.ref = SN.dataIsoLocal(new Date()); if (aqui()) redesenhar(); });

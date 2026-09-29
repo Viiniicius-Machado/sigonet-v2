@@ -68,11 +68,13 @@ SN.rota('/login', () => {
       if (a !== b) return SN.toast('Os complementos não conferem.', 'erro');
       dados.novoComplemento = a;
     }
+    const fim = SN.cobrirCarregando(tipo === 'tecnico' ? 'Entrando e buscando suas OS…' : 'Entrando e carregando o painel…');
     try {
       const r = await SN.login(dados);
+      fim();
       if (r.primeiroAcesso) { primeiro = true; SN.$('#cpNovo').classList.remove('oculto'); SN.$('#cpComp').classList.add('oculto'); SN.$('#lgNovo').focus(); return; }
       location.hash = tipo === 'tecnico' ? '#/tec' : '#/inicio';
-    } catch (e) { SN.toast(e.message, 'erro'); }
+    } catch (e) { fim(); SN.toast(e.message, 'erro'); }
   };
 });
 
@@ -331,7 +333,7 @@ SN.rota('/chamado/:id', id => {
     // Liderança: chamado antigo (fora da janela da carga) — busca no servidor antes de desistir.
     if (SN.db.janela && !SN.offline && !(SN._buscados = SN._buscados || {})[id]) {
       SN._buscados[id] = true;
-      SN.casca('chamados', '<p class="muted">Buscando o chamado ' + SN.esc(id) + ' no servidor…</p>');
+      SN.casca('chamados', SN.carregando('Buscando o chamado ' + id + ' no servidor…'));
       return SN.buscarChamado(id).then(() => SN.render(), () => SN.render());
     }
     SN.toast('Chamado não encontrado.', 'erro'); return SN.navegar('#/chamados');

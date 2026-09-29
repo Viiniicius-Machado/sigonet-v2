@@ -30,7 +30,7 @@
   let filtroSeg = 'TODOS';
   SN.rota('/vst/revisao', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_revisao', SN.vst.semServidorHtml);
-    SN.casca('vst_revisao', '<p class="muted">Carregando fila de revisão…</p>');
+    SN.casca('vst_revisao', SN.carregando('Carregando fila de revisão…'));
     const d = await carregar(); if (!d || location.hash !== '#/vst/revisao') return;
     const rm = {}; d.rotas.forEach(r => { rm[r.id_rota] = r; });
     const itens = [
@@ -187,7 +187,7 @@
 
   SN.rota('/vst/dashboard', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_dashboard', SN.vst.semServidorHtml);
-    SN.casca('vst_dashboard', '<p class="muted">Carregando indicadores…</p>');
+    SN.casca('vst_dashboard', SN.carregando('Carregando indicadores…'));
     const d = await carregar(); if (!d || location.hash !== '#/vst/dashboard') return;
     const cfg = VR.normalizarConfig(d.config);
     SN.casca('vst_dashboard', `
