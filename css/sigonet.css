@@ -237,7 +237,15 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border:1px solid var(--borda-forte);border-radius:999px;padding:6px 12px;background:#fff;cursor:pointer;font-size:.84rem}
 .chip.sel{background:var(--verde);border-color:var(--verde);color:#fff}
-.item-lpu{display:grid;grid-template-columns:1fr 84px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--borda)}
+.item-lpu{display:grid;grid-template-columns:1fr 84px 46px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--borda)}
+.item-lpu .lpu-foto-acoes{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
+.item-lpu .fotos.mini{grid-column:1/-1}
+.item-lpu .fotos.mini:empty{display:none}
+.lpu-foto-bt{padding:6px 0;position:relative}
+.lpu-foto-bt .n{position:absolute;top:-6px;right:-6px;background:var(--verde);color:#fff;border-radius:999px;font-size:.66rem;min-width:18px;height:18px;line-height:18px;padding:0 4px}
+.fotos.mini img{width:64px;height:64px}
+.foto-rm{position:relative;display:inline-block}
+.foto-rm button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:999px;border:0;background:#b3261e;color:#fff;font-size:.7rem;cursor:pointer;line-height:22px;padding:0}
 .item-lpu .d{font-size:.84rem} .item-lpu .c{font-size:.72rem;color:var(--texto-3)}
 .item-lpu.tem{background:var(--verde-bg);margin:0 -8px;padding:8px}
 

@@ -134,11 +134,13 @@ SN.guardarArquivo = async (file, pasta) =>
 // fica pela metade por causa do anexo).
 SN.anexarPdf = async (doc, nome, pasta) => {
   if (!doc) return null;
-  try { return await SN.guardarDataUrl(SN.pdfDataUrl(doc), nome, 'arquivo', pasta); }
+  try { return await SN.anexoLocal(SN.pdfDataUrl(doc), nome, 'arquivo', pasta); } // sobe pela fila (funciona sem sinal)
   catch (e) { SN.toast('PDF gerado, mas não foi possível guardá-lo: ' + (e.message || e), 'erro'); return null; }
 };
 SN.driveId = id => String(id || '').startsWith('drive:') ? id.slice(6) : null;
 SN.abrirAnexo = async id => {
+  const cache = SN._fotoCache[id];
+  if (cache && cache.startsWith('data:image')) { const w = window.open(); if (w) w.document.write(`<body style="margin:0;background:#111"><img src="${cache}" style="max-width:100%;display:block;margin:auto"></body>`); return; }
   if (SN.driveId(id)) { window.open('https://drive.google.com/file/d/' + SN.driveId(id) + '/view', '_blank', 'noopener'); return; }
   const d = await SN.anexos.get(id);
   if (!d) return SN.toast('Anexo não encontrado neste navegador.', 'erro');
@@ -146,18 +148,132 @@ SN.abrirAnexo = async id => {
   if (d.startsWith('data:application/pdf')) w.document.write(`<iframe src="${d}" style="border:0;width:100%;height:100vh"></iframe>`);
   else w.document.write(`<img src="${d}" style="max-width:100%">`);
 };
-SN.pintarFotos = async (el, lista) => {
+SN.pintarFotos = async (el, lista, opc) => {
   if (!el) return;
-  el.innerHTML = lista.length ? '' : '<span class="muted small">Nenhum anexo.</span>';
+  const vez = el._vez = (el._vez || 0) + 1; // duas pinturas seguidas: vale só a última (não duplica nem some)
+  const itens = [];
   for (const a of lista) {
     const fid = SN.driveId(a.id);
-    const d = fid ? (a.tipo === 'imagem' ? `https://drive.google.com/thumbnail?id=${fid}&sz=w400` : null) : await SN.anexos.get(a.id).catch(() => null);
+    const d = SN._fotoCache[a.id] || (fid ? (a.tipo === 'imagem' ? `https://drive.google.com/thumbnail?id=${fid}&sz=w400` : null) : await SN.anexos.get(a.id).catch(() => null));
+    itens.push([a, d]);
+  }
+  if (vez !== el._vez) return;
+  el.innerHTML = lista.length ? '' : (opc && opc.vazio != null ? opc.vazio : '<span class="muted small">Nenhum anexo.</span>');
+  for (const [a, d] of itens) {
+    if (a.pendente && !d) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = '⏳ ' + (a.tipo === 'imagem' ? 'foto' : a.nome) + ' subindo do celular'; el.appendChild(b); continue; }
     if (a.tipo === 'imagem' && d) {
-      const img = document.createElement('img'); img.src = d; img.title = a.nome; img.onclick = () => SN.abrirAnexo(a.id); el.appendChild(img);
+      const img = document.createElement('img'); img.src = d; img.title = a.nome + (a.pendente ? ' (ainda subindo)' : ''); img.onclick = () => SN.abrirAnexo(a.id);
+      if (opc && opc.remover) {
+        const w = document.createElement('span'); w.className = 'foto-rm';
+        const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = 'Remover foto';
+        x.onclick = ev => { ev.stopPropagation(); opc.remover(a); };
+        w.append(img, x); el.appendChild(w);
+      } else el.appendChild(img);
     } else {
       const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '📄 ' + a.nome; b.onclick = () => SN.abrirAnexo(a.id); el.appendChild(b);
     }
   }
+};
+
+// ═══════════════════════════ Fotos com fila (celular) ═══════════════════════════
+// A foto é guardada NESTE aparelho na hora: aparece na tela e não se perde se o
+// celular recarregar a página ao abrir a câmera (comum no Android). Sobe para o
+// Drive em segundo plano e, sem sinal, sobe quando o sinal voltar. Enquanto isso
+// o item fica { id: 'ax_…', pendente: true, pasta } e quem vê de outro aparelho
+// enxerga "subindo do celular". Ao subir, o id vira 'drive:…' no mesmo lugar da
+// lista — a ordem das fotos nunca muda.
+SN._fotoCache = {}; // id → dataUrl (fotos desta sessão; o PDF usa sem baixar de novo)
+SN.anexoLocal = async (dataUrl, nome, tipo, pasta, extra) => {
+  const id = 'ax_' + SN.uid();
+  SN._fotoCache[id] = dataUrl;
+  // Sem armazenamento no aparelho (aba anônima, navegador restrito): segue só em memória e sobe já.
+  try { await SN.anexos.put(id, dataUrl); } catch (e) { if (!SN.remoto) throw e; }
+  const ax = { id, nome, tipo, ts: SN.agora(), ...(extra || {}) };
+  if (SN.remoto) { ax.pendente = true; ax.pasta = pasta || 'geral'; setTimeout(SN.subirAnexos, 400); }
+  return ax;
+};
+// Foto da câmera do SigoNet (carimbo de data/hora/GPS/endereço, como o Timemark).
+SN.fotoDaCamera = async (file, legenda, pasta) => {
+  const r = await SN.VF.fotoCarimbada(file, legenda);
+  const ax = await SN.anexoLocal(r.dataUrl, 'foto_' + r.agora.replace(/[-:T]/g, '').slice(0, 14) + '.jpg', 'imagem', pasta,
+    { lat: r.pos ? r.pos.lat : '', lng: r.pos ? r.pos.lng : '', endereco: r.endereco || '', capturadaEm: r.agora });
+  return { ax, semGps: !r.pos, endereco: r.endereco };
+};
+// Foto (ou PDF) da galeria, sem carimbo.
+SN.fotoDaGaleria = async (file, pasta) => SN.anexoLocal(await SN.comprimirImagem(file), file.name, file.type.startsWith('image/') ? 'imagem' : 'arquivo', pasta);
+const COLS_COM_ANEXO = ['chamados', 'lpus', 'materiais', 'fibras'];
+const acharPendentes = (o, out, prof = 0) => {
+  if (!o || typeof o !== 'object' || prof > 6) return;
+  if (Array.isArray(o)) { o.forEach(x => acharPendentes(x, out, prof + 1)); return; }
+  if (o.pendente === true && typeof o.id === 'string' && o.id.startsWith('ax_')) out.push(o);
+  else Object.keys(o).forEach(k => { if (k !== 'historico') acharPendentes(o[k], out, prof + 1); });
+};
+SN.anexosPendentes = () => { const out = []; COLS_COM_ANEXO.forEach(c => acharPendentes(SN.db[c], out)); return out; };
+SN._subindoAnexos = 0; // hora em que a volta de envio começou (0 = parada)
+SN.subirAnexos = async () => {
+  if (!SN.remoto || !SN.sessao() || (SN._subindoAnexos && Date.now() - SN._subindoAnexos < 300000)) return; // trava com prazo: nunca fica presa
+  SN._subindoAnexos = Date.now(); SN._subindoPasso = "inicio";
+  try {
+    for (const it of SN.anexosPendentes()) {
+      if (!it.pendente) continue; // já trocado nesta volta
+      SN._subindoPasso = 'ler ' + it.id;
+      const dados = SN._fotoCache[it.id] || await SN.anexos.get(it.id).catch(() => null);
+      SN._subindoPasso = 'enviar ' + it.id;
+      if (!dados) continue; // de outro aparelho: quem tirou é que sobe
+      let r;
+      try { r = await SN.api('ANEXO', { dataUrl: dados, nome: it.nome, pasta: it.pasta || 'geral' }); }
+      catch (e) { if (e.rede) break; continue; } // sem sinal: tenta depois
+      const local = it.id;
+      SN._fotoCache[r.id] = dados;
+      // Troca em todo lugar onde o id local aparece (a sincronização pode ter trocado o objeto do registro).
+      SN.anexosPendentes().filter(x => x.id === local).forEach(x => { x.id = r.id; x.url = r.url; delete x.pendente; delete x.pasta; });
+      SN.anexos.del(local).catch(() => { });
+      SN.salvar();
+    }
+  } finally { SN._subindoAnexos = 0; }
+};
+// dataUrl de cada anexo da lista (para o PDF), na mesma ordem. Busca no servidor o que não está no aparelho.
+SN.dadosDasFotos = async lista => {
+  const faltam = lista.filter(a => SN.driveId(a.id) && !SN._fotoCache[a.id]).map(a => a.id);
+  for (let i = 0; i < faltam.length && SN.remoto; i += 8) {
+    try { (await SN.api('ANEXO_B64', { ids: faltam.slice(i, i + 8) })).anexos.forEach(x => { if (x.dataUrl) SN._fotoCache[x.id] = x.dataUrl; }); }
+    catch (e) { break; }
+  }
+  return Promise.all(lista.map(async a => SN._fotoCache[a.id] || (SN.driveId(a.id) ? null : await SN.anexos.get(a.id).catch(() => null))));
+};
+// Grade de fotos no PDF (3 por linha), na ordem em que foram adicionadas, com legenda.
+SN.pdfFotos = async (doc, lista, titulo) => {
+  const fotos = (lista || []).filter(a => a.tipo === 'imagem');
+  if (!fotos.length) return;
+  if (titulo) doc.secao(titulo + ' (' + fotos.length + ')');
+  const dados = await SN.dadosDasFotos(fotos);
+  const medir = src => new Promise(ok => { if (!src) return ok(null); const i = new Image(); i.onload = () => ok({ w: i.width, h: i.height }); i.onerror = () => ok(null); i.src = src; });
+  const larg = 60, gap = 5, x0 = 12;
+  let col = 0, alturaLinha = 0;
+  for (let n = 0; n < fotos.length; n++) {
+    const a = fotos[n], src = dados[n], dim = await medir(src);
+    const h = dim ? Math.min(75, larg * dim.h / dim.w) : 14;
+    if (col === 0 && doc._y + h + 12 > 285) { doc.addPage(); doc._y = 18; }
+    const x = x0 + col * (larg + gap);
+    if (dim) { try { doc.addImage(src, /^data:image\/png/.test(src) ? 'PNG' : 'JPEG', x, doc._y, larg, h); } catch (e) { } }
+    else { doc.setDrawColor(200); doc.rect(x, doc._y, larg, h); doc.setFontSize(7); doc.text('Foto no Drive (indisponível agora)', x + 2, doc._y + 8); }
+    const leg = [(n + 1) + '. ' + SN.dt(a.capturadaEm || a.ts), a.endereco || (a.lat ? a.lat + ',' + a.lng : '')].filter(Boolean).join(' · ');
+    doc.setFontSize(7); doc.setTextColor(70); const t = doc.splitTextToSize(leg, larg); doc.text(t, x, doc._y + h + 3);
+    doc.setFontSize(9.5); doc.setTextColor(29, 38, 20);
+    alturaLinha = Math.max(alturaLinha, h + 5 + 3 * t.length);
+    if (++col === 3) { col = 0; doc._y += alturaLinha; alturaLinha = 0; }
+  }
+  if (col) doc._y += alturaLinha;
+};
+// Abre o PDF numa aba. A aba é aberta ANTES de montar o PDF (que busca as fotos):
+// aberta depois de esperar, o navegador bloqueia como pop-up.
+SN.abrirPdfDepois = async montar => {
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">Montando o PDF com as fotos…</p>');
+  try {
+    const doc = await montar(); if (!doc) { if (w) w.close(); return; }
+    const url = doc.output('bloburl'); if (w) w.location.href = url; else window.open(url);
+  } catch (e) { if (w) w.close(); SN.toast('Não foi possível gerar o PDF: ' + (e.message || e), 'erro'); }
 };
 
 // ═══════════════════════════ Auditoria ═══════════════════════════
@@ -343,6 +459,28 @@ SN.cabecalhoDe = (c, papel) => {
 };
 
 // ═══════════════════════════ LPU: status e valores ═══════════════════════════
+// Localização atual pelo GPS do celular. A coordenada funciona sem internet; com rede,
+// também busca o endereço (OpenStreetMap). Lança erro com mensagem pronta para o técnico.
+SN.localAtual = async () => {
+  if (!navigator.geolocation) throw new Error('Este aparelho não tem GPS disponível no navegador. Escreva o endereço.');
+  let pos;
+  try { pos = await new Promise((ok, falha) => navigator.geolocation.getCurrentPosition(ok, falha, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 })); }
+  catch (e) { throw new Error(e.code === 1 ? 'GPS bloqueado: permita a localização para este site nas configurações do navegador.' : 'Não foi possível obter o GPS agora. Escreva o endereço no campo.'); }
+  const gps = { lat: pos.coords.latitude.toFixed(6), lng: pos.coords.longitude.toFixed(6), precisao: Math.round(pos.coords.accuracy || 0), em: SN.agora() };
+  let endereco = '';
+  if (navigator.onLine) {
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=pt-BR&lat=${gps.lat}&lon=${gps.lng}`, { signal: AbortSignal.timeout(8000) });
+      const a = (await r.json()).address || {};
+      endereco = [[a.road, a.house_number].filter(Boolean).join(', '), a.suburb || a.neighbourhood, a.city || a.town || a.village, a.state].filter(Boolean).join(' - ');
+    } catch (e) { /* sem endereço: fica só a coordenada */ }
+  }
+  return { gps, endereco };
+};
+SN.gpsTxt = g => g && g.lat ? `📍 ${SN.esc(g.lat + ',' + g.lng)}${g.precisao ? ' · ±' + g.precisao + ' m' : ''} · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${SN.esc(g.lat + ',' + g.lng)}">abrir no mapa</a>` : '';
+// RFO: "Trabalhou na CEO?" — se sim, qual caso.
+SN.CEO_TIPOS = { NOVA_NOVA: 'CEO nova → CEO nova', NOVA_EXISTENTE: 'CEO nova → CEO existente', EXISTENTE_EXISTENTE: 'CEO existente → CEO existente' };
+SN.ceoTxt = rfo => { const x = rfo && rfo.ceo; if (!x || !x.trabalhou) return ''; return x.trabalhou === 'sim' ? 'Sim · ' + (SN.CEO_TIPOS[x.tipo] || 'caso não informado') : 'Não'; };
 SN.LPU_STATUS = {
   AGUARDANDO_LIDER:  { rot: 'Aguardando líder',        cls: 'alerta' },
   REPROVADA:         { rot: 'Reprovada (técnico corrige)', cls: 'erro' },
@@ -495,7 +633,7 @@ SN.novoPdf = titulo => {
     doc.setFont('helvetica', 'bold'); doc.text(t, 12, doc._y); doc.setFont('helvetica', 'normal'); doc._y += 7; };
   return doc;
 };
-SN.pdfDataUrl = doc => doc.output('datauristring');
+SN.pdfDataUrl = doc => doc.output('datauristring').replace(/^data:([^;,]+)(;[^,]*)?;base64,/, 'data:$1;base64,'); // sem ";filename=…" (o servidor recusava)
 
 // ═══════════════════════════ Roteamento ═══════════════════════════
 SN.rotas = {};

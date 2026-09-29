@@ -327,7 +327,15 @@ SN.atribuir = c => {
 // ═══════════════════════════ Detalhe do chamado ═══════════════════════════
 SN.rota('/chamado/:id', id => {
   const c = SN.db.chamados.find(x => x.id === id);
-  if (!c) { SN.toast('Chamado não encontrado.', 'erro'); return SN.navegar('#/chamados'); }
+  if (!c) {
+    // Liderança: chamado antigo (fora da janela da carga) — busca no servidor antes de desistir.
+    if (SN.db.janela && !SN.offline && !(SN._buscados = SN._buscados || {})[id]) {
+      SN._buscados[id] = true;
+      SN.casca('chamados', '<p class="muted">Buscando o chamado ' + SN.esc(id) + ' no servidor…</p>');
+      return SN.buscarChamado(id).then(() => SN.render(), () => SN.render());
+    }
+    SN.toast('Chamado não encontrado.', 'erro'); return SN.navegar('#/chamados');
+  }
   const m = SN.metricas(c), p = SN.prazoInfo(c), mod = SN.modulosDo(c.id);
   const atual = SN.ultimaEtapa(c);
   let anterior = null;
@@ -386,7 +394,7 @@ SN.rota('/chamado/:id', id => {
     <div class="grid g2" style="margin-top:14px">
       <div class="card"><h3>RFO · causa, ação e solução</h3>
         ${c.rfo && c.rfo.causa ? `<table class="tab"><tbody><tr><td class="muted">Causa</td><td>${SN.esc(c.rfo.causa)}</td></tr>
-          <tr><td class="muted">Ação</td><td>${SN.esc(c.rfo.acao)}</td></tr><tr><td class="muted">Solução</td><td>${SN.esc(c.rfo.solucao)}</td></tr>
+          <tr><td class="muted">Ação</td><td>${SN.esc(c.rfo.acao)}</td></tr>${c.rfo.ceo ? `<tr><td class="muted">Trabalhou na CEO</td><td>${SN.esc(SN.ceoTxt(c.rfo))}</td></tr>` : ''}<tr><td class="muted">Solução</td><td>${SN.esc(c.rfo.solucao)}</td></tr>
           ${c.rfo.localFalha || c.rfo.gpsFalha ? `<tr><td class="muted">Local da falha</td><td>${SN.esc(c.rfo.localFalha || '')}
             ${c.rfo.gpsFalha ? `${c.rfo.localFalha ? '<br>' : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}">📍 ${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}</a>` : ''}</td></tr>` : ''}
           ${c.rfo.obs ? `<tr><td class="muted">Observações</td><td>${SN.esc(c.rfo.obs)}</td></tr>` : ''}</tbody></table>` : '<p class="muted">Ainda não preenchido pelo técnico.</p>'}
@@ -424,11 +432,11 @@ SN.rota('/chamado/:id', id => {
     c.status = 'CANCELADO'; c.tempos.fechamento = SN.agora(); SN.hist(c, 'Cancelado', mot); SN.log('CANCELAR_CHAMADO', c.id, mot);
     SN.int.ellevenStatus(c, 'Cancelada'); SN.salvar(); SN.render();
   });
-  b('bPdf').onclick = () => SN.pdfChamado(c, true);
+  b('bPdf').onclick = () => SN.abrirPdfDepois(() => SN.pdfChamado(c, false));
 });
 
 // PDF do atendimento (história operacional). Também é gerado ao concluir.
-SN.pdfChamado = (c, abrir) => {
+SN.pdfChamado = async (c, abrir) => {
   const doc = SN.novoPdf('Relatório de atendimento · ' + c.id); if (!doc) return null;
   const m = SN.metricas(c);
   doc.secao('Identificação');
@@ -441,9 +449,10 @@ SN.pdfChamado = (c, abrir) => {
   doc.linha('MTTD / MTTA', `${SN.dur(m.mttd)} / ${SN.dur(m.mtta)}`); doc.linha('MTTR / Em campo', `${SN.dur(m.mttr)} / ${SN.dur(m.tmc)}`);
   doc.linha('SLA', m.sla == null ? '—' : m.sla ? 'Dentro do prazo' : 'Fora do prazo');
   doc.secao('RFO');
-  doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); doc.linha('Solução', c.rfo.solucao);
+  doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); if (c.rfo.ceo) doc.linha('Trabalhou na CEO', SN.ceoTxt(c.rfo)); doc.linha('Solução', c.rfo.solucao);
   if (c.rfo.localFalha || c.rfo.gpsFalha) doc.linha('Local da falha', [c.rfo.localFalha, c.rfo.gpsFalha && 'GPS ' + c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng].filter(Boolean).join(' · '));
   if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
+  await SN.pdfFotos(doc, c.fotos || [], 'Fotos do atendimento'); // na ordem em que foram adicionadas
   if (abrir) window.open(doc.output('bloburl'));
   return doc;
 };

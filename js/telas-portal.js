@@ -28,7 +28,19 @@ SN.rota('/portal', () => {
   const f = SN.fPortal, d = SN.db;
   const temNatureza = f.tipo === SN.SEGMENTO_NATUREZA;
   if (!temNatureza) f.natureza = '';
-  const meses = [...new Set([f.mes, SN.agora().slice(0, 7), ...d.chamados.map(c => SN.mesChave(c.tempos.abertura))])].filter(Boolean).sort().reverse();
+  // Mês antes da janela da carga (e o anterior a ele, usado no IRR): busca no servidor e desenha de novo.
+  const anterior = m => { const [a, n] = m.split('-').map(Number); const x = new Date(a, n - 2, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); };
+  const faltam = [f.mes, anterior(f.mes)].filter(m => SN.foraDaJanela(m) && !(d.periodos || {})[m]);
+  if (faltam.length) {
+    SN.casca('portal', `<p class="muted">Buscando ${SN.mesNome(f.mes)} no servidor…</p>`);
+    const aqui = () => SN.rotaAtual && SN.rotaAtual.hash === '/portal';
+    Promise.all(faltam.map(SN.garantirMes)).then(() => { if (aqui()) SN.render(); },
+      e => { SN.toast('Não foi possível buscar ' + SN.mesNome(f.mes) + ' (' + e.message + ').', 'erro'); f.mes = SN.agora().slice(0, 7); if (aqui()) SN.render(); });
+    return;
+  }
+  // Com a janela, os meses antigos não estão na carga: oferece os últimos 24.
+  const ultimos = []; if (d.janela) for (let i = 0, m = SN.agora().slice(0, 7); i < 24; i++, m = anterior(m)) ultimos.push(m);
+  const meses = [...new Set([f.mes, SN.agora().slice(0, 7), ...ultimos, ...d.chamados.map(c => SN.mesChave(c.tempos.abertura))])].filter(Boolean).sort().reverse();
   const filtraBase = c => (!f.tipo || c.tipo === f.tipo) && (!f.emp || c.empresa === f.emp);
   const filtra = c => filtraBase(c) && (!f.natureza || SN.naturezaDe(f.natureza)[2](c));
   const abertos = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.abertura) === f.mes && c.status !== 'CANCELADO');
@@ -179,7 +191,7 @@ SN.rota('/portal', () => {
       Chegada: SN.dt(c.tempos.chegada), ConclusaoTecnica: SN.dt(c.tempos.conclusaoTecnica), Fechamento: SN.dt(c.tempos.fechamento), PrazoLimite: SN.dt(c.prazoLimite),
       MTTD_min: m.mttd, MTTA_min: m.mtta, MTTR_min: m.mttr, EmCampo_min: m.tmc, SLA: m.sla == null ? '' : m.sla ? 'Dentro' : 'Fora',
       Reincidente: SN.entraNoIrr(c) ? (ant ? 'Sim' : 'Não') : '', ChamadoAnterior: ant ? ant.id : '',
-      Causa: c.rfo.causa || '', Acao: c.rfo.acao || '', Solucao: c.rfo.solucao || '' }; }));
+      Causa: c.rfo.causa || '', Acao: c.rfo.acao || '', TrabalhouCEO: SN.ceoTxt(c.rfo), Solucao: c.rfo.solucao || '', Fotos: (c.fotos || []).filter(x => x.tipo === 'imagem').length }; }));
   SN.$('#bRelTec').onclick = () => SN.exportar('eficiencia_' + f.mes, tecs.map(([t, o]) => ({ Tecnico: t, Empresa: o.emp, Chamados: o.n, DentroSLA: o.d, ForaSLA: o.f,
     SLA_pct: Math.round(o.d / o.n * 100), MTTR_min: Math.round(SN.media(o.mttr) || 0), MTTA_min: Math.round(SN.media(o.mtta) || 0),
     HoraHomem: SN.empresa(o.emp).vinculo === 'CLT' ? +o.hh.toFixed(2) : '' })));

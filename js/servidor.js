@@ -73,11 +73,14 @@ SN.carregarRemoto = async () => {
   Object.keys(SN.CHAVES).forEach(col => { db[col] = tirarVersoes(col, r.db[col] || []); });
   db.seq = (r.db.config && r.db.config.seq) || {};
   db.assinaturas = (r.db.config && r.db.config.assinaturas) || {};
+  db.janela = r.db.janela || null; db.periodos = {}; // liderança: meses antes da janela vêm sob demanda
   SN.db = db; SN._ultimaSync = r.db.servidorTs; SN.offline = false;
   fotografar();
   SN.guardarLocal();
   SN.carregarStatusAcessos();
   if (SN.vst && SN.vst.preaquecer) SN.vst.preaquecer();
+  if (SN.reabastecerIds) setTimeout(SN.reabastecerIds, 3000); // técnico: números para criar registro sem sinal
+  setTimeout(SN.subirAnexos, 2500); // fotos que ficaram no aparelho (ex.: página recarregou ao abrir a câmera)
 };
 
 // Lista de nomes para a tela de login (sem PIN). Se a base estiver vazia, é o
@@ -128,14 +131,15 @@ SN.apagarLocal = async () => {
   try { const bd = await bdLocal(); bd.transaction('estado', 'readwrite').objectStore('estado').delete(k); } catch (e) { }
 };
 let timerLocal = null;
-SN.guardarLocal = () => { clearTimeout(timerLocal); timerLocal = setTimeout(async () => {
+// ja = true: grava já (ex.: foto nova — o celular pode recarregar a página ao abrir a câmera).
+SN.guardarLocal = ja => { clearTimeout(timerLocal); timerLocal = setTimeout(async () => {
   const k = chaveLocal(); if (!k || !SN.db || !SN._ultimaSync) return;
   try {
     const bd = await bdLocal();
     bd.transaction('estado', 'readwrite').objectStore('estado').put({ db: SN.db, snap: SN._snap, ver: SN._ver, ultimaSync: SN._ultimaSync,
       assin: SN._assinEnviadas, semResposta: SN._semResposta, ts: Date.now() }, k);
   } catch (e) { /* aparelho sem espaço ou modo privado: segue só em memória */ }
-}, 1200); };
+}, ja === true ? 0 : 1200); };
 // Depois de carregar do servidor: reaplica o que foi feito neste aparelho e não subiu.
 SN.recuperarPendentes = async () => {
   const L = await SN.lerLocal(); if (!L || !L.db || !L.snap) return 0;
@@ -227,24 +231,46 @@ SN.enviarMudancas = async () => {
 SN.salvarAgora = async () => { clearTimeout(filaTimer); await SN.enviarMudancas(); while (enviando) await new Promise(r => setTimeout(r, 150)); };
 
 // ─────────── Receber o que outros alteraram ───────────
+// Junta registros vindos do servidor sem passar por cima de edição local ainda não enviada.
+const mesclar = mudancas => {
+  let mudou = false;
+  Object.entries(mudancas || {}).forEach(([col, docs]) => {
+    const k = SN.CHAVES[col]; if (!k) return;
+    const lista = SN.db[col] = SN.db[col] || [], snap = SN._snap[col] = SN._snap[col] || {};
+    tirarVersoes(col, docs).forEach(d => {
+      const id = d[k], i = lista.findIndex(x => String(x[k]) === String(id));
+      if (i >= 0 && snapDoc(col, lista[i]) !== snap[id]) return; // tem edição local ainda não enviada
+      if (i >= 0 && snapDoc(col, lista[i]) === snapDoc(col, d)) return;
+      if (i >= 0) lista[i] = d; else lista.push(d);
+      snap[id] = snapDoc(col, d); mudou = true;
+    });
+  });
+  return mudou;
+};
+
+// Liderança: a carga traz o mês atual e os JANELA anteriores (e tudo que está em
+// andamento). Um mês mais antigo (Portal) ou um chamado antigo (link) é buscado aqui,
+// uma vez por sessão. Devolve true se precisou buscar.
+SN.foraDaJanela = mes => !!(SN.remoto && SN.db.janela && mes && mes < SN.db.janela.desde);
+SN.garantirMes = async mes => {
+  if (!SN.foraDaJanela(mes) || (SN.db.periodos || {})[mes]) return false;
+  const r = await SN.api('CARREGAR_PERIODO', { mes });
+  mesclar(r.db); (SN.db.periodos = SN.db.periodos || {})[mes] = true; SN.guardarLocal();
+  return true;
+};
+SN.buscarChamado = async id => {
+  if (!SN.remoto || !SN.db.janela || SN.offline) return null;
+  const r = await SN.api('CARREGAR_PERIODO', { id });
+  mesclar(r.db); SN.guardarLocal();
+  return SN.db.chamados.find(x => x.id === id) || null;
+};
 let sincronizando = false;
 SN.sincronizar = async () => {
   if (!SN.sessao() || enviando || pendente || !SN._ultimaSync || sincronizando) return;
   sincronizando = true;
   try {
     const r = await SN.api('SINCRONIZAR', { desde: SN._ultimaSync });
-    let mudou = false;
-    Object.entries(r.mudancas || {}).forEach(([col, docs]) => {
-      const k = SN.CHAVES[col]; if (!k) return;
-      const lista = SN.db[col] = SN.db[col] || [];
-      tirarVersoes(col, docs).forEach(d => {
-        const id = d[k], i = lista.findIndex(x => String(x[k]) === String(id));
-        if (i >= 0 && snapDoc(col, lista[i]) !== SN._snap[col][id]) return; // tem edição local ainda não enviada
-        if (i >= 0 && snapDoc(col, lista[i]) === snapDoc(col, d)) return;
-        if (i >= 0) lista[i] = d; else lista.push(d);
-        SN._snap[col][id] = snapDoc(col, d); mudou = true;
-      });
-    });
+    let mudou = mesclar(r.mudancas);
     // Saiu do recorte desta pessoa (ex.: chamado reatribuído a outra empresa): tira da
     // tela e do "que o servidor tem" — senão o envio entenderia como exclusão.
     Object.entries(r.fora || {}).forEach(([col, ids]) => {
@@ -293,10 +319,42 @@ if (SN.remoto) {
     localStorage.removeItem('sigonet_v2_sessao');
     await SN.prepararLogin().catch(() => { }); location.hash = '#/login'; SN.render();
   };
+  // Números sem sinal: o aparelho do técnico guarda alguns IDs reservados no servidor
+  // (LPU, MAT, FIB) e usa um deles quando está sem sinal. Os reservados já são únicos
+  // (o contador do servidor andou); os que não forem usados viram só um pulo na numeração.
+  const RESERVA_PREFIXOS = ['LPU', 'MAT', 'FIB'], RESERVA_QTD = 5;
+  const chaveReserva = () => { const s = SN.sessao(); return s ? 'sigonet_v2_ids|' + s.tipo + '|' + (s.empresa || '') + '|' + s.nome : null; };
+  const lerReserva = () => { try { return JSON.parse(localStorage.getItem(chaveReserva()) || '{}'); } catch (e) { return {}; } };
+  const gravarReserva = r => { try { localStorage.setItem(chaveReserva(), JSON.stringify(r)); } catch (e) { } };
+  let reabastecendo = false;
+  SN.reabastecerIds = async () => {
+    const s = SN.sessao(); if (!s || s.tipo !== 'tecnico' || reabastecendo || SN.offline) return;
+    reabastecendo = true;
+    try {
+      for (const p of RESERVA_PREFIXOS) {
+        if ((lerReserva()[p] || []).length >= 2) continue;
+        const r = await SN.api('PROX_ID', { prefixo: p, qtd: RESERVA_QTD });
+        const res = lerReserva(); res[p] = (res[p] || []).concat(r.ids || [r.id]); gravarReserva(res);
+      }
+    } catch (e) { /* sem sinal: tenta na próxima */ } finally { reabastecendo = false; }
+  };
+  const usarReserva = pref => { const res = lerReserva(), id = (res[pref] || []).shift(); if (id) gravarReserva(res); return id || null; };
+  SN.novoId = async pref => {
+    const semSinal = SN.offline || navigator.onLine === false;
+    if (semSinal) { const id = usarReserva(pref); if (id) return id; }
+    try { const r = await SN.api('PROX_ID', { prefixo: pref }); setTimeout(SN.reabastecerIds, 1500); return r.id; }
+    catch (e) {
+      if (!e.rede) throw e;
+      SN.offline = true; SN.indicadorSync();
+      const id = usarReserva(pref); if (id) return id;
+      throw new Error('Sem sinal e sem número reservado neste aparelho para criar o registro. Tente de novo quando o sinal voltar.');
+    }
+  };
   setInterval(SN.sincronizar, 30000);
+  setInterval(() => { if (SN.anexosPendentes().length) SN.subirAnexos(); }, 45000); // fotos que ficaram no aparelho
   document.addEventListener('visibilitychange', () => { if (!document.hidden) SN.sincronizar(); });
   // Sinal voltou: envia o que ficou guardado e busca as novidades na hora.
-  window.addEventListener('online', () => { if (SN.sessao()) { SN.salvarRemoto(); setTimeout(SN.sincronizar, 3000); } });
+  window.addEventListener('online', () => { if (SN.sessao()) { SN.salvarRemoto(); setTimeout(SN.sincronizar, 3000); setTimeout(SN.subirAnexos, 4000); } });
 }
 
 // Inicialização (chamada pelo index.html)

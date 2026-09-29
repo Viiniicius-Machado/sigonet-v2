@@ -3,7 +3,6 @@
 // A equipe abre o KMZ da rota, percorre e aponta a produção: metros, postes
 // equipados, cordoalha, plaquetas, caixas/CEO regularizadas e sobra técnica.
 // Pode mandar parciais (dias diferentes) e um "Finalizado", que conclui a rota.
-// "Colar relato" lê o texto que a equipe já manda hoje e preenche os campos.
 // Cada apontamento gera a ficha PDF de controle e vai pela fila offline.
 (() => {
   const L = VR_LISTAS, esc = SN.esc;
@@ -149,9 +148,6 @@
     const f = A.form || (A.form = novoForm());
     const num = (k, rot) => `<div class="campo"><label>${rot}</label><input class="inp" type="number" inputmode="decimal" min="0" step="any" data-a="${k}" value="${esc(f[k] ?? '')}"></div>`;
     el.innerHTML = `<div class="card vst-bloco"><h3>${f.refazendo ? '✏️ Refazer apontamento' : '➕ Apontar produção'}</h3>
-      <details ${f.metros === '' ? 'open' : ''} style="margin-bottom:10px"><summary class="small"><b>📋 Colar relato da equipe</b> (preenche os campos sozinho)</summary>
-        <textarea class="inp" id="aRelato" placeholder="Rota percorrido 2,134&#10;Poste equipado 13&#10;Cordoalha 120&#10;Plaquetas 15&#10;Caixa regularizadas 3&#10;Finalizado" style="margin-top:6px;min-height:120px"></textarea>
-        <button type="button" class="btn bloco" id="aLer" style="margin-top:6px">Ler relato</button><div class="small" id="aLido"></div></details>
       <div class="campo"><label>Tipo *</label><div class="chips">${L.tipo_apontamento.map(([v, r]) => `<button type="button" class="chip ${f.tipo === v ? 'sel' : ''}" data-tipo="${v}">${r}</button>`).join('')}</div>
         <div class="small muted">"Finalizado" conclui a rota. Use "Parcial" quando a equipe volta outro dia.</div></div>
       <div class="campo"><label>Data *</label><input class="inp" type="date" data-a="data" value="${esc(String(f.data || '').slice(0, 10))}"></div>
@@ -163,14 +159,6 @@
       <button class="btn prim lg bloco" id="aEnviar" style="margin-top:8px">📤 Enviar apontamento</button>
       ${f.refazendo ? '<button class="btn bloco" id="aCancelar" style="margin-top:6px">Cancelar</button>' : ''}</div>`;
     pintarThumbs(); validarNaTela();
-    SN.$('#aLer').onclick = () => {
-      const r = VR.lerRelato(SN.$('#aRelato').value);
-      ['metros', 'postes', 'cordoalha', 'plaquetas', 'caixas', 'sobra'].forEach(k => { if (r[k] != null) f[k] = r[k]; });
-      if (r.tipo) f.tipo = r.tipo;
-      salvarRascunho(); pintarForm();
-      SN.$('#aLido').innerHTML = r.reconhecidos.length ? `<span style="color:var(--ok)">✓ ${r.reconhecidos.length} linha(s) lida(s).</span>${r.ignorados.length ? ` <span class="muted">Não entendi: ${r.ignorados.map(esc).join(' · ')}</span>` : ''} Confira os números antes de enviar.`
-        : '<span style="color:var(--erro)">Não reconheci nenhuma linha. Preencha os campos à mão.</span>';
-    };
     SN.$$('[data-tipo]', el).forEach(b => b.onclick = () => { f.tipo = f.tipo === b.dataset.tipo ? '' : b.dataset.tipo; salvarRascunho(); pintarForm(); });
     SN.$$('[data-a]', el).forEach(i => { i.oninput = () => { const k = i.dataset.a; f[k] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); }; });
     SN.$('#aEnviar').onclick = enviar;

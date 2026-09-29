@@ -133,6 +133,10 @@ SN.rota('/tec/os/:id', id => {
         <div id="tecClass"></div>
         <div class="campo"><label>Causa *</label><textarea class="inp" id="rCausa">${SN.esc(c.rfo.causa || '')}</textarea></div>
         <div class="campo"><label>Ação realizada *</label><textarea class="inp" id="rAcao">${SN.esc(c.rfo.acao || '')}</textarea></div>
+        <div class="campo"><label>Trabalhou na CEO? *</label>
+          <div class="chips" id="rCeo">${[['sim', 'Sim'], ['nao', 'Não']].map(([k, r]) => `<button type="button" class="chip ${(c.rfo.ceo || {}).trabalhou === k ? 'sel' : ''}" data-ceo="${k}">${r}</button>`).join('')}</div>
+          <div id="rCeoTipo" style="margin-top:8px" ${(c.rfo.ceo || {}).trabalhou === 'sim' ? '' : 'hidden'}><label class="small">Qual caso? *</label>
+            <div class="chips">${Object.entries(SN.CEO_TIPOS).map(([k, r]) => `<button type="button" class="chip ${(c.rfo.ceo || {}).tipo === k ? 'sel' : ''}" data-ceotipo="${k}">${r}</button>`).join('')}</div></div></div>
         <div class="campo"><label>Solução *</label><textarea class="inp" id="rSol">${SN.esc(c.rfo.solucao || '')}</textarea></div>
         <div class="campo"><label>Local da falha</label>
           <div style="display:flex;gap:6px"><input class="inp" id="rLocal" style="flex:1;min-width:0" placeholder="Escreva o endereço ou use o GPS" value="${SN.esc(c.rfo.localFalha || '')}">
@@ -142,8 +146,8 @@ SN.rota('/tec/os/:id', id => {
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
         <div class="grid g2" style="margin-top:8px;gap:8px">
           <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço, lat/lng e logo (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
-          <label class="btn" title="Foto da galeria ou PDF, sem marca d'água">📎 Anexar arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
-        <p class="small muted" style="margin:4px 0 0">"Tirar foto" já sai com data, hora, endereço, coordenadas e a logo — não precisa do Timemark.</p>
+          <label class="btn" title="Fotos da galeria ou PDF, sem marca d'água">🖼 Galeria / arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
+        <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço, coordenadas e a logo.</p>
         <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar RFO</button>
       </div>` : ''}
     ${libera ? `<div class="card" style="margin-top:12px"><h3>Apontamentos</h3>
@@ -163,7 +167,18 @@ SN.rota('/tec/os/:id', id => {
   SN.$$('.modulo[data-go]').forEach(el => el.onclick = () => SN.navegar(el.dataset.go));
   let getClass = null;
   if (SN.$('#tecClass')) getClass = SN.cascata(SN.$('#tecClass'), c, 2);
-  SN.pintarFotos(SN.$('#tecFotos'), c.fotos || []);
+  // Fotos da RFO: removíveis só enquanto o atendimento está em campo (e só as ainda não enviadas em PDF).
+  const pintarRfo = () => SN.pintarFotos(SN.$('#tecFotos'), c.fotos || [], emCampo && titular ? { remover: async a => {
+    if (!await SN.confirmar('Remover foto', 'Tirar esta foto do atendimento?', 'Remover', 'perigo')) return;
+    c.fotos = c.fotos.filter(x => x !== a); SN.hist(c, 'Foto removida', a.nome); SN.salvar(); pintarRfo(); } } : null);
+  pintarRfo();
+  let ceo = { ...(c.rfo.ceo || {}) };
+  SN.$$('[data-ceo]').forEach(b => b.onclick = () => {
+    ceo.trabalhou = b.dataset.ceo; if (ceo.trabalhou !== 'sim') delete ceo.tipo;
+    SN.$$('[data-ceo]').forEach(x => x.classList.toggle('sel', x === b)); SN.$('#rCeoTipo').hidden = ceo.trabalhou !== 'sim';
+    if (ceo.trabalhou !== 'sim') SN.$$('[data-ceotipo]').forEach(x => x.classList.remove('sel'));
+  });
+  SN.$$('[data-ceotipo]').forEach(b => b.onclick = () => { ceo.tipo = b.dataset.ceotipo; SN.$$('[data-ceotipo]').forEach(x => x.classList.toggle('sel', x === b)); });
   const bA = SN.$('#bAcao');
   if (bA) bA.onclick = async () => {
     const agora = SN.agora();
@@ -188,7 +203,8 @@ SN.rota('/tec/os/:id', id => {
       Object.assign(c, { cat2: cl.cat2 || '', cat3: cl.cat3 || '', cat4: cl.cat4 || '' });
     }
     c.rfo = { causa: SN.$('#rCausa').value.trim(), acao: SN.$('#rAcao').value.trim(), solucao: SN.$('#rSol').value.trim(),
-      localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: SN.$('#rObs').value.trim() };
+      localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: SN.$('#rObs').value.trim(), ceo: ceo.trabalhou ? { ...ceo } : undefined };
+    if (!c.rfo.ceo) delete c.rfo.ceo;
     if (!c.tempos.diagnostico && (c.rfo.causa || c.rfo.acao)) c.tempos.diagnostico = SN.agora();
     return cl;
   };
@@ -232,28 +248,28 @@ SN.rota('/tec/os/:id', id => {
     bR.onclick = () => { salvarRfo(); SN.hist(c, 'RFO salvo', ''); SN.log('SALVAR_RFO', c.id, ''); SN.salvar(); SN.toast('RFO salvo.', 'ok'); };
     SN.$('#inFoto').onchange = async ev => {
       salvarRfo();
-      SN.toast('Enviando ' + ev.target.files.length + ' arquivo(s)…');
-      for (const f of ev.target.files) { try { c.fotos.push(await SN.guardarArquivo(f, c.id)); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
-      SN.hist(c, 'Evidências anexadas', ev.target.files.length + ' arquivo(s)'); SN.salvar(); SN.pintarFotos(SN.$('#tecFotos'), c.fotos);
+      const arqs = [...ev.target.files]; ev.target.value = '';
+      for (const f of arqs) { try { (c.fotos = c.fotos || []).push(await SN.fotoDaGaleria(f, c.id)); pintarRfo(); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
+      SN.hist(c, 'Evidências anexadas', arqs.length + ' arquivo(s)'); SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); pintarRfo();
     };
     // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado) + logo NetTurbo.
     SN.$('#inCam').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
       salvarRfo(); SN.toast('Processando foto (GPS e endereço)…');
       try {
-        const r = await SN.VF.fotoCarimbada(f, `${c.id} · ${c.cliente || ''}${c.etiqueta ? ' · ' + c.etiqueta : ''}`);
-        const ax = await SN.guardarDataUrl(r.dataUrl, 'foto_' + r.agora.replace(/[-:T]/g, '').slice(0, 14) + '.jpg', 'imagem', c.id);
-        Object.assign(ax, { lat: r.pos ? r.pos.lat : '', lng: r.pos ? r.pos.lng : '', endereco: r.endereco || '', capturadaEm: r.agora });
-        c.fotos.push(ax);
-        SN.hist(c, 'Foto tirada no app', r.endereco || (r.pos ? r.pos.lat + ',' + r.pos.lng : 'sem GPS'));
-        SN.salvar(); SN.pintarFotos(SN.$('#tecFotos'), c.fotos);
-        if (!r.pos) SN.toast('Foto salva sem GPS: permita a localização para sair com endereço e coordenadas.', 'erro');
+        const r = await SN.fotoDaCamera(f, `${c.id} · ${c.cliente || ''}${c.etiqueta ? ' · ' + c.etiqueta : ''}`, c.id);
+        (c.fotos = c.fotos || []).push(r.ax);
+        SN.hist(c, 'Foto tirada no app', r.endereco || (r.semGps ? 'sem GPS' : r.ax.lat + ',' + r.ax.lng));
+        SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); pintarRfo();
+        if (r.semGps) SN.toast('Foto salva sem GPS: permita a localização para sair com endereço e coordenadas.', 'erro');
       } catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
       ev.target.value = '';
     };
     SN.$('#bConcluir').onclick = async () => {
       const cl = salvarRfo();
       if (!c.rfo.causa || !c.rfo.acao || !c.rfo.solucao) { SN.salvar(); return SN.toast('Preencha causa, ação e solução para concluir (análise e tratamento são obrigatórios).', 'erro'); }
+      if (!c.rfo.ceo) { SN.salvar(); return SN.toast('Responda se trabalhou na CEO.', 'erro'); }
+      if (c.rfo.ceo.trabalhou === 'sim' && !c.rfo.ceo.tipo) { SN.salvar(); return SN.toast('Informe o caso da CEO (nova → nova, nova → existente ou existente → existente).', 'erro'); }
       if (!cl.sla) return SN.toast('Complete as categorias.', 'erro');
       const semFoto = !(c.fotos || []).some(f => f.tipo === 'imagem');
       if (!await SN.confirmar('Concluir atendimento', (semFoto ? '<b>Atenção: nenhuma foto anexada.</b><br>' : '') + 'Confirmar a conclusão técnica? O chamado segue para o fechamento do NOC.', 'Concluir', 'ok')) return;
@@ -261,7 +277,8 @@ SN.rota('/tec/os/:id', id => {
       if (!c.tempos.diagnostico) c.tempos.diagnostico = c.tempos.conclusaoTecnica;
       SN.hist(c, 'Conclusão técnica', `MTTR ${SN.dur(SN.metricas(c).mttr)}`);
       SN.salvar();
-      const ax = await SN.anexarPdf(SN.pdfChamado(c, false), `Atendimento ${c.id}.pdf`, c.id);
+      SN.toast('Gerando o PDF do atendimento com as fotos…');
+      const ax = await SN.anexarPdf(await SN.pdfChamado(c, false), `Atendimento ${c.id}.pdf`, c.id);
       if (ax) c.fotos.push(ax);
       SN.int.ellevenStatus(c, 'Concluída pelo técnico');
       SN.log('CONCLUIR_TECNICO', c.id, ''); SN.salvar(); SN.toast('Atendimento concluído! Agora aponte LPU e materiais.', 'ok'); SN.render();
@@ -288,8 +305,13 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const emp = SN.empresa(h.empresa), vinc = emp.vinculo;
   const editavel = !l || ['AGUARDANDO_LIDER', 'REPROVADA'].includes(l.status);
   const itens = SN.itensDaConta(h.conta);
-  const qtd = {}; const fator = {};
-  (l ? l.itens : []).forEach(i => { qtd[i.cod] = i.qtd; fator[i.cod] = i.fator; });
+  const qtd = {}; const fator = {}; const fotosIt = {}; // fotosIt: código → fotos que justificam a linha (opcional, várias)
+  (l ? l.itens : []).forEach(i => { qtd[i.cod] = i.qtd; fator[i.cod] = i.fator; if ((i.fotos || []).length) fotosIt[i.cod] = i.fotos.slice(); });
+  // Rascunho no aparelho: o celular pode recarregar a página ao abrir a câmera — nada se perde.
+  const chaveRasc = 'sigonet_v2_rasc_lpu|' + id + '|' + papel + '|' + (l ? l.id : 'novo');
+  const lerRasc = () => { try { return JSON.parse(localStorage.getItem(chaveRasc) || 'null'); } catch (e) { return null; } };
+  const rasc = editavel ? lerRasc() : null;
+  if (rasc) { [qtd, fator, fotosIt].forEach(o => Object.keys(o).forEach(k => delete o[k])); Object.assign(qtd, rasc.qtd); Object.assign(fator, rasc.fator); Object.assign(fotosIt, rasc.fotos); }
   // LPU nova de Preventiva: já vem com as quantidades das CS aprovadas.
   const foraDaConta = [];
   if (!l && prev && prev.lpu_sugerida) Object.entries(prev.lpu_sugerida).forEach(([cod, q]) => {
@@ -309,32 +331,73 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
       ${foraDaConta.length ? `<br><b>Atenção:</b> ${foraDaConta.join(', ')} não está na conta desta OS — avise a gestão.` : ''}</div>` : ''}
     ${vinc === 'CLT' ? SN.htmlHoraHomem(hh) : ''}
     ${vinc === 'CONTRATO_FIXO' ? '<div class="aviso alerta small" style="margin-bottom:10px">Contrato fixo: a produção conta para a meta mensal, sem valor por item.</div>' : ''}
+    ${rasc ? '<div class="aviso info small" style="margin-bottom:10px">Rascunho recuperado deste aparelho (ainda não enviado).</div>' : ''}
     <div class="card" style="margin-top:12px"><div class="card-tit"><h3>Serviços</h3><span class="badge" id="lpuCont"></span></div>
+      <p class="small muted" style="margin:0 0 6px">📷 ao lado da quantidade: fotos que justificam o serviço (opcional; pode pôr várias por linha).</p>
       <input class="inp" id="lpuBusca" placeholder="Buscar serviço (código ou descrição)">
+      <div class="chips" id="lpuClasses" style="margin-top:8px">${['', ...new Set(itens.map(i => i.classe))].map(k =>
+        `<button type="button" class="chip ${k === '' ? 'sel' : ''}" data-cl="${SN.esc(k)}">${k === '' ? 'Todas' : SN.esc(k)}</button>`).join('')}</div>
       <div id="lpuLista" style="margin-top:6px"></div></div>
-    <div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="lpuObs" ${editavel ? '' : 'disabled'}>${SN.esc(l ? l.obs : '')}</textarea></div>
+    <div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="lpuObs" ${editavel ? '' : 'disabled'}>${SN.esc(rasc && rasc.obs != null ? rasc.obs : l ? l.obs : '')}</textarea></div>
     <div class="card"><h3>Assinatura do ${vinc === 'CLT' ? 'técnico' : 'prestador'}</h3>
       <p class="small" id="assTxt">${assinatura ? SN.esc(SN.txtAssinatura(assinatura)) : 'Ainda não assinado.'}</p>
       ${editavel ? '<button class="btn" id="bAss">✍ Assinar</button>' : ''}</div>
     ${editavel ? '<button class="btn prim lg bloco" id="bEnviarLpu" style="margin-top:12px">Enviar LPU para o líder</button>' : ''}`);
+  let classe = ''; // filtro por classe ('' = todas)
   const pintar = () => {
     const q = SN.normal(SN.$('#lpuBusca').value);
-    const vis = itens.filter(i => !q || SN.normal(i.cod + ' ' + i.desc).includes(q));
+    const vis = itens.filter(i => (!classe || i.classe === classe) && (!q || SN.normal(i.cod + ' ' + i.desc).includes(q)));
     if (prev) vis.sort((a, b) => (qtd[b.cod] ? 1 : 0) - (qtd[a.cod] ? 1 : 0)); // Preventiva: itens preenchidos primeiro
     SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>
       <div class="c">${i.cod} · ${i.classe} · por ${i.medida}
       ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>
-      <input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}></div>`).join('') || '<p class="muted">Nenhum serviço.</p>';
+      <input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}>
+      ${editavel ? `<button type="button" class="btn lpu-foto-bt" data-fb="${i.cod}" title="Fotos deste serviço">📷${(fotosIt[i.cod] || []).length ? `<span class="n">${fotosIt[i.cod].length}</span>` : ''}</button>` : '<span></span>'}
+      <div class="lpu-foto-acoes" data-fa="${i.cod}" hidden>
+        <label class="btn sm prim">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden data-cam="${i.cod}"></label>
+        <label class="btn sm">🖼 Galeria<input type="file" accept="image/*" multiple hidden data-gal="${i.cod}"></label></div>
+      <div class="fotos mini" data-fl="${i.cod}"></div></div>`).join('') || '<p class="muted">Nenhum serviço.</p>';
     SN.$$('[data-q]').forEach(inp => inp.oninput = () => { const v = parseFloat(inp.value); if (v > 0) qtd[inp.dataset.q] = v; else delete qtd[inp.dataset.q];
       inp.parentElement.classList.toggle('tem', v > 0); SN.$('#lpuCont').textContent = Object.keys(qtd).length + ' item(ns)'; });
-    SN.$$('[data-f]').forEach(cb => cb.onchange = () => { fator[cb.dataset.f] = cb.checked ? 'critico' : 'comum'; });
+    SN.$$('[data-f]').forEach(cb => cb.onchange = () => { fator[cb.dataset.f] = cb.checked ? 'critico' : 'comum'; guardarRasc(); });
+    SN.$$('[data-q]').forEach(inp => inp.addEventListener('change', guardarRasc));
+    SN.$$('[data-fl]').forEach(el => pintarFotosIt(el.dataset.fl));
+    SN.$$('[data-fb]').forEach(b => b.onclick = () => { const p = SN.$(`[data-fa="${b.dataset.fb}"]`); p.hidden = !p.hidden; });
+    const legenda = cod => `${c.id} · LPU ${cod}${c.cliente ? ' · ' + c.cliente : ''}`;
+    SN.$$('[data-cam]').forEach(inp => inp.onchange = async () => {
+      const f = inp.files && inp.files[0], cod = inp.dataset.cam; inp.value = ''; if (!f) return;
+      SN.toast('Processando foto (GPS e endereço)…');
+      try { const r = await SN.fotoDaCamera(f, legenda(cod), c.id); (fotosIt[cod] = fotosIt[cod] || []).push(r.ax); guardarRasc(true); pintarFotosIt(cod);
+        if (r.semGps) SN.toast('Foto salva sem GPS: permita a localização para sair com endereço e coordenadas.', 'erro'); }
+      catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
+    });
+    SN.$$('[data-gal]').forEach(inp => inp.onchange = async () => {
+      const arqs = [...inp.files], cod = inp.dataset.gal; inp.value = '';
+      for (const f of arqs) { try { (fotosIt[cod] = fotosIt[cod] || []).push(await SN.fotoDaGaleria(f, c.id)); pintarFotosIt(cod); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
+      guardarRasc(true);
+    });
     SN.$('#lpuCont').textContent = Object.keys(qtd).length + ' item(ns)';
   };
-  SN.$('#lpuBusca').oninput = SN.debounce(pintar, 150); pintar();
+  const pintarFotosIt = cod => {
+    const el = SN.$(`[data-fl="${cod}"]`); if (!el) return;
+    const b = SN.$(`[data-fb="${cod}"]`), n = (fotosIt[cod] || []).length;
+    if (b) b.innerHTML = '📷' + (n ? `<span class="n">${n}</span>` : '');
+    SN.pintarFotos(el, fotosIt[cod] || [], { vazio: '', remover: editavel ? a => { fotosIt[cod] = fotosIt[cod].filter(x => x !== a); if (!fotosIt[cod].length) delete fotosIt[cod]; guardarRasc(true); pintarFotosIt(cod); } : null });
+  };
+  const guardarRasc = ja => {
+    if (!editavel) return;
+    try { localStorage.setItem(chaveRasc, JSON.stringify({ qtd, fator, fotos: fotosIt, obs: SN.$('#lpuObs') ? SN.$('#lpuObs').value : '', ts: SN.agora() })); } catch (e) { }
+  };
+  SN.$('#lpuBusca').oninput = SN.debounce(pintar, 150);
+  SN.$$('[data-cl]').forEach(b => b.onclick = () => { classe = b.dataset.cl; SN.$$('[data-cl]').forEach(x => x.classList.toggle('sel', x === b)); pintar(); });
+  pintar();
   if (!editavel) return;
+  SN.$('#lpuObs').oninput = SN.debounce(() => guardarRasc(), 400);
   SN.$('#bAss').onclick = () => { assinatura = SN.assinar(vinc === 'CLT' ? 'Técnico' : 'Prestador'); SN.$('#assTxt').textContent = SN.txtAssinatura(assinatura); SN.salvar(); };
   SN.$('#bEnviarLpu').onclick = async ev => {
-    const lista = Object.keys(qtd).map(cod => ({ cod, qtd: qtd[cod], fator: fator[cod] || 'comum' }));
+    const semQtd = Object.keys(fotosIt).filter(cod => (fotosIt[cod] || []).length && !(qtd[cod] > 0));
+    if (semQtd.length) return SN.toast('Há foto em serviço sem quantidade (' + semQtd.join(', ') + '). Informe a quantidade ou remova a foto.', 'erro');
+    const lista = Object.keys(qtd).map(cod => ({ cod, qtd: qtd[cod], fator: fator[cod] || 'comum', ...((fotosIt[cod] || []).length ? { fotos: fotosIt[cod] } : {}) }));
     // CLT pode enviar só com a hora-homem (automática); prestador precisa de serviço.
     if (!lista.length && vinc !== 'CLT') return SN.toast('Informe ao menos um serviço.', 'erro');
     if (!assinatura) return SN.toast('Clique em Assinar antes de enviar.', 'erro');
@@ -349,6 +412,8 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     SN.hist(l, novo ? 'Registro pelo técnico' : 'Reenvio após correção', novo ? `${lista.length} item(ns)` : SN.diff(antes, { itens: l.itens }));
     SN.hist(c, 'LPU registrada', l.id);
     SN.log(novo ? 'REGISTRAR_LPU' : 'REENVIAR_LPU', l.id, c.id); SN.salvar();
+    try { localStorage.removeItem(chaveRasc); } catch (e) { }
+    setTimeout(SN.subirAnexos, 500); // fotos das linhas sobem agora que a LPU existe
     SN.toast('LPU enviada. Ela segue seu próprio fluxo de aprovação.', 'ok'); SN.navegar('#/tec/os/' + c.id);
   };
 }, { familia: 'tecnico' });
@@ -503,6 +568,10 @@ SN.rota('/tec/fibra/:id', id => {
           <div class="campo"><label>Nº da CEO *</label><input class="inp" data-k="numero" value="${SN.esc(e.numero)}" ${dis}></div>
           <div class="campo"><label>Caixa</label><select class="inp" data-k="tipoCaixa" ${dis}>${['Nova', 'Existente', 'Nenhuma'].map(o => `<option ${o === e.tipoCaixa ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
         </div>
+        <div class="campo"><label>Localização da CEO</label>
+          <div style="display:flex;gap:6px"><input class="inp" data-k="local" style="flex:1;min-width:0" placeholder="Escreva o endereço ou use o GPS" value="${SN.esc(e.local || '')}" ${dis}>
+            ${editavel ? `<button type="button" class="btn" data-gpsceo="${i}" title="Pegar a localização atual pelo GPS do celular">📍 Usar GPS</button>` : ''}</div>
+          <div class="small muted">${SN.gpsTxt(e.gps)}${editavel ? ' Longe da CEO? Escreva o endereço à mão.' : ''}</div></div>
         <div class="campo"><label>Modelo da emenda (material)</label><select class="inp" data-k="modelo" ${dis}><option value="">—</option>${caixas.map(m => `<option value="${m.c}" ${m.c === e.modelo ? 'selected' : ''}>${SN.esc(m.d)}</option>`).join('')}</select></div>
         <div class="linha-form">
           <div class="campo"><label>Nomenclatura lado A</label><input class="inp" data-k="nomA" value="${SN.esc(e.nomA)}" ${dis}></div>
@@ -525,6 +594,19 @@ SN.rota('/tec/fibra/:id', id => {
     if (!editavel) return;
     SN.$$('[data-i]').forEach(card => {
       const e = ceos[+card.dataset.i];
+      const bGps = SN.$('[data-gpsceo]', card);
+      if (bGps) bGps.onclick = async () => {
+        bGps.disabled = true; bGps.textContent = 'Obtendo…';
+        try {
+          const r = await SN.localAtual();
+          e.gps = r.gps;
+          const inp = SN.$('[data-k="local"]', card);
+          e.local = inp.value; // guarda o que já foi escrito à mão
+          if (r.endereco && (!e.local.trim() || e.localAuto === e.local)) { e.local = r.endereco; e.localAuto = r.endereco; }
+          SN.toast(r.endereco ? 'Localização da CEO capturada.' : 'Coordenada salva. Sem rede para buscar o endereço: escreva-o no campo se quiser.', 'ok');
+          pintar();
+        } catch (err) { SN.toast(err.message, 'erro'); bGps.disabled = false; bGps.textContent = '📍 Usar GPS'; }
+      };
       SN.$$('[data-k]', card).forEach(inp => inp.onchange = () => {
         e[inp.dataset.k] = inp.value;
         if (['caboA', 'caboB', 'splitter'].includes(inp.dataset.k)) {
@@ -585,6 +667,7 @@ SN.pdfFibra = reg => {
   reg.ceos.forEach((e, i) => {
     doc.addPage(); doc._y = 18; doc.secao(`CEO ${i + 1} · Nº ${e.numero}`);
     doc.linha('Caixa', `${e.tipoCaixa}${e.modelo ? ' · ' + (SN.material(e.modelo) || {}).d : ''}`);
+    if (e.local || (e.gps && e.gps.lat)) doc.linha('Localização', [e.local, e.gps && e.gps.lat ? 'GPS ' + e.gps.lat + ',' + e.gps.lng : ''].filter(Boolean).join(' · '));
     doc.linha('Lado A', `${e.nomA || '—'} · ${e.caboA || '—'}`); doc.linha('Lado B', `${e.nomB || '—'} · ${e.caboB || '—'}`);
     doc.linha('Splitter', e.splitter || 'Sem splitter'); doc.linha('Ligações', e.ligacoes.map(g => `${g.de}→${g.para === 'SE' ? 'Splitter' : g.para}`).join(', ') || '—');
     if (e.obs) doc.linha('Obs.', e.obs);

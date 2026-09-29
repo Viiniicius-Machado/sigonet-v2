@@ -134,6 +134,22 @@
       <div class="card" id="rDecisao" style="margin-top:12px;display:none"><h4>Motivo da rejeição (pode marcar mais de um)</h4>
         <div class="chips">${L.motivos_rejeicao.map(([v, t]) => `<button type="button" class="chip" data-mot="${v}">${esc(t)}</button>`).join('')}</div>
         <div class="campo" style="margin-top:8px"><label>Detalhe (obrigatório em "Outro")</label><textarea class="inp" id="rTexto"></textarea></div></div>`;
+    // PDF do que está na tela (dados + fotos), na mesma ficha de controle do aparelho.
+    const baixarPdf = () => SN.abrirPdfDepois(async () => {
+      const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
+      await buscarFotos(fotos.map(f => f.id_foto));
+      const locais = {}; fotos.forEach(f => { if (cacheFotos[f.id_foto]) locais[f.id_foto] = { thumb: cacheFotos[f.id_foto] }; });
+      let url;
+      if (x.seg === 'AEREA') {
+        const doRota = (d.producao || []).filter(p => p.id_rota === a.id_rota && p.status_revisao !== 'REJEITADA');
+        url = await SN.vst.pdfApontamento(a, r, VR.producaoRota(r, doRota).totais, locais);
+      } else url = await SN.vst.pdfFichaCs(a, r, locais);
+      if (!url) return null;
+      const bin = atob(url.split(',')[1]), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+      return { output: () => blobUrl }; // formato que SN.abrirPdfDepois espera
+    });
     let rejeitando = false; const motivos = new Set();
     const decidir = async (decisao, f) => {
       const dados = { decisao, motivos: [...motivos], motivo_texto: (SN.$('#rTexto', f) || {}).value || '', [x.seg === 'AEREA' ? 'id_apontamento' : 'id_vistoria']: x.id };
@@ -145,6 +161,7 @@
     };
     SN.modal({ titulo: x.seg === 'AEREA' ? `Revisar apontamento · ${r.id_rota}` : `Revisar CS ${a.cs_nova ? '(fora do cadastro)' : a.id_cs} · ${r.id_rota}`, largo: true, corpo,
       botoes: [{ rot: 'Fechar', valor: null },
+        { rot: '📄 PDF', acao: () => { baixarPdf(); return false; } },
         { rot: '✖ Rejeitar', cls: 'perigo', acao: async f => { if (!rejeitando) { rejeitando = true; SN.$('#rDecisao', f).style.display = ''; SN.$('#rDecisao', f).scrollIntoView({ behavior: 'smooth' }); SN.toast('Marque o motivo e toque em Rejeitar de novo.'); return false; } return (await decidir('REJEITADA', f)) ? null : false; } },
         { rot: '✔ Aprovar', cls: 'ok', acao: async f => (await decidir('APROVADA', f)) ? null : false }],
       aoAbrir: async f => {

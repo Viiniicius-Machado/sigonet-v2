@@ -40,7 +40,7 @@ SN.telaLpu = abrirId => {
     <div class="card"><div class="tabela-wrap"><table class="tab"><thead><tr><th>LPU</th><th>Chamado</th><th>Cliente</th><th>Empresa · técnico</th><th>Conta</th><th>Vínculo</th><th class="num">Valor / h·h</th><th>Status</th><th>Enviado</th></tr></thead><tbody>
       ${lista.map(l => `<tr class="clic" data-id="${l.id}"><td class="mono">${l.id}${l.papel === 'apoio' ? ' <span class="badge">APOIO</span>' : ''}</td><td class="mono">${l.chamadoId}</td>
         <td>${SN.esc(l.cab.cliente)}</td><td>${SN.esc(l.cab.empresa)} · ${SN.esc(l.cab.tecnico)}</td><td class="small">${SN.esc(SN.contaTxt(l.cab.conta))}</td>
-        <td>${l.vinculo}</td><td class="num">${SN.valorLpuTxt(l)}</td><td>${SN.badgeLpu(l.status)}</td><td class="nowrap">${SN.dt(l.enviadoEm)}</td></tr>`).join('')
+        <td>${l.vinculo}${(() => { const n = (l.itens || []).reduce((s, it) => s + (it.fotos || []).length, 0); return n ? ` <span class="badge" title="Fotos do técnico">📷 ${n}</span>` : ''; })()}</td><td class="num">${SN.valorLpuTxt(l)}</td><td>${SN.badgeLpu(l.status)}</td><td class="nowrap">${SN.dt(l.enviadoEm)}</td></tr>`).join('')
         || '<tr><td colspan="9" class="muted center">Nenhuma LPU neste filtro.</td></tr>'}</tbody></table></div></div>
     <div class="card"><div class="card-tit"><h3>Aguardando preenchimento do técnico</h3><span class="muted small">chamados já concluídos sem LPU apontada</span></div>
       ${Object.keys(pend).length ? `<div class="barras">${Object.entries(pend).sort((a, b) => b[1].length - a[1].length).map(([e, ids]) =>
@@ -55,7 +55,7 @@ SN.telaLpu = abrirId => {
     const cat = SN.itemLpu(it.cod) || {};
     return { LPU: l.id, Chamado: l.chamadoId, Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj, Tecnico: l.cab.tecnico, Papel: l.papel,
       Conta: l.cab.conta, Vinculo: l.vinculo, Codigo: it.cod || '', Servico: cat.desc || '', Qtd: it.qtd || '', Fator: it.fator || '',
-      Valor: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot, Enviado: SN.dt(l.enviadoEm) };
+      Fotos: (it.fotos || []).length || '', Valor: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot, Enviado: SN.dt(l.enviadoEm) };
   })));
   if (abrirId) SN.detalheLpu(abrirId);
 };
@@ -83,7 +83,8 @@ SN.detalheLpu = id => {
           <td>${podeEditar && l.vinculo === 'PRESTADOR' ? `<select class="inp" data-fi="${i}"><option value="comum">Comum</option><option value="critico" ${it.fator === 'critico' ? 'selected' : ''}>Crítico</option></select>` : (it.fator === 'critico' ? 'Crítico' : 'Comum')}</td>
           <td class="num">${podeEditar ? `<input class="inp" type="number" step="any" min="0" data-qi="${i}" value="${it.qtd}" style="width:90px">` : SN.num(it.qtd, 2)}</td>
           ${l.vinculo === 'PRESTADOR' ? `<td class="num">${SN.brl(unit)}</td><td class="num">${SN.brl(SN.valorItem(it))}</td>` : ''}
-          ${podeEditar ? `<td><button class="btn sm perigo" data-rm="${i}">✕</button></td>` : ''}</tr>`; }).join('') || '<tr><td colspan="7" class="muted">Sem itens.</td></tr>'}
+          ${podeEditar ? `<td><button class="btn sm perigo" data-rm="${i}">✕</button></td>` : ''}</tr>
+          ${(it.fotos || []).length ? `<tr class="lpu-fotos-linha"><td></td><td colspan="6"><div class="small muted">📷 ${it.fotos.length} foto(s) do técnico para este serviço</div><div class="fotos mini" data-fotos-it="${i}"></div></td></tr>` : ''}`; }).join('') || '<tr><td colspan="7" class="muted">Sem itens.</td></tr>'}
     </tbody></table></div>
     ${podeEditar ? `<div class="linha-form" style="margin-top:8px"><select class="inp" id="dAdd"><option value="">+ Incluir serviço da conta…</option>
       ${catConta.map(c => `<option value="${c.cod}">${c.cod} · ${SN.esc(c.desc)}</option>`).join('')}</select></div>` : ''}
@@ -99,6 +100,7 @@ SN.detalheLpu = id => {
     <div class="tabela-wrap" style="max-height:200px"><table class="tab small"><tbody>${(l.historico || []).slice().reverse().map(h =>
       `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe)}</td></tr>`).join('')}</tbody></table></div>`;
   const ligar = f => {
+    SN.$$('[data-fotos-it]', f).forEach(el => SN.pintarFotos(el, itens[+el.dataset.fotosIt].fotos || []));
     if (!podeEditar) return;
     SN.$$('[data-qi]', f).forEach(x => x.onchange = () => { itens[+x.dataset.qi].qtd = parseFloat(x.value) || 0; re(f); });
     SN.$$('[data-fi]', f).forEach(x => x.onchange = () => { itens[+x.dataset.fi].fator = x.value; re(f); });
@@ -125,8 +127,9 @@ SN.detalheLpu = id => {
   SN.modal({ titulo: `${l.id} · ${SN.LPU_STATUS[l.status].rot}`, largo: true, corpo: corpo(), botoes, aoAbrir: ligar });
 };
 
-SN.pdfLpu = l => {
-  const doc = SN.novoPdf('LPU ' + l.id + ' · chamado ' + l.chamadoId); if (!doc) return;
+SN.pdfLpu = l => SN.abrirPdfDepois(() => SN.montarPdfLpu(l));
+SN.montarPdfLpu = async l => {
+  const doc = SN.novoPdf('LPU ' + l.id + ' · chamado ' + l.chamadoId); if (!doc) return null;
   doc.secao('Identificação');
   doc.linha('Cliente', l.cab.cliente); doc.linha('Etiqueta', l.cab.etiqueta); doc.linha('Prestadora', `${l.cab.empresa} · CNPJ ${l.cab.cnpj || '—'}`);
   doc.linha('Técnico', l.cab.tecnico); doc.linha('Conta contábil', SN.contaTxt(l.cab.conta)); doc.linha('Status', SN.LPU_STATUS[l.status].rot);
@@ -139,7 +142,9 @@ SN.pdfLpu = l => {
   doc.linha(l.vinculo === 'CLT' ? 'Técnico' : 'Prestador', SN.txtAssinatura(l.assinaturaTecnico));
   doc.linha('Líder aprovador', SN.txtAssinatura(l.assinaturaLider)); doc.linha('Service Desk', SN.txtAssinatura(l.assinaturaSD));
   if (l.assinaturaPagamento) doc.linha('Pagamento', SN.txtAssinatura(l.assinaturaPagamento));
-  window.open(doc.output('bloburl'));
+  // Fotos de cada serviço, na ordem das linhas e na ordem em que foram tiradas.
+  for (const it of l.itens) if ((it.fotos || []).length) await SN.pdfFotos(doc, it.fotos, 'Fotos · ' + it.cod + ' · ' + ((SN.itemLpu(it.cod) || {}).desc || '').slice(0, 60));
+  return doc;
 };
 
 // ═══════════════════════════ Service Desk ═══════════════════════════
@@ -336,6 +341,7 @@ SN.detalheFibra = id => {
     ${r.motivo ? `<div class="aviso alerta small">Último motivo: ${SN.esc(r.motivo)}</div>` : ''}
     ${r.ceos.map((e, i) => `<div class="card" style="margin-top:10px"><h3>CEO ${i + 1} · Nº ${SN.esc(e.numero)} <span class="badge">${e.tipoCaixa}</span></h3>
       <p class="small">${e.modelo ? SN.esc((SN.material(e.modelo) || {}).d || e.modelo) + ' · ' : ''}A: ${SN.esc(e.nomA || '—')} ${e.caboA} · B: ${SN.esc(e.nomB || '—')} ${e.caboB}${e.splitter ? ' · splitter ' + e.splitter : ''}</p>
+      ${e.local || (e.gps && e.gps.lat) ? `<p class="small">📍 ${SN.esc(e.local || '')} ${SN.gpsTxt(e.gps)}</p>` : ''}
       ${SN.svgFibra(e)}${e.obs ? `<p class="small">${SN.esc(e.obs)}</p>` : ''}</div>`).join('')}
     <h4 style="margin-top:10px">Histórico</h4><table class="tab small"><tbody>${r.historico.slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe)}</td></tr>`).join('')}</tbody></table>` });
 };
