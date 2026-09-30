@@ -498,7 +498,8 @@ SN.MAT_STATUS = {
   CONFERIDO:       { rot: 'Conferido', cls: 'info' },
   DIVERGENTE:      { rot: 'Divergente', cls: 'erro' },
   BAIXADO_SAP:     { rot: 'Baixa informada (Elleven)', cls: 'verde' }, // chave antiga mantida: registros existentes continuam válidos
-  ALOCADO_CLIENTE: { rot: 'Alocado ao cliente', cls: 'ok' }
+  ALOCADO_CLIENTE: { rot: 'Alocado ao cliente', cls: 'ok' },
+  SEM_MATERIAL:    { rot: 'Sem material utilizado', cls: 'info' } // técnico informou que nada saiu do estoque
 };
 SN.FIB_STATUS = {
   AGUARDANDO_VALIDACAO: { rot: 'Aguardando validação do líder', cls: 'alerta' },

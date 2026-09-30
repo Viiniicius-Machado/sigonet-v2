@@ -405,7 +405,7 @@ SN.rota('/chamado/:id', id => {
       <div class="card"><h3>Gestões vinculadas <span class="muted small">(ciclo próprio · não alteram MTTR/SLA)</span></h3>
         <table class="tab"><tbody>
           ${linhaMod('LPU', mod.lpus, SN.LPU_STATUS, 'lpu', x => x.vinculo === 'PRESTADOR' ? SN.brl(SN.valorLpu(x)) : x.vinculo === 'CLT' ? SN.hhTxt(SN.hhDaLpu(x)) : 'produção')}
-          ${linhaMod('Materiais', mod.materiais, SN.MAT_STATUS, 'materiais', x => x.itens.length + ' item(ns)')}
+          ${linhaMod('Materiais', mod.materiais, SN.MAT_STATUS, 'materiais', x => x.semMaterial && !x.itens.length ? 'nenhum material utilizado' : x.itens.length + ' item(ns)')}
           ${linhaMod('Cadastro de fibra', mod.fibras, SN.FIB_STATUS, 'fibra', x => x.ceos.length + ' CEO')}
         </tbody></table>
         <p class="small muted" style="margin-top:8px">A única correlação obrigatória é o ID do chamado. Cada gestão tem status, fila, validação e fechamento próprios.</p></div>

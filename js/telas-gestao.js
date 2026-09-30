@@ -479,7 +479,7 @@ SN.telaMateriais = (abrirId, opc) => {
     <div class="kpis-c">
       <div class="kpi destaque"><div class="rot">Registros</div><div class="val">${lista.length}</div><div class="sub">${anual ? 'no ano de ' + ano : 'no período e filtros'}</div></div>
       <div class="kpi"><div class="rot">Aguardando baixa</div><div class="val">${lista.filter(m => ['REGISTRADO', 'CONFERIDO', 'DIVERGENTE'].includes(m.status)).length}</div><div class="sub">registrado, divergente ou conferido</div></div>
-      <div class="kpi"><div class="rot">Baixas informadas</div><div class="val">${baixadas.length}</div><div class="sub">${lista.length ? SN.num(100 * baixadas.length / lista.length, 0) + '% dos registros' : '—'}</div></div>
+      <div class="kpi"><div class="rot">Baixas informadas</div><div class="val">${baixadas.length}</div><div class="sub">${(n => n ? SN.num(100 * baixadas.length / n, 0) + '% dos registros com material' : '—')(lista.filter(m => m.status !== 'SEM_MATERIAL').length)}</div></div>
       <div class="kpi"><div class="rot">Itens · custo</div><div class="val">${SN.num(qtdItens, 0)}</div><div class="sub">${SN.brl(lista.reduce((s, m) => s + SN.custoMat(m), 0))}</div></div>
     </div>
     <div class="barra-vis">${SN.chipsStatus(SN.MAT_STATUS, f.st, k => doSeg.filter(m => !k || m.status === k).length)}
@@ -494,7 +494,7 @@ SN.telaMateriais = (abrirId, opc) => {
     <div class="card"><div class="tabela-wrap"><table class="tab"><thead><tr><th>Data</th><th>Registro</th><th>Chamado</th><th>Etiqueta</th><th>Cliente</th><th>Técnico</th><th>Empresa</th><th>Itens</th><th class="num">Custo</th><th>Status</th><th>Baixa informada por</th><th>Titular do estoque</th><th>Ref. Elleven</th></tr></thead><tbody>
       ${lista.map(m => `<tr class="clic" data-id="${m.id}"><td class="nowrap">${SN.dt(SN.dataMat(m, f.base))}</td><td class="mono nowrap">${m.id}</td><td class="mono nowrap">${m.chamadoId}</td><td class="mono nowrap">${SN.esc((m.cab || {}).etiqueta || '—')}</td><td>${SN.esc(m.cliente)}</td>
         <td>${SN.esc((m.cab || {}).tecnico)}</td><td>${SN.esc((m.cab || {}).empresa)}</td>
-        <td class="small" style="min-width:240px">${m.itens.slice(0, 3).map(i => `${SN.esc(i.desc)} (${SN.num(i.qtd, 0)})`).join('<br>')}${m.itens.length > 3 ? `<br>+${m.itens.length - 3}` : ''}</td>
+        <td class="small" style="min-width:240px">${m.semMaterial && !m.itens.length ? '<span class="muted">Nenhum material utilizado</span>' : ''}${m.itens.slice(0, 3).map(i => `${SN.esc(i.desc)} (${SN.num(i.qtd, 0)})`).join('<br>')}${m.itens.length > 3 ? `<br>+${m.itens.length - 3}` : ''}</td>
         <td class="num">${SN.brl(SN.custoMat(m))}</td><td>${SN.badge(SN.MAT_STATUS, m.status)}</td>
         <td>${SN.esc(SN.baixaPorMat(m))}${m.docSap && !m.baixa ? ' <span class="badge alerta" title="Registro anterior, feito em modo simulado">simulado</span>' : ''}</td>
         <td>${SN.esc((m.baixa || {}).titular || '')}</td><td class="mono">${SN.esc((m.baixa || {}).documento || '')}</td></tr>`).join('') || '<tr><td colspan="13" class="muted center">Nenhum registro neste período.</td></tr>'}
@@ -530,6 +530,8 @@ SN.detalheMaterial = id => {
   const m = SN.db.materiais.find(x => x.id === id); if (!m) return;
   const acao = (novo, rot, extra, detalhe) => { m.status = novo; Object.assign(m, extra || {}); SN.hist(m, rot, detalhe != null ? detalhe : (extra ? JSON.stringify(extra) : '')); SN.log('MATERIAL_' + novo, m.id, detalhe || ''); SN.salvar(); SN.redesenharMat(); };
   const botoes = [{ rot: 'Fechar' }];
+  if (m.status === 'SEM_MATERIAL') botoes.push( // técnico disse que não usou nada: a gestão só contesta se não conferir
+    { rot: 'Apontar divergência', cls: 'perigo', acao: async () => { const mot = await SN.pedirTexto('Divergência', 'O que não confere? (o técnico verá e poderá apontar os materiais)'); if (!mot) return false; acao('DIVERGENTE', 'Divergência', { motivo: mot }); } });
   if (['REGISTRADO', 'DIVERGENTE'].includes(m.status)) botoes.push(
     { rot: 'Apontar divergência', cls: 'perigo', acao: async () => { const mot = await SN.pedirTexto('Divergência', 'O que não confere? (o técnico verá)'); if (!mot) return false; acao('DIVERGENTE', 'Divergência', { motivo: mot }); } },
     { rot: 'Conferido', cls: 'prim', acao: () => acao('CONFERIDO', 'Conferido', { conferidoPor: SN.usuario().nome, conferidoEm: SN.agora() }) });
@@ -548,7 +550,7 @@ SN.detalheMaterial = id => {
     ${m.motivo ? `<div class="aviso erro small">Divergência: ${SN.esc(m.motivo)}</div>` : ''}
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Tipo</th><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th>Seriais</th><th class="num">Custo</th></tr></thead><tbody>
     ${m.itens.map(i => `<tr><td>${i.tipo}</td><td class="mono">${i.cod}</td><td>${SN.esc(i.desc)}</td><td class="num">${SN.num(i.qtd, 2)}</td><td class="small">${SN.esc((i.seriais || []).join(', '))}</td>
-      <td class="num">${SN.brl(((SN.material(i.cod) || {}).p || 0) * i.qtd)}</td></tr>`).join('')}</tbody></table></div>
+      <td class="num">${SN.brl(((SN.material(i.cod) || {}).p || 0) * i.qtd)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted center">${m.semMaterial ? 'O técnico informou que nenhum material foi utilizado.' : 'Nenhum item.'}</td></tr>`}</tbody></table></div>
     ${m.obs ? `<p class="small"><b>Obs.:</b> ${SN.esc(m.obs)}</p>` : ''}
     ${blocoBaixa}
     <h4>Histórico</h4><table class="tab small"><tbody>${m.historico.slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe || '')}</td></tr>`).join('')}</tbody></table>` });

@@ -182,7 +182,7 @@ SN.telaBaseCliente = chave => {
           <tr><td class="muted">Service Desk</td><td>${SN.esc(SN.txtAssinatura(l.assinaturaSD))}</td></tr></tbody></table>`).join('') : '<p class="muted small">Sem LPU.</p>'}</div>
         <div><h4>Materiais e fibra</h4>${r.materiais.map(m => `<table class="tab small" style="margin-bottom:6px"><tbody>
           <tr><td class="muted">Registro</td><td>${SN.esc(m.id)} ${SN.badge(SN.MAT_STATUS, m.status)} · ${SN.brl(SN.custoMat(m))}</td></tr>
-          <tr><td class="muted">Itens</td><td>${m.itens.map(i => `${SN.esc(i.desc)} <b>${SN.num(i.qtd, 0)}</b>${(i.seriais || []).filter(Boolean).length ? ' <span class="mono">[' + SN.esc(i.seriais.join(', ')) + ']</span>' : ''}`).join('<br>')}</td></tr>
+          <tr><td class="muted">Itens</td><td>${m.itens.map(i => `${SN.esc(i.desc)} <b>${SN.num(i.qtd, 0)}</b>${(i.seriais || []).filter(Boolean).length ? ' <span class="mono">[' + SN.esc(i.seriais.join(', ')) + ']</span>' : ''}`).join('<br>') || (m.semMaterial ? '<span class="muted">Nenhum material utilizado</span>' : '—')}</td></tr>
           ${m.conferidoPor ? `<tr><td class="muted">Conferiu</td><td>${SN.esc(SN.nomeCurto(m.conferidoPor))} · ${SN.dt(m.conferidoEm)}</td></tr>` : ''}
           ${m.baixa ? `<tr><td class="muted">Baixa (Elleven)</td><td>informada por ${SN.esc(SN.nomeCurto(m.baixa.operador))} · titular ${SN.esc(m.baixa.titular)} · ref. <span class="mono">${SN.esc(m.baixa.documento)}</span></td></tr>`
             : m.docSap ? `<tr><td class="muted">Baixa</td><td><span class="badge alerta">simulada (anterior)</span></td></tr>` : ''}

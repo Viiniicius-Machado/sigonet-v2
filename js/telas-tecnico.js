@@ -424,21 +424,27 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   if (!c || SN.papelNo(c) !== papel) { SN.toast('Sem acesso.', 'erro'); return SN.navegar('#/tec'); }
   let reg = SN.db.materiais.find(x => x.chamadoId === id && x.papel === papel);
   const h = reg ? reg.cab : SN.cabecalhoDe(c, papel);
-  const editavel = !reg || ['REGISTRADO', 'DIVERGENTE'].includes(reg.status);
+  const editavel = !reg || ['REGISTRADO', 'DIVERGENTE', 'SEM_MATERIAL'].includes(reg.status);
   let itens = reg ? JSON.parse(JSON.stringify(reg.itens)) : [];
+  let semMat = !!reg && reg.status === 'SEM_MATERIAL' || !!(reg && reg.semMaterial && reg.status === 'DIVERGENTE');
   let tipo = 'INS';
   SN.cascaTec('fila', `
     <a href="#/tec/os/${c.id}" class="small">← Voltar à OS</a><h2 style="margin-top:6px">Materiais utilizados</h2>
     ${SN.htmlCabecalho(h)}
     ${reg && reg.status === 'DIVERGENTE' ? `<div class="aviso erro" style="margin-bottom:10px">Divergência apontada: ${SN.esc(reg.motivo)}</div>` : ''}
     ${!editavel ? `<div class="aviso info" style="margin-bottom:10px">Status: ${SN.MAT_STATUS[reg.status].rot}. Já está com a gestão de materiais.</div>` : ''}
+    ${editavel ? `<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:12px">
+      <input type="checkbox" id="chSemMat" ${semMat ? 'checked' : ''} style="width:20px;height:20px;margin-top:2px">
+      <span><b>Nenhum material foi utilizado neste atendimento</b><br><span class="small muted">Marque quando não saiu nada do estoque (ex.: só manobra, reconexão ou limpeza). Fica registrado para a gestão de materiais.</span></span></label>` : ''}
+    <div id="blocoItens">
     <div class="card"><div class="card-tit"><h3>Itens (${'<span id="nIt"></span>'})</h3></div><div id="matItens"></div></div>
     ${editavel ? `<div class="card" style="margin-top:12px"><h3>Adicionar</h3>
       <div class="chips" id="chTipo"><button class="chip sel" data-t="INS">INS · insumo</button><button class="chip" data-t="ATN">ATN · patrimônio (serial)</button></div>
       <input class="inp" id="matBusca" placeholder="Buscar por código ou descrição" style="margin-top:8px">
       <div id="matRes" style="margin-top:6px;max-height:320px;overflow:auto"></div>
-      <p class="small muted">Aqui você só aponta o que usou no chamado. O saldo e a baixa oficiais ficam no Elleven: este apontamento não reserva nem baixa material.</p></div>
-    <div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="matObs">${SN.esc(reg ? reg.obs : '')}</textarea></div>
+      <p class="small muted">Aqui você só aponta o que usou no chamado. O saldo e a baixa oficiais ficam no Elleven: este apontamento não reserva nem baixa material.</p></div>` : ''}
+    </div>
+    ${editavel ? `<div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="matObs">${SN.esc(reg ? reg.obs : '')}</textarea></div>
     <button class="btn prim lg bloco" id="bSalvarMat">Salvar materiais</button>` : ''}`);
   const pintarItens = () => {
     SN.$('#nIt').textContent = itens.length;
@@ -446,13 +452,20 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
       <div class="d">${SN.esc(it.desc)}</div><div class="c">${it.tipo} · ${it.cod}</div>
       ${it.tipo === 'INS' ? `<input class="inp" type="number" min="1" step="any" data-qi="${i}" value="${it.qtd}" style="width:110px;margin-top:4px" ${editavel ? '' : 'disabled'}>`
         : it.seriais.map((s, k) => `<input class="inp" data-s="${i}|${k}" value="${SN.esc(s)}" placeholder="Nº de série ${k + 1}" style="margin-top:4px" ${editavel ? '' : 'disabled'}>`).join('')}
-      </div>${editavel ? `<button class="btn sm perigo" data-rm="${i}">✕</button>` : ''}</div>`).join('') || '<p class="muted">Nenhum material apontado.</p>';
+      </div>${editavel ? `<button class="btn sm perigo" data-rm="${i}">✕</button>` : ''}</div>`).join('')
+      || `<p class="muted">${reg && reg.status === 'SEM_MATERIAL' ? 'Informado: nenhum material utilizado.' : 'Nenhum material apontado.'}</p>`;
     SN.$$('[data-qi]').forEach(x => x.oninput = () => { itens[+x.dataset.qi].qtd = parseFloat(x.value) || 0; });
     SN.$$('[data-s]').forEach(x => x.oninput = () => { const [i, k] = x.dataset.s.split('|'); itens[+i].seriais[+k] = x.value.trim(); });
     SN.$$('[data-rm]').forEach(x => x.onclick = () => { itens.splice(+x.dataset.rm, 1); pintarItens(); });
   };
   pintarItens();
   if (!editavel) return;
+  const pintarSemMat = () => { SN.$('#blocoItens').style.display = semMat ? 'none' : ''; };
+  pintarSemMat();
+  SN.$('#chSemMat').onchange = async e => {
+    if (e.target.checked && itens.length && !await SN.confirmar('Nenhum material', `Tirar os ${itens.length} item(ns) já apontados e registrar que nenhum material foi utilizado?`, 'Confirmar', 'perigo')) { e.target.checked = false; return; }
+    semMat = e.target.checked; if (semMat) itens = []; pintarItens(); pintarSemMat();
+  };
   const buscar = () => {
     const q = SN.normal(SN.$('#matBusca').value);
     const res = q.length < 2 ? [] : CATALOGO_MATERIAIS.filter(m => m.t === tipo && SN.normal(m.c + ' ' + m.d).includes(q)).slice(0, 40);
@@ -475,7 +488,8 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   SN.$('#matBusca').oninput = SN.debounce(buscar, 200);
   SN.$$('#chTipo .chip').forEach(ch => ch.onclick = () => { tipo = ch.dataset.t; SN.$$('#chTipo .chip').forEach(x => x.classList.toggle('sel', x === ch)); buscar(); });
   SN.$('#bSalvarMat').onclick = async ev => {
-    if (!itens.length) return SN.toast('Adicione ao menos um material.', 'erro');
+    if (semMat) itens = [];
+    else if (!itens.length) return SN.toast('Adicione ao menos um material ou marque "Nenhum material foi utilizado".', 'erro');
     if (itens.some(i => i.tipo === 'ATN' && i.seriais.some(s => !s))) return SN.toast('Informe o nº de série de cada patrimônio (ATN).', 'erro');
     if (itens.some(i => !(i.qtd > 0))) return SN.toast('Quantidade inválida.', 'erro');
     const novo = !reg;
@@ -484,10 +498,11 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
     if (novo) { try { novoId = await SN.novoId('MAT'); } catch (e) { ev.target.disabled = false; return SN.toast(e.message, 'erro'); } }
     if (novo) { reg = { id: novoId, chamadoId: c.id, papel, cab: h, cliente: c.cliente, historico: [] }; SN.db.materiais.push(reg); }
     const antes = reg.itens;
-    reg.itens = itens; reg.obs = SN.$('#matObs').value.trim(); reg.status = 'REGISTRADO'; reg.motivo = ''; reg.registradoEm = SN.agora();
-    SN.hist(reg, novo ? 'Registro pelo técnico' : 'Correção pelo técnico', novo ? itens.length + ' item(ns)' : SN.diff({ itens: antes }, { itens }));
-    SN.hist(c, 'Materiais registrados', reg.id); SN.log(novo ? 'REGISTRAR_MATERIAL' : 'CORRIGIR_MATERIAL', reg.id, c.id); SN.salvar();
-    SN.toast('Materiais apontados. A baixa oficial é feita no Elleven pela gestão de materiais.', 'ok'); SN.navegar('#/tec/os/' + c.id);
+    reg.itens = itens; reg.obs = SN.$('#matObs').value.trim(); reg.status = semMat ? 'SEM_MATERIAL' : 'REGISTRADO'; reg.motivo = ''; reg.registradoEm = SN.agora();
+    if (semMat) reg.semMaterial = true; else delete reg.semMaterial;
+    SN.hist(reg, novo ? 'Registro pelo técnico' : 'Correção pelo técnico', semMat ? 'Nenhum material utilizado' : novo ? itens.length + ' item(ns)' : SN.diff({ itens: antes }, { itens }));
+    SN.hist(c, semMat ? 'Informado: nenhum material utilizado' : 'Materiais registrados', reg.id); SN.log(novo ? 'REGISTRAR_MATERIAL' : 'CORRIGIR_MATERIAL', reg.id, c.id); SN.salvar();
+    SN.toast(semMat ? 'Registrado: nenhum material utilizado neste atendimento.' : 'Materiais apontados. A baixa oficial é feita no Elleven pela gestão de materiais.', 'ok'); SN.navegar('#/tec/os/' + c.id);
   };
 }, { familia: 'tecnico' });
 
