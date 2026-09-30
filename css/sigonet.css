@@ -368,8 +368,8 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 
 /* ═══════════════ Visual da gestão · opção A "Grafite" (js/tema.js) ═══════════════
    Escolhido em 2026-09-29. Página fina — topo baixo e sem degradê, sem sombras,
-   cantos retos, menu enxuto, títulos menores, abas discretas. O app do técnico fica fora
-   (tema.js só liga data-tema fora do .app-tec). */
+   cantos retos, menu enxuto, títulos menores, abas discretas. Vale também no app do
+   técnico, que mantém letra e botões grandes (bloco "App do técnico" mais abaixo). */
 html[data-tema]{--raio:6px;--sombra:none}
 html[data-tema] body{font-size:13.5px}
 html[data-tema] h1{font-size:1.2rem;font-weight:650;letter-spacing:-.01em}
@@ -454,3 +454,32 @@ html[data-tema] .abertura{background:#161a15;color:#b9c0b4}
 .carregando-sobre{position:fixed;inset:0;z-index:95;background:rgba(244,245,243,.86);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px);animation:fgAparece .2s ease .25s both}
 .carregando-sobre .carregando{background:#fff;border:1px solid var(--borda);border-radius:8px;padding:26px 40px;box-shadow:0 12px 36px rgba(22,26,21,.1);color:var(--texto-2);animation-delay:0s}
 @media (prefers-reduced-motion:reduce){ .fg-nave,.fg-chama,.fg-rastros line{animation:none} .fg-rastros line{opacity:.5} }
+
+/* ── App do técnico no Grafite: mesmas cores, mas letra e toque de celular ── */
+html[data-tema] .app-tec{font-size:14.5px;background:var(--bg)}
+html[data-tema] .app-tec .topbar{padding:10px 16px;min-height:54px}
+html[data-tema] .app-tec .topbar-logo{height:28px}
+html[data-tema] .app-tec .chip-user{padding:6px 11px;font-size:.8rem}
+html[data-tema] .app-tec .tec-corpo{padding:14px 14px 20px}
+html[data-tema] .app-tec h2{font-size:1.12rem;font-weight:650}
+html[data-tema] .app-tec .card{padding:14px;border-radius:8px}
+html[data-tema] .app-tec .btn{padding:9px 14px;font-size:.9rem;border-radius:8px}
+html[data-tema] .app-tec .btn.sm{padding:6px 11px;font-size:.82rem}
+html[data-tema] .app-tec .btn.lg{padding:13px 18px;font-size:1rem}
+html[data-tema] .app-tec .inp{border-radius:8px}
+html[data-tema] .app-tec .aba{padding:7px 12px;font-size:.86rem}
+html[data-tema] .app-tec .tec-os,html[data-tema] .app-tec .os{border-radius:8px;box-shadow:none}
+html[data-tema] .app-tec .tabbar{border-top:1px solid var(--borda);box-shadow:0 -4px 16px rgba(22,26,21,.05)}
+html[data-tema] .app-tec .tabbar a{padding:8px 4px 10px;color:var(--texto-3);font-weight:600;position:relative}
+html[data-tema] .app-tec .tabbar a .ico{display:flex;justify-content:center;margin-bottom:2px}
+html[data-tema] .app-tec .tabbar a .ico svg{width:22px;height:22px}
+html[data-tema] .app-tec .tabbar a.ativo{color:var(--verde-escuro)}
+html[data-tema] .app-tec .tabbar a.ativo::before{content:'';position:absolute;top:0;left:28%;right:28%;height:2px;border-radius:0 0 2px 2px;background:var(--verde)}
+html[data-tema] .app-tec .modulo{border-radius:8px;padding:12px 6px}
+html[data-tema] .app-tec .modulo .ico{display:flex;justify-content:center;margin-bottom:4px;color:var(--verde-escuro)}
+html[data-tema] .app-tec .modulo .ico svg{width:24px;height:24px}
+html[data-tema] .app-tec .modulo.feito .ico{color:var(--verde)}
+html[data-tema] .vazio svg{width:26px;height:26px;opacity:.55}
+html[data-tema="a"]{--verde-medio:#7ea32a}
+html[data-tema] .app-tec .tec-os{border-left:3px solid var(--verde)}
+html[data-tema] .app-tec .tec-os.estourado{border-left-color:var(--erro)}

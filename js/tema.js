@@ -1,14 +1,10 @@
-// SIGONET V2 — Visual da gestão: opção A "Grafite" (escolhida em 2026-09-29).
+// SIGONET V2 — Visual "Grafite" (opção A, escolhida em 2026-09-29), na gestão e no app do técnico.
 // Página mais fina (topo baixo, sem degradê nem sombras, cantos retos), menu escuro e
 // ícones de traço fino no lugar dos emojis. Os emojis que ainda estão no texto das
-// telas da gestão (botões, abas, títulos) saem na hora de desenhar.
-// O app do técnico (celular) fica fora: mantém o visual e os ícones grandes de campo.
+// telas (botões, abas, títulos) saem na hora de desenhar.
+// No app do técnico o CSS mantém letra e botões grandes (uso em campo, com o dedo).
 const TEMA = 'a';
-SN.ajustarTema = () => {
-  const tec = !!document.querySelector('.app-tec');
-  if (tec) delete document.documentElement.dataset.tema; else document.documentElement.dataset.tema = TEMA;
-  return !tec;
-};
+SN.ajustarTema = () => { document.documentElement.dataset.tema = TEMA; return true; };
 
 // Ícones de traço (24×24, cor do texto).
 const ICO = {
@@ -25,25 +21,41 @@ const ICO = {
   planejamento: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14',
   revisao: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5',
   dashboard: 'M3 17l6-6 4 4 8-8M15 7h6v6',
+  fila: 'M9 3h6v3H9zM7 4.5H5.5A1.5 1.5 0 0 0 4 6v13.5A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H17M8 11h8M8 15h5',
+  preventiva: 'M6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 16v-5a4 4 0 0 1 4-4h6M18 8v5a4 4 0 0 1-4 4H8',
+  financeiro: 'M3 7.5A2.5 2.5 0 0 1 5.5 5H18v3.5M3 7.5V18a2 2 0 0 0 2 2h15V9H5.5A2.5 2.5 0 0 1 3 7.5zM16.5 14.5h.01',
+  camera: 'M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
   ponto: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'
 };
 SN.iconeSvg = nome => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICO[nome] || ICO.ponto}"/></svg>`;
 const ICO_POR_HREF = { '#/inicio': 'inicio', '#/chamados': 'chamados', '#/lpu': 'lpu', '#/servicedesk': 'servicedesk', '#/materiais': 'materiais', '#/fibra': 'fibra',
-  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard' };
+  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard',
+  '#/tec': 'fila', '#/tec/vistorias': 'preventiva', '#/tec/resumo': 'dashboard', '#/tec/financeiro': 'financeiro' };
+// Botões de módulo da OS (técnico): pelo destino do toque ou, sem destino (bloqueado), pelo nome.
+const icoModulo = el => { const m = el.closest('.modulo'); if (!m) return null;
+  const dest = m.dataset.go || m.dataset.os || '', txt = SN.normal(m.textContent).replace(/^[^a-z]+/, ''); // tira o emoji antigo da frente
+  if (/\/tec\/lpu\//.test(dest) || /^lpu/.test(txt)) return 'lpu';
+  if (/\/tec\/mat\//.test(dest) || /^materiais/.test(txt)) return 'materiais';
+  if (/\/tec\/fibra\//.test(dest) || /fibra/.test(txt)) return 'fibra';
+  if (/\/tec\/os\//.test(dest) || /^os/.test(txt)) return 'fila';
+  return null; };
 
 // Emojis decorativos (pictogramas). Ficam: ✓ ✔ ✕ ✖ ☰ ⚠ ◀ ▶ (são sinais de interface, não enfeite).
-const EMOJI = /(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B50}\u{23F3}\u{231B}](?:️)?)(?:‍[\u{1F300}-\u{1FAFF}](?:️)?)*\s?/gu;
+const EMOJI = /(?:[\u{1F100}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2B50}\u{23F3}\u{231B}](?:️)?)(?:‍[\u{1F300}-\u{1FAFF}](?:️)?)*\s?/gu;
 const MANTER = new Set(['✓', '✔', '✕', '✖', '☰', '⚠', '◀', '▶']);
 const limparTexto = txt => txt.replace(EMOJI, m => MANTER.has(m.trim().replace('️', '')) ? m : '');
 SN.limparVisual = raiz => {
-  if (!raiz || !document.documentElement.dataset.tema || (raiz.closest && raiz.closest('.app-tec'))) return;
-  // Ícones do menu e dos cartões do Início
-  raiz.querySelectorAll && raiz.querySelectorAll('.sidebar a .ico, .hub-card .ico').forEach(el => {
+  if (!raiz || !document.documentElement.dataset.tema || !raiz.querySelectorAll) return;
+  // Ícones: menu, cartões do Início, barra de baixo e módulos do técnico
+  raiz.querySelectorAll('.sidebar a .ico, .hub-card .ico, .tabbar a .ico, .modulo .ico').forEach(el => {
     if (el.dataset.svg) return;
-    const a = el.closest('a'); el.innerHTML = SN.iconeSvg(ICO_POR_HREF[a && a.getAttribute('href')]); el.dataset.svg = '1';
+    const a = el.closest('a');
+    el.innerHTML = SN.iconeSvg(el.closest('.modulo') ? icoModulo(el) : ICO_POR_HREF[a && a.getAttribute('href')]); el.dataset.svg = '1';
   });
+  // Foto ainda vazia (Preventiva): câmera no lugar do 📷
+  raiz.querySelectorAll('.vazio').forEach(el => { if (!el.dataset.svg && /📷/.test(el.textContent)) { el.innerHTML = SN.iconeSvg('camera'); el.dataset.svg = '1'; } });
   // Texto: tira o emoji e o espaço que vinha depois dele
-  const w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, { acceptNode: n => n.parentElement && !n.parentElement.closest('svg, script, style, textarea, input, .ico[data-svg]') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
+  const w = document.createTreeWalker(raiz, NodeFilter.SHOW_TEXT, { acceptNode: n => n.parentElement && !n.parentElement.closest('svg, script, style, textarea, input, [data-svg]') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT });
   const nos = []; while (w.nextNode()) nos.push(w.currentNode);
   nos.forEach(n => { const novo = limparTexto(n.nodeValue); if (novo !== n.nodeValue) n.nodeValue = novo; });
 };
