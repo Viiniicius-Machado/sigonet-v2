@@ -145,9 +145,9 @@ SN.rota('/tec/os/:id', id => {
         <div class="campo"><label>Observações</label><textarea class="inp" id="rObs">${SN.esc(c.rfo.obs || '')}</textarea></div>
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
         <div class="grid g2" style="margin-top:8px;gap:8px">
-          <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço, lat/lng e logo (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
+          <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço e lat/lng (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
           <label class="btn" title="Fotos da galeria ou PDF, sem marca d'água">🖼 Galeria / arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
-        <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço, coordenadas e a logo.</p>
+        <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço e coordenadaso.</p>
         <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar RFO</button>
       </div>` : ''}
     ${libera ? `<div class="card" style="margin-top:12px"><h3>Apontamentos</h3>
@@ -252,7 +252,7 @@ SN.rota('/tec/os/:id', id => {
       for (const f of arqs) { try { (c.fotos = c.fotos || []).push(await SN.fotoDaGaleria(f, c.id)); pintarRfo(); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
       SN.hist(c, 'Evidências anexadas', arqs.length + ' arquivo(s)'); SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); pintarRfo();
     };
-    // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado) + logo NetTurbo.
+    // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado), sem logo.
     SN.$('#inCam').onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
       salvarRfo(); SN.toast('Processando foto (GPS e endereço)…');

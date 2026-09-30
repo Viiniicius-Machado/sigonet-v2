@@ -44,7 +44,8 @@ var VR = (function () {
     },
     regiao_padrao: 'DEMAIS REGIÕES',
     meta_aerea_m: 78000,   // meta mensal de metros percorridos (planilha: 78 km)
-    metas_aerea_mes: {}    // 'AAAA-MM' → metros, quando um mês tiver meta diferente
+    metas_aerea_mes: {},   // 'AAAA-MM' → metros, quando um mês tiver meta diferente
+    dias_aerea_mes: {}     // 'AAAA-MM' → dias trabalhados informados à mão (sem valor = dias corridos do calendário)
   };
   var numOuNull = function (v) { if (v === '' || v == null) return null; var n = Number(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
   R.normalizarConfig = function (c) {
@@ -74,6 +75,9 @@ var VR = (function () {
     var meta = numOuNull(c.meta_aerea_m); out.meta_aerea_m = meta == null ? p.meta_aerea_m : meta;
     out.metas_aerea_mes = {};
     Object.keys(c.metas_aerea_mes || {}).forEach(function (k) { var m = numOuNull(c.metas_aerea_mes[k]); if (/^\d{4}-\d{2}$/.test(k) && m != null) out.metas_aerea_mes[k] = m; });
+    out.dias_aerea_mes = {};
+    Object.keys(c.dias_aerea_mes || {}).forEach(function (k) { var n = numOuNull(c.dias_aerea_mes[k]);
+      if (/^\d{4}-\d{2}$/.test(k) && n != null && n >= 0 && n <= 31) out.dias_aerea_mes[k] = Math.round(n); });
     return out;
   };
   // Avisos de configuração pendente (mostrados nas telas).
@@ -668,6 +672,18 @@ var VR = (function () {
     var n = 0;
     for (var d = 1; d <= ate; d++) if (new Date(Date.UTC(p[0], p[1] - 1, d)).getUTCDay() !== 0) n++;
     return n;
+  };
+  // Dias trabalhados padrão (decisão de 2026-09-30): dias CORRIDOS do calendário já
+  // passados no mês, com sábado e domingo (mês inteiro se já passou; 0 se futuro).
+  R.diasCorridosDecorridos = function (mes, hojeIso) {
+    var p = mes.split('-').map(Number), ultimo = new Date(Date.UTC(p[0], p[1], 0)).getUTCDate();
+    return String(hojeIso).slice(0, 7) === mes ? Number(String(hojeIso).slice(8, 10)) : (String(hojeIso).slice(0, 7) > mes ? ultimo : 0);
+  };
+  // Dias trabalhados do mês: o valor salvo na configuração (editado na tela) vence;
+  // sem valor salvo, dias corridos. Devolve também o automático, para a tela mostrar.
+  R.diasAereaMes = function (mes, config, hojeIso) {
+    var cfg = R.normalizarConfig(config), auto = R.diasCorridosDecorridos(mes, hojeIso), salvo = cfg.dias_aerea_mes[mes];
+    return { dias: salvo != null ? salvo : auto, automatico: auto, salvo: salvo != null ? salvo : null };
   };
   // Série mensal (metros × meta) dos últimos n meses até 'ate' (AAAA-MM).
   R.serieAerea = function (apontamentos, ate, n, config) {

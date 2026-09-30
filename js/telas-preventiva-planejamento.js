@@ -65,7 +65,7 @@
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${progresso(r)}</td>
           <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}</td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>'}</div>`;
     SN.$('#fSeg').onchange = e => { filtro.seg = e.target.value; pintarRotas(); };
     SN.$('#fSt').onchange = e => { filtro.status = e.target.value; pintarRotas(); };
@@ -77,6 +77,7 @@
       await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); await recarregar(); });
     acao('[data-ex]', async b => { if (!await SN.confirmar('Excluir rota', 'Excluir esta rota planejada?', 'Excluir', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_EXCLUIR', { id_rota: b.dataset.ex }); SN.toast('Rota excluída.', 'ok'); await recarregar(); });
+    SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.pdf); if (r) SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg())); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { form = JSON.parse(JSON.stringify(d.rotas.find(r => r.id_rota === b.dataset.ed))); form.segmento = form.segmento || 'SUBTERRANEA'; aba = 'NOVA'; pintar(); });
   };
 

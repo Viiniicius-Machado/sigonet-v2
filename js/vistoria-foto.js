@@ -54,12 +54,6 @@ SN.VF = (() => {
     return new Promise((ok, falha) => { const u = URL.createObjectURL(file), i = new Image(); i.onload = () => { ok(i); }; i.onerror = falha; i.src = u; });
   };
   VF.LADO_MAX = 1600; VF.QUALIDADE = 0.7;
-  // Logo da marca d'água (MARCA.NETTURBO em marca.js). Carregada uma vez.
-  let logoP = null;
-  const logo = () => logoP || (logoP = new Promise(ok => {
-    if (typeof MARCA === 'undefined' || !MARCA.NETTURBO) return ok(null);
-    const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = MARCA.NETTURBO;
-  }));
   // Quebra o texto em linhas que cabem na largura.
   const quebrar = (g, txt, larg) => {
     const out = []; let linha = '';
@@ -71,7 +65,8 @@ SN.VF = (() => {
   //         │ segunda-feira
   //   Rua X, 123 - Bairro, Cidade - SP, 13000-000
   //   -23.561300, -46.656500 ±8 m
-  //   CS-001 · ROT-00001 · Foto 3                         [logo NetTurbo]
+  //   CS-001 · ROT-00001 · Foto 3
+  // Só as informações da foto, sem logo (decisão de 2026-09-30).
   // marca = { agora (ISO), pos {lat,lng,precisao} | null, endereco (texto | null), contexto (texto) }
   VF.processar = async (file, marca) => {
     const img = await carregar(file);
@@ -85,9 +80,7 @@ SN.VF = (() => {
     const d = new Date(marca.agora);
     const hora = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const data = d.toLocaleDateString('pt-BR'), dia = d.toLocaleDateString('pt-BR', { weekday: 'long' });
-    const lg = await logo();
-    const logoH = lg ? Math.round(fs * 2.6) : 0, logoW = lg ? Math.round(lg.width * logoH / lg.height) : 0;
-    const largTexto = W - pad * 3 - logoW;
+    const largTexto = W - pad * 2;
     g.font = fonte(500, Math.round(fs * 0.95));
     const endLinhas = quebrar(g, marca.endereco || (marca.pos ? 'Endereço não consultado (sem internet no momento)' : 'Sem GPS: endereço e posição indisponíveis'), largTexto).slice(0, 3);
     const coords = marca.pos ? `${Number(marca.pos.lat).toFixed(6)}, ${Number(marca.pos.lng).toFixed(6)}${marca.pos.precisao ? '  ±' + marca.pos.precisao + ' m' : ''}` : '';
@@ -114,7 +107,6 @@ SN.VF = (() => {
     if (coords) { g.font = fonte(500, Math.round(fs * 0.85)); g.fillStyle = '#e9f7c8'; g.fillText(coords, pad, y); y += lin; }
     g.font = fonte(600, Math.round(fs * 0.85)); g.fillStyle = '#ffffff'; ctxLinhas.forEach(l => { g.fillText(l, pad, y); y += lin; });
     g.shadowBlur = 0;
-    if (lg) { g.globalAlpha = 0.95; g.drawImage(lg, W - pad - logoW, H - pad - logoH, logoW, logoH); g.globalAlpha = 1; }
     const dataUrl = c.toDataURL('image/jpeg', VF.QUALIDADE);
     const kt = 480 / Math.max(W, H), t = document.createElement('canvas'); // miniatura: tela e PDF de controle
     t.width = Math.round(W * kt); t.height = Math.round(H * kt);

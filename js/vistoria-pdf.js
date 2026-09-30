@@ -128,3 +128,135 @@ SN.vst = SN.vst || {};
   SN.vst.pdfRodape = rodape;
   SN.vst.pdfGradeFotos = gradeFotos;
 })();
+
+// ═══════════════ Resumo da rota e relatório da diretoria (PDF sob demanda) ═══════════════
+// Mesmas contas das telas (vistoria-regras.js): o resumo conta tudo o que a rota
+// tem (com o status de cada item); a diretoria conta só o APROVADO na subterrânea,
+// como o Dashboard. Sem fotos: elas estão nas fichas de cada CS/apontamento.
+(() => {
+  const L = VR_LISTAS;
+  const rot = (lista, v) => (v == null || v === '') ? '—' : L.rotulo(lista, v);
+  const stRota = s => (L.status_rota[s] || {}).rot || s || '—';
+  const stRev = s => ({ APROVADA: 'Aprovada', REJEITADA: 'Rejeitada', AGUARDANDO_REVISAO: 'Aguardando revisão', RASCUNHO: 'Rascunho' })[s] || s || '—';
+  // Tabela simples: colunas com largura em mm; quebra página e repete o cabeçalho.
+  const tabela = (doc, cab, linhas, larg) => {
+    const x0 = 12, alt = 5.2;
+    const desenharCab = () => { doc.setFillColor(242, 247, 232); doc.rect(10, doc._y - 4, 190, 6, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+      let x = x0; cab.forEach((c, i) => { doc.text(String(c), x, doc._y); x += larg[i]; }); doc.setFont('helvetica', 'normal'); doc._y += alt + .6; };
+    if (doc._y > 270) { doc.addPage(); doc._y = 18; }
+    desenharCab();
+    linhas.forEach(l => {
+      const partes = l.map((v, i) => doc.splitTextToSize(String(v == null || v === '' ? '—' : v), larg[i] - 2));
+      const h = Math.max(...partes.map(p => p.length)) * 4.2;
+      if (doc._y + h > 284) { doc.addPage(); doc._y = 18; desenharCab(); }
+      let x = x0; partes.forEach((p, i) => { doc.text(p, x, doc._y); x += larg[i]; }); doc._y += h + 1;
+    });
+    if (!linhas.length) { doc.text('Nenhum registro.', x0, doc._y); doc._y += alt; }
+    doc.setFontSize(9.5); doc._y += 2;
+  };
+  const lpuTxt = lpu => Object.entries(lpu || {}).filter(([, q]) => Number(q))
+    .map(([cod, q]) => `${cod} × ${SN.num(q, cod === 'SEV0009' ? 1 : 0)}${(SN.itemLpu && SN.itemLpu(cod)) ? ' (' + SN.itemLpu(cod).desc + ')' : ''}`).join('; ') || '—';
+
+  // Resumo de UMA rota: dados, andamento, o que foi aprovado e a LPU que a rota gera.
+  SN.vst.pdfResumoRota = async (rota, d, config) => {
+    const aerea = rota.segmento === 'AEREA';
+    const doc = SN.novoPdf(`Preventiva ${aerea ? 'aérea' : 'subterrânea'} · Resumo da rota ${rota.id_rota}`); if (!doc) return null;
+    doc.secao('Rota');
+    doc.linha('Rota / status', `${rota.id_rota} · ${stRota(rota.status)}`);
+    doc.linha('Onde', aerea ? `${rota.cidade || ''}${rota.regiao ? ' · ' + rota.regiao : ''}` : `${rota.cidade || ''} · Cluster ${rota.cluster || '—'} · ${SN.num(rota.extensao_km, 2)} km`);
+    if (aerea) {
+      doc.linha('Motivo / solicitante', `${rota.motivo || '—'} · ${rota.solicitante || '—'}`);
+      if (rota.notificacao) doc.linha('Notificação', rota.notificacao);
+      doc.linha('Metros previstos', SN.num(rota.metros_previstos) + ' m');
+    }
+    doc.linha('Prestador / técnico', `${rota.prestador || '—'} · ${rota.tecnico || 'qualquer técnico do prestador'}`);
+    doc.linha('Data planejada', SN.vst.dia(rota.data_planejada));
+    if (rota.id_chamado) doc.linha('Chamado', rota.id_chamado);
+    if (aerea) {
+      const aps = (d.producao || []).filter(a => a.id_rota === rota.id_rota).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      const r = VR.resumoChamadoAereo(rota, d.producao || []), tudo = VR.producaoRota(rota, d.producao || []);
+      doc.secao('Andamento');
+      doc.linha('Apontamentos', `${aps.length} (${aps.filter(a => a.status_revisao === 'APROVADA').length} aprovados · ${r.pendentes} aguardando revisão · ${aps.filter(a => a.status_revisao === 'REJEITADA').length} rejeitados)`);
+      doc.linha('Finalizada pela equipe', tudo.finalizada ? 'Sim' : 'Não');
+      doc.linha('% dos metros previstos', tudo.pct != null ? tudo.pct + '%' : '—');
+      doc.linha('Pronta para concluir', r.pronto ? 'Sim — tudo aprovado' : 'Não');
+      doc.secao('Produção aprovada (base de pagamento)');
+      L.producao_aerea.forEach(c => doc.linha(c.rot, SN.num(Number(r.totais[c.k]) || 0, c.k === 'cordoalha' ? 1 : 0)));
+      doc.linha('LPU gerada', lpuTxt(r.lpu_sugerida));
+      doc.secao('Apontamentos');
+      tabela(doc, ['Data', 'Tipo', 'Metros', 'Postes', 'Cordoalha', 'Plaquetas', 'Caixas', 'Revisão'],
+        aps.map(a => [SN.vst.dia(a.data), a.tipo === 'final' ? 'Final' : 'Parcial', SN.num(a.metros), SN.num(a.postes), SN.num(a.cordoalha, 1), SN.num(a.plaquetas), SN.num(a.caixas), stRev(a.status_revisao)]),
+        [22, 18, 20, 18, 22, 22, 18, 50]);
+    } else {
+      const vs = (d.vistorias || []).filter(v => v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO');
+      const r = VR.resumoChamado(rota, d.vistorias || []), c = VR.conformidade(vs).total, p = VR.passivos(vs, config), dv = VR.divergencias(vs).total;
+      doc.secao('Andamento');
+      doc.linha('CS', `${(rota.cs_planejadas || []).length} planejadas · ${vs.length} enviadas · ${r.cs_aprovadas} aprovadas · ${r.pendentes} pendentes de revisão`);
+      doc.linha('Aprovadas', `${r.cs_abertas} abertas · ${r.cs_nao_abertas} não abertas`);
+      doc.linha('Pronta para concluir', r.pronto ? 'Sim — todas as CS aprovadas' : 'Não');
+      doc.linha('LPU gerada', lpuTxt(r.lpu_sugerida));
+      doc.secao('Conformidade (só aprovadas)');
+      doc.linha('Conforme', `${c.conforme} (${c.pct_conforme}%)`);
+      doc.linha('Com ressalva', `${c.ressalva} (${c.pct_ressalva}%)`);
+      doc.linha('Não conforme', `${c.nao_conforme} (${c.pct_nao_conforme}%)`);
+      doc.secao('Passivos e divergências (só aprovadas)');
+      [['Tampas a trocar', p.total.tampas_trocar], ['CS alagadas', p.total.cs_alagadas], ['CS assoreadas', p.total.cs_assoreadas],
+        ['Dutos rasos', p.profundidade_definida ? p.total.dutos_rasos : 'profundidade mínima a definir'], ['Cabos não identificados', p.total.cabos_nao_identificados],
+        ['CS com cabo excedente', p.total.cs_cabo_excedente], ['CS fora do cadastro', p.total.cs_fora_cadastro], ['Posição divergente', dv.posicao_divergente],
+        ['Não consta no cadastro', dv.nao_consta], ['Cabos divergentes', dv.cabos_divergentes]]
+        .forEach(([k, v]) => doc.linha(k, typeof v === 'number' ? SN.num(v) : v));
+      doc.secao('CS da rota');
+      tabela(doc, ['Nº', 'CS', 'Abriu', 'Conclusão', 'Prioridade', 'Revisão', 'Revisor'],
+        vs.sort((a, b) => Number(a.ordem) - Number(b.ordem)).map(v => [v.ordem, v.cs_nova ? 'fora do cadastro' : v.id_cs, v.abriu === 'sim' ? 'Sim' : v.abriu === 'nao' ? 'Não' : '—',
+          rot('conclusao', v.conclusao), rot('prioridade', v.prioridade), stRev(v.status_revisao), v.revisor || '']),
+        [10, 36, 14, 38, 24, 30, 38]);
+    }
+    SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · rota ${rota.id_rota}`);
+    return doc;
+  };
+
+  // Relatório da diretoria: aérea do mês escolhido + diligência subterrânea (acumulado, só aprovadas).
+  SN.vst.pdfDiretoria = async (d, config, mes, hojeIso) => {
+    const doc = SN.novoPdf(`Preventiva · Relatório da diretoria · ${SN.mesNome(mes)}`); if (!doc) return null;
+    const cfg = VR.normalizarConfig(config);
+    // Aérea
+    const rotasA = d.rotas.filter(r => r.segmento === 'AEREA'), aps = d.producao || [], dm = VR.diasAereaMes(mes, cfg, hojeIso);
+    const k = VR.kpiAereo(rotasA, aps, mes, cfg, { diasTrabalhados: dm.dias }), t = k.total;
+    doc.secao(`Preventiva aérea · ${SN.mesNome(mes)}`);
+    doc.linha('Percorrido no mês', `${SN.num(t.metros)} m de ${SN.num(k.meta_m)} m (${k.pct_meta ?? 0}% da meta)`);
+    doc.linha('Aprovado (pagamento)', SN.num(k.aprovado.metros) + ' m');
+    doc.linha('Dias trabalhados', `${k.dias_trabalhados}${dm.salvo != null ? ' (informado)' : ' (dias corridos do calendário)'}`);
+    doc.linha('Média por dia / projeção', `${SN.num(k.media_dia_m)} m/dia · projeção ${SN.num(k.projecao_m)} m (${k.projecao_m >= k.meta_m ? 'no ritmo da meta' : 'abaixo da meta'})`);
+    doc.linha('Falta para a meta', SN.num(k.falta_m) + ' m');
+    doc.linha('Produção', `${t.rotas} rotas · ${SN.num(t.postes)} postes · ${SN.num(t.cordoalha)} m de cordoalha · ${SN.num(t.plaquetas)} plaquetas · ${SN.num(t.caixas)} caixas/CEO · sobra ${SN.num(t.sobra)}`);
+    const ord = o => Object.keys(o).map(n => [n, o[n]]).sort((a, b) => b[1].metros - a[1].metros);
+    doc.secao('Aérea · por equipe');
+    tabela(doc, ['Equipe', 'Rotas', 'Metros', '% do mês', 'Postes', 'Plaquetas'],
+      ord(k.por.equipe).map(([n, o]) => [n, o.rotas, SN.num(o.metros), (t.metros ? Math.round(1000 * o.metros / t.metros) / 10 : 0) + '%', SN.num(o.postes), SN.num(o.plaquetas)]), [60, 20, 30, 26, 24, 26]);
+    doc.secao('Aérea · por região');
+    tabela(doc, ['Região', 'Rotas', 'Metros'], ord(k.por.regiao).map(([n, o]) => [n, o.rotas, SN.num(o.metros)]), [100, 30, 40]);
+    // Subterrânea
+    const rotasS = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias || [];
+    const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotasS), km = VR.kmPorCluster(rotasS, vs, cfg);
+    doc.secao('Diligência subterrânea · acumulado (só CS aprovadas)');
+    doc.linha('CS aprovadas', `${SN.num(c.total.total)} · ${vs.filter(v => v.status_revisao === 'AGUARDANDO_REVISAO').length} aguardando revisão`);
+    doc.linha('Conformidade', `conforme ${c.total.pct_conforme}% · com ressalva ${c.total.pct_ressalva}% · não conforme ${c.total.pct_nao_conforme}%`);
+    doc.secao('Passivos quantificados');
+    [['Tampas a trocar', p.total.tampas_trocar], ['CS alagadas', p.total.cs_alagadas], ['CS assoreadas', p.total.cs_assoreadas],
+      ['Dutos rasos', p.profundidade_definida ? p.total.dutos_rasos : 'profundidade mínima a definir'], ['Cabos não identificados', p.total.cabos_nao_identificados],
+      ['CS com cabo excedente', p.total.cs_cabo_excedente], ['CS fora do cadastro', p.total.cs_fora_cadastro]].forEach(([k2, v]) => doc.linha(k2, typeof v === 'number' ? SN.num(v) : v));
+    doc.secao('Divergências cadastro × campo');
+    [['Posição divergente', dv.total.posicao_divergente], ['Não consta no cadastro', dv.total.nao_consta], ['Cabos divergentes', dv.total.cabos_divergentes],
+      ['Caixa não cadastrada', dv.total.caixa_no_trecho]].forEach(([k2, v]) => doc.linha(k2, SN.num(v)));
+    doc.secao('Conformidade e km por cluster');
+    tabela(doc, ['Cluster', 'CS', 'Conforme', 'Ressalva', 'Não conf.', 'km vistoriado', 'Meta km', '% meta'],
+      Object.keys({ ...c.por_cluster, ...km }).sort().map(n => { const x = c.por_cluster[n] || {}, y = km[n] || {};
+        return [n, x.total || 0, (x.pct_conforme || 0) + '%', (x.pct_ressalva || 0) + '%', (x.pct_nao_conforme || 0) + '%', SN.num(y.km_vistoriado || 0, 3),
+          y.meta_km != null ? SN.num(y.meta_km, 3) : '—', y.pct_meta != null ? y.pct_meta + '%' : '—']; }),
+      [34, 14, 22, 20, 20, 28, 24, 20]);
+    doc.secao('Medição por prestador (só aprovadas)');
+    tabela(doc, ['Prestador', 'CS aprovadas', 'km'], med.linhas.map(x => [x.prestador, x.cs_aprovadas, SN.num(x.km, 3)]).concat([['Total', med.total_cs, SN.num(med.total_km, 3)]]), [100, 40, 40]);
+    SN.vst.pdfRodape(doc, `Relatório gerado em ${SN.dt(SN.agora())} · SigoNet · Preventiva`);
+    return doc;
+  };
+})();

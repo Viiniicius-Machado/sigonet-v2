@@ -173,7 +173,7 @@
   };
 
   // ═══════════════════════════ DASHBOARD ═══════════════════════════
-  let aba = 'AEREA', mesSel = null, diasManual = '';
+  let aba = 'AEREA', mesSel = null;
   const mesAtual = () => new Date().toISOString().slice(0, 7);
   const nomeMes = m => SN.mesNome(m);
   // Barras horizontais de UMA série (cor da marca); valor e dica por barra.
@@ -192,10 +192,14 @@
     const cfg = VR.normalizarConfig(d.config);
     SN.casca('vst_dashboard', `
       <div class="cab-pagina"><div><h1>Preventiva · Dashboard</h1><p>Indicadores da preventiva aérea (meta de metros percorridos) e da diligência subterrânea.</p></div>
-        <div class="acoes"><button class="btn" id="dExportar">⬇ Exportar Excel</button></div></div>
+        <div class="acoes"><button class="btn" id="dRelatorio" title="Aérea do mês escolhido + diligência subterrânea (só aprovadas)">Relatório PDF (diretoria)</button><button class="btn" id="dExportar">⬇ Exportar Excel</button></div></div>
       <div class="abas"><button class="aba ${aba === 'AEREA' ? 'ativa' : ''}" data-aba="AEREA">🗼 Aérea</button><button class="aba ${aba === 'SUB' ? 'ativa' : ''}" data-aba="SUB">🕳️ Subterrânea</button></div>
       <div id="dCorpo"></div>`);
     SN.$$('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; SN.render(); });
+    SN.$('#dRelatorio').onclick = () => { // usa a configuração mais recente (dias trabalhados podem ter sido editados na tela)
+      const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      SN.abrirPdfDepois(() => SN.vst.pdfDiretoria(d, d.config, mesSel || mesAtual(), hojeIso));
+    };
     if (aba === 'AEREA') pintarAerea(d, cfg); else pintarSub(d, cfg);
   }, { tela: 'vst_dashboard' });
 
@@ -204,16 +208,20 @@
     const meses = [...new Set(aps.map(a => String(a.data).slice(0, 7)).filter(Boolean).concat([mesAtual()]))].sort().reverse();
     mesSel = mesSel && meses.includes(mesSel) ? mesSel : meses[0];
     const hojeIso = SN.vst.dia ? new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) : SN.agora().slice(0, 10);
-    const diasPadrao = VR.diasUteisDecorridos(mesSel, hojeIso);
-    const k = VR.kpiAereo(rotas, aps, mesSel, cfg, { diasTrabalhados: diasManual !== '' ? diasManual : diasPadrao });
+    // Dias trabalhados: automático = dias corridos do calendário já passados no mês; editado fica salvo
+    // na configuração (vale para todos) e o cálculo refaz em cima dele. Só o planejamento edita.
+    const dm = VR.diasAereaMes(mesSel, cfg, hojeIso), podeEditarDias = SN.temTela('vst_planejamento');
+    const k = VR.kpiAereo(rotas, aps, mesSel, cfg, { diasTrabalhados: dm.dias });
     const serie = VR.serieAerea(aps, mesSel, 12, cfg);
     const t = k.total, noRitmo = k.projecao_m >= k.meta_m;
     const maxSerie = Math.max(k.meta_m, ...serie.map(s => s.metros), 1);
     SN.$('#dCorpo').innerHTML = `
       <div class="acoes" style="margin-bottom:12px">
         <label class="small">Mês <select class="inp" id="dMes" style="width:auto">${meses.map(m => `<option value="${m}" ${m === mesSel ? 'selected' : ''}>${esc(nomeMes(m))}</option>`).join('')}</select></label>
-        <label class="small">Dias trabalhados <input class="inp" id="dDias" type="number" min="0" style="width:90px" placeholder="${diasPadrao}" value="${esc(diasManual)}"></label>
-        <span class="small muted">vazio = segunda a sábado já decorridos no mês (${diasPadrao}); ajuste como no plano de voo da planilha</span></div>
+        <label class="small">Dias trabalhados <input class="inp" id="dDias" type="number" min="0" max="31" step="1" style="width:90px" placeholder="${dm.automatico}" value="${dm.salvo != null ? dm.salvo : ''}" ${podeEditarDias ? '' : 'disabled'}></label>
+        <span class="small muted">${dm.salvo != null
+          ? `editado e salvo para ${esc(nomeMes(mesSel))} (automático seria ${dm.automatico})${podeEditarDias ? ' · apague o campo para voltar ao automático' : ''}`
+          : `automático: dias corridos do calendário já passados no mês (${dm.automatico})${podeEditarDias ? ' · digite outro valor para ajustar' : ''}`}${podeEditarDias ? '' : ' · só o planejamento edita'}</span></div>
       <div class="grid g4" style="margin-bottom:14px">
         ${kpi('Percorrido no mês', SN.num(t.metros) + ' m', `meta ${SN.num(k.meta_m)} m · <b>${k.pct_meta ?? 0}%</b>`, true)}
         ${kpi('Projeção (média × 30)', SN.num(k.projecao_m) + ' m', `<span class="badge ${noRitmo ? 'ok' : 'alerta'}">${noRitmo ? '✓ no ritmo da meta' : '⚠ abaixo da meta'}</span>`)}
@@ -244,7 +252,19 @@
         <div class="card"><h3>Por cidade</h3>${barras(ordenar(k.por.cidade, 'metros').slice(0, 12), SN.num, ' m')}</div>
       </div>`;
     SN.$('#dMes').onchange = e => { mesSel = e.target.value; pintarAerea(d, cfg); };
-    SN.$('#dDias').onchange = e => { diasManual = e.target.value; pintarAerea(d, cfg); };
+    SN.$('#dDias').onchange = async e => {
+      const txt = e.target.value.trim(), n = txt === '' ? null : Number(txt);
+      if (n != null && !(Number.isInteger(n) && n >= 0 && n <= 31)) { SN.toast('Informe um número inteiro de 0 a 31.', 'erro'); e.target.value = dm.salvo != null ? dm.salvo : ''; return; }
+      const nova = { ...cfg, dias_aerea_mes: { ...cfg.dias_aerea_mes } };
+      if (n == null) delete nova.dias_aerea_mes[mesSel]; else nova.dias_aerea_mes[mesSel] = n;
+      e.target.disabled = true;
+      try {
+        const r = await SN.vst.exec('VST_CONFIG_SALVAR', { config: nova });
+        d.config = r.config; cfg = VR.normalizarConfig(r.config);
+        SN.toast(n == null ? `Dias trabalhados de ${nomeMes(mesSel)} voltaram ao automático.` : `Dias trabalhados de ${nomeMes(mesSel)} salvos: ${n}.`, 'ok');
+      } catch (err) { SN.toast('Não foi possível salvar os dias: ' + err.message, 'erro'); }
+      pintarAerea(d, cfg);
+    };
     SN.$('#dExportar').onclick = () => {
       const rm = {}; rotas.forEach(r => { rm[r.id_rota] = r; });
       SN.exportar('Preventiva aérea ' + mesSel, aps.filter(a => String(a.data).slice(0, 7) === mesSel && a.status_revisao !== 'REJEITADA').map(a => {
