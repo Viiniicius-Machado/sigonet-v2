@@ -47,7 +47,7 @@ SN.api = async (acao, dados, tentativa = 1) => {
       err.sessao = true;
       // Só derruba a sessão que fez o pedido (resposta atrasada de quem já saiu não derruba quem entrou depois).
       const atual = SN.sessao();
-      if (atual && s && atual.token === s.token) { localStorage.removeItem('sigonet_v2_sessao'); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
+      if (atual && s && atual.token === s.token) { SN.encerrarSessao(); setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0); }
     }
     throw err;
   }
@@ -329,9 +329,9 @@ if (SN.remoto) {
   SN.login = async dados => {
     const r = await SN.api('LOGIN', dados);
     if (r.primeiroAcesso) return { primeiroAcesso: true };
-    localStorage.setItem('sigonet_v2_sessao', JSON.stringify({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 16 * 3600e3 }));
+    SN.gravarSessao({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 16 * 3600e3 });
     // Se a base não carregar, não deixa a pessoa "meio logada": desfaz e mostra o erro.
-    try { await SN.carregarRemoto(); } catch (e) { localStorage.removeItem('sigonet_v2_sessao'); throw e; }
+    try { await SN.carregarRemoto(); } catch (e) { SN.encerrarSessao(); throw e; }
     await SN.recuperarPendentes(); // o que ficou sem subir na sessão anterior neste aparelho
     SN.log('LOGIN', dados.tipo, dados.nome); SN.salvar();
     return { ok: true };
@@ -340,7 +340,7 @@ if (SN.remoto) {
     SN.log('LOGOUT', '', ''); await SN.salvarAgora().catch(() => { });
     const s = SN.sessao(); if (s) SN.api('LOGOUT').catch(() => { });
     if (!pendente) await SN.apagarLocal(); // com algo ainda sem subir, a cópia fica para o próximo login
-    localStorage.removeItem('sigonet_v2_sessao');
+    SN.encerrarSessao();
     await SN.prepararLogin().catch(() => { }); location.hash = '#/login'; SN.render();
   };
   // Números sem sinal: o aparelho do técnico guarda alguns IDs reservados no servidor
@@ -389,7 +389,7 @@ SN.iniciar = async () => {
   document.getElementById('app').innerHTML = '<div class="abertura">' + SN.foguete() + '<img class="abertura-letras" src="' + MARCA.LETRAS + '" alt="SigoNet"><p>Conectando ao servidor…</p></div>';
   try {
     // Login antigo do modo teste (sem token do servidor) não vale aqui: descarta e pede login.
-    if (SN.sessao() && !SN.sessao().token) localStorage.removeItem('sigonet_v2_sessao');
+    if (SN.sessao() && !SN.sessao().token) SN.encerrarSessao();
     if (SN.sessao() && SN.sessao().token) {
       // Só descarta o login se o servidor disse que a sessão venceu; falha passageira mostra "Tentar de novo".
       // Aparelho já sabe que está sem rede: abre na hora com a cópia (sem esperar as tentativas).

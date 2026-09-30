@@ -531,10 +531,31 @@ SN.int = {
 // ═══════════════════════════ Autenticação ═══════════════════════════
 // Duas famílias: liderança (Nome + PIN + Complemento, telas por pessoa) e
 // técnico (Empresa + Técnico + PIN + Complemento). Sessão de 12h.
+// Cada aba tem a própria sessão (sessionStorage): técnico numa aba e gestão em outra não se
+// misturam, e duplicar a aba copia a sessão dela. O localStorage guarda só o último login,
+// que uma aba nova (ou o app reaberto no celular) adota. '' = saiu nesta aba: não adota.
 const CHAVE_SESSAO = 'sigonet_v2_sessao';
+const sessaoDaAba = () => {
+  let t = null;
+  try { t = sessionStorage.getItem(CHAVE_SESSAO); } catch (e) { }
+  if (t == null) { try { t = localStorage.getItem(CHAVE_SESSAO); if (t) sessionStorage.setItem(CHAVE_SESSAO, t); } catch (e) { } }
+  return t;
+};
 SN.sessao = () => {
-  try { const s = JSON.parse(localStorage.getItem(CHAVE_SESSAO)); if (s && s.expira > Date.now()) return s; } catch (e) { }
+  try { const s = JSON.parse(sessaoDaAba()); if (s && s.expira > Date.now()) return s; } catch (e) { }
   return null;
+};
+SN.gravarSessao = s => {
+  const t = JSON.stringify(s);
+  try { sessionStorage.setItem(CHAVE_SESSAO, t); } catch (e) { }
+  localStorage.setItem(CHAVE_SESSAO, t);
+};
+// Encerra a sessão desta aba. O "último login" só é apagado se for o desta aba
+// (quem saiu aqui não derruba quem entrou em outra aba).
+SN.encerrarSessao = () => {
+  let minha = null; try { minha = sessionStorage.getItem(CHAVE_SESSAO); } catch (e) { }
+  try { sessionStorage.setItem(CHAVE_SESSAO, ''); } catch (e) { }
+  try { const ult = localStorage.getItem(CHAVE_SESSAO); if (ult && (minha == null || ult === minha)) localStorage.removeItem(CHAVE_SESSAO); } catch (e) { }
 };
 SN.usuario = () => {
   const s = SN.sessao(); if (!s || !SN.db) return null;
@@ -562,12 +583,12 @@ SN.login = async ({ tipo, nome, empresa, pin, complemento, novoComplemento }) =>
     reg.complementoHash = await SN.sha256(reg.nome + '|' + novoComplemento);
   } else if (reg.complementoHash !== await SN.sha256(reg.nome + '|' + complemento)) falha('Complemento incorreto.');
   delete tentativas[chave];
-  localStorage.setItem(CHAVE_SESSAO, JSON.stringify({ tipo, nome, empresa: empresa || '', expira: Date.now() + 16 * 3600e3 }));
+  SN.gravarSessao({ tipo, nome, empresa: empresa || '', expira: Date.now() + 16 * 3600e3 });
   reg.ultimoAcesso = SN.agora();
   SN.log('LOGIN', tipo, reg.nome); SN.salvar();
   return { ok: true };
 };
-SN.sair = () => { SN.log('LOGOUT', '', ''); SN.salvar(); localStorage.removeItem(CHAVE_SESSAO); location.hash = '#/login'; SN.render(); };
+SN.sair = () => { SN.log('LOGOUT', '', ''); SN.salvar(); SN.encerrarSessao(); location.hash = '#/login'; SN.render(); };
 
 // ═══════════════════════════ UI: toast, modal ═══════════════════════════
 SN.toast = (msg, tipo) => {

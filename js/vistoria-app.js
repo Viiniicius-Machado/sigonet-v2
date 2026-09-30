@@ -55,7 +55,7 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
     // Só derruba a sessão que fez o pedido: se outra pessoa já entrou neste aparelho, não mexe nela.
     const atual = SN.sessao();
     if (atual && atual.token === s.token) {
-      localStorage.removeItem('sigonet_v2_sessao');
+      SN.encerrarSessao();
       setTimeout(() => { SN.toast(j.erro, 'erro'); SN.prepararLogin().then(() => SN.navegar('#/login')); }, 0);
     }
     const err = new Error(j.erro); err.sessao = true; throw err;
