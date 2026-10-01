@@ -12,7 +12,8 @@
 // rota ligada a ele (sem abrir outro chamado).
 (() => {
   const L = VR_LISTAS, esc = SN.esc;
-  let aba = 'ROTAS', form = null, d = null, filtro = { seg: '', status: '', q: '' }, previa = null, previaHist = null;
+  // periodo: próprio desta lista (não mexe no período da Base OEM / Materiais).
+  let aba = 'ROTAS', form = null, d = null, filtro = { seg: '', status: '', q: '' }, periodo = { per: 'mes', ref: '' }, previa = null, previaHist = null;
   const csCache = {};
   const hoje = () => { const x = new Date(); return new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
   const empresas = () => SN.db.empresas.filter(e => e.ativo !== false).map(e => e.nome).sort();
@@ -50,15 +51,21 @@
     // Canceladas não vêm em d.rotas: só aparecem escolhendo o status "Cancelada" (auditoria).
     const todas = filtro.status === 'CANCELADA' ? (d.canceladas || []) : d.rotas.filter(r => !r.importado_planilha);
     const gestorTotal = ((SN.usuario() || {}).telas || []).includes('*');
-    const vis = todas.filter(r => (!filtro.seg || r.segmento === filtro.seg || (!r.segmento && filtro.seg === 'SUBTERRANEA')) && (!filtro.status || r.status === filtro.status)
+    // Período pela data planejada (dia local: "2026-10-01" não pode virar 30/09 por fuso).
+    const iv = SN.intervaloMat(periodo.per, periodo.ref || SN.dataIsoLocal(new Date()));
+    const noPeriodo = r => { const dia = String(r.data_planejada || '').slice(0, 10); if (!iv) return true; if (!dia) return false; const t = new Date(dia + 'T12:00:00'); return t >= iv[0] && t < iv[1]; };
+    // Em andamento fora do período: avisa (não pode sumir da vista sem ninguém perceber).
+    const andamentoFora = filtro.status === 'CANCELADA' ? [] : todas.filter(r => ['DESPACHADA', 'EM_CAMPO'].includes(r.status) && !noPeriodo(r));
+    const vis = todas.filter(r => noPeriodo(r) && (!filtro.seg || r.segmento === filtro.seg || (!r.segmento && filtro.seg === 'SUBTERRANEA')) && (!filtro.status || r.status === filtro.status)
       && (!filtro.q || SN.normal([r.id_rota, r.cidade, r.cluster, r.motivo, r.prestador, r.tecnico, r.id_chamado, r.notificacao].join(' ')).includes(SN.normal(filtro.q))))
       .sort((a, b) => String(b.criada_em || b.data_planejada).localeCompare(String(a.criada_em || a.data_planejada)));
     SN.$('#pCorpo').innerHTML = `
-      <div class="card card-filtros"><div class="filtros">
+      <div class="card card-filtros">${SN.htmlPeriodo(periodo)}<div class="filtros" style="margin-top:8px">
         <select class="inp" id="fSeg"><option value="">Todos os segmentos</option>${L.segmentos.map(([k, r]) => `<option value="${k}" ${filtro.seg === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
         <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(L.status_rota).map(([k, v]) => `<option value="${k}" ${filtro.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
         <input class="inp busca" id="fQ" placeholder="Buscar (rota, cidade, prestador, chamado…)" value="${esc(filtro.q)}">
         <button class="btn prim" id="bNova">➕ Nova rota</button></div></div>
+      ${andamentoFora.length ? `<div class="aviso info small" style="margin-bottom:10px">${andamentoFora.length} rota(s) <b>em andamento</b> com data fora deste período (${andamentoFora.slice(0, 5).map(r => esc(r.id_rota)).join(', ')}${andamentoFora.length > 5 ? '…' : ''}). <button class="btn sm" id="bVerAnd">Ver em andamento</button></div>` : ''}
       <div class="card"><div class="card-tit"><h3>Rotas (${vis.length})</h3><span class="small muted">${d.rotas.filter(r => r.importado_planilha).length} rotas do histórico da planilha ficam só no Dashboard</span></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Rota</th><th>Segmento</th><th>Onde / o quê</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Andamento</th><th></th></tr></thead><tbody>
         ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>
@@ -68,7 +75,9 @@
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
             : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
-        </tbody></table></div>` : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>'}</div>`;
+        </tbody></table></div>` : (todas.length && (iv || filtro.seg || filtro.status || filtro.q) ? '<p class="muted">Nenhuma rota neste período/filtro. Troque o período (ou "Tudo") para ver as outras.</p>' : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>')}</div>`;
+    SN.ligarPeriodo(pintarRotas, periodo);
+    if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { periodo.per = 'tudo'; filtro.status = andamentoFora.every(r => r.status === 'EM_CAMPO') ? 'EM_CAMPO' : ''; pintarRotas(); };
     SN.$('#fSeg').onchange = e => { filtro.seg = e.target.value; pintarRotas(); };
     SN.$('#fSt').onchange = e => { filtro.status = e.target.value; pintarRotas(); };
     SN.$('#fQ').oninput = SN.debounce(e => { filtro.q = e.target.value; pintarRotas(); SN.$('#fQ').focus(); }, 300);

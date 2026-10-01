@@ -378,13 +378,14 @@ SN.mesesDoPeriodo = (per, ref) => {
 };
 // Período compartilhado pela Base e pelo Controle de Materiais (trocar de aba mantém o período).
 SN.periodo = { per: 'mes', ref: '' };
-SN.htmlPeriodo = () => { const P = SN.periodo; if (!P.ref) P.ref = SN.dataIsoLocal(new Date());
+// P: outro objeto de período quando a tela não deve mexer no compartilhado (ex.: rotas da Preventiva).
+SN.htmlPeriodo = (P = SN.periodo) => { if (!P.ref) P.ref = SN.dataIsoLocal(new Date());
   return `<div class="filtros">
     <div class="seg" role="group" aria-label="Período">${SN.MAT_PERIODOS.map(([k, r]) => `<button type="button" class="${P.per === k ? 'sel' : ''}" data-per="${k}">${r}</button>`).join('')}</div>
     ${P.per !== 'tudo' ? `<div class="nav-data"><button class="btn" id="pAnt" title="Período anterior">◀</button><input class="inp" type="date" id="pRef" value="${P.ref}"><button class="btn" id="pProx" title="Próximo período">▶</button><button class="btn" id="pHoje">Hoje</button></div>` : ''}
     <span class="rotulo-periodo">${SN.esc(SN.rotuloPeriodoMat(P.per, P.ref))}</span></div>
-    ${P.per === 'tudo' && SN.remoto && SN.db.janela ? `<p class="small muted" style="margin-top:6px">"Tudo" mostra o que está carregado (desde ${SN.mesNome(SN.db.janela.desde)}). Para meses mais antigos, escolha Mês ou Ano.</p>` : ''}`; };
-SN.ligarPeriodo = redesenhar => { const P = SN.periodo;
+    ${P === SN.periodo && P.per === 'tudo' && SN.remoto && SN.db.janela ? `<p class="small muted" style="margin-top:6px">"Tudo" mostra o que está carregado (desde ${SN.mesNome(SN.db.janela.desde)}). Para meses mais antigos, escolha Mês ou Ano.</p>` : ''}`; };
+SN.ligarPeriodo = (redesenhar, P = SN.periodo) => {
   SN.$$('[data-per]').forEach(b => b.onclick = () => { P.per = b.dataset.per; redesenhar(); });
   if (!SN.$('#pRef')) return;
   SN.$('#pRef').onchange = e => { if (e.target.value) { P.ref = e.target.value; redesenhar(); } };
