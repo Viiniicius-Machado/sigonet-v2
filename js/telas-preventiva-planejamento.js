@@ -96,6 +96,8 @@
   // ═══════════════════════════ Nova / editar rota ═══════════════════════════
   const novaRota = seg => ({ segmento: seg, cidade: '', prestador: '', tecnico: '', data_planejada: hoje(), observacao: '',
     motivo: '', solicitante: '', notificacao: '', kmz_url: '', metros_previstos: '', cluster: '', cs_planejadas: [], extensao_km: '', cenario_esperado: { dono_duto: '', operadoras: [] } });
+  // A extensão fica guardada em km (dashboard, medição, PDF); no formulário aparece em metros.
+  const metrosRota = km => km === '' || km == null ? '' : SN.num(Math.round(Number(km) * 1000)) + ' m';
   const cidadesConhecidas = () => [...new Set(Object.values(cfg().regioes).flat().concat(d.rotas.map(r => VR.normCidade(r.cidade))).filter(Boolean))].sort();
 
   const pintarForm = () => {
@@ -125,7 +127,7 @@
       : `
       <div class="linha-form">
         <div class="campo"><label>Cluster *</label><select class="inp" data-f="cluster">${opcoes(clusters, f.cluster, clusters.length ? 'Escolha…' : 'Importe a base de CS primeiro')}</select></div>
-        <div class="campo"><label>Extensão da rota (km) — automática</label><input class="inp" id="fKm" readonly tabindex="-1" style="background:var(--fundo2,#f3f4f1)" value="${f.extensao_km === '' ? '' : SN.num(f.extensao_km, 3)}" placeholder="selecione as CS">
+        <div class="campo"><label>Extensão da rota (metros) — automática</label><input class="inp" id="fKm" readonly tabindex="-1" style="background:var(--fundo2,#f3f4f1)" value="${metrosRota(f.extensao_km)}" placeholder="selecione as CS">
           <div class="small muted" id="fKmInfo">Soma em linha reta entre as CS, na ordem da rota.</div></div>
         <div class="campo"><label>Dono do duto (cenário esperado)</label><input class="inp" data-cen="dono_duto" value="${esc((f.cenario_esperado || {}).dono_duto || '')}"></div>
       </div>
@@ -233,7 +235,7 @@
         const ext = VR.extensaoRotaKm(f.cs_planejadas, lista);
         f.extensao_km = f.cs_planejadas.length ? ext.km : '';
         const km = SN.$('#fKm'), info = SN.$('#fKmInfo');
-        if (km) km.value = f.extensao_km === '' ? '' : SN.num(f.extensao_km, 3);
+        if (km) km.value = metrosRota(f.extensao_km);
         if (info) info.innerHTML = ext.sem_posicao.length ? `<span style="color:var(--erro)">Sem coordenada na base (fora da conta): ${ext.sem_posicao.map(esc).join(', ')}</span>`
           : f.cs_planejadas.length === 1 ? 'Rota de uma CS só: extensão 0.' : 'Soma em linha reta entre as CS, na ordem da rota.';
         SN.$('#fCsIni').innerHTML = `<option value="">automático (uma das pontas)</option>` + f.cs_planejadas.slice().sort().map(id => `<option value="${esc(id)}" ${f.cs_inicio === id ? 'selected' : ''}>${esc(id)}${porId[id] && porId[id].endereco ? ' — ' + esc(porId[id].endereco) : ''}</option>`).join('');
