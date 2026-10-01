@@ -125,7 +125,7 @@
         ${f.vincular_chamado ? '<button class="btn prim" id="bVinc">🔗 Criar rota ligada ao chamado</button>'
           : `<button class="btn prim" id="bSalvar">💾 Salvar${editando ? '' : ' (planejada)'}</button><button class="btn ok" id="bSalvarDesp">🚀 Salvar e despachar</button>`}
         <button class="btn" id="bCancelar">Cancelar</button></div></div>`;
-    const errosNaTela = () => { const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
+    const errosNaTela = () => { const v = validarForm(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
     errosNaTela();
     SN.$$('[data-seg]').forEach(b => b.onclick = () => { form = Object.assign(novaRota(b.dataset.seg), { cidade: f.cidade, prestador: f.prestador, tecnico: f.tecnico, data_planejada: f.data_planejada, observacao: f.observacao }); pintarForm(); });
     SN.$$('[data-f]').forEach(i => {
@@ -166,6 +166,17 @@
     };
     SN.$('#bCancelar').onclick = () => { form = null; aba = 'ROTAS'; pintar(); };
   };
+  // Regras da rota + CS já concluídas (vistoria aprovada) ou em outra rota, que só
+  // passam forçando com motivo (o servidor confere de novo). CS forçadas numa edição
+  // anterior da mesma rota não pedem de novo.
+  const validarForm = f => {
+    const v = VR.validarRota(f);
+    if (f.segmento === 'AEREA') return v;
+    const ja = (f.cs_forcadas || []).map(x => x.id_cs);
+    const c = VR.conflitosCs(f, d.rotas, d.vistorias).filter(x => !ja.includes(x.id_cs));
+    if (c.length && !(f.forcar && String(f.forcar_motivo || '').trim())) v.erros.push(VR.textoConflitos(c));
+    return { ok: !v.erros.length, erros: v.erros, conflitos: c };
+  };
   // CS do cluster para escolher. A ordem da rota é montada sozinha: caminho
   // contínuo entre as CS marcadas (VR.ordenarMenorCaminho), que o técnico segue.
   const carregarCs = async f => {
@@ -177,19 +188,31 @@
       const seq = lista._seq || (lista._seq = VR.ordenarMenorCaminho(lista.map(c => c.id_cs), lista));
       const porId = {}; lista.forEach(c => { porId[c.id_cs] = c; });
       const emSeq = seq.map(id => porId[id]);
+      // Situação na base: concluída (vistoria aprovada) / em outra rota / disponível.
+      const sit = VR.situacaoCs(d.rotas, d.vistorias, f.id_rota), forcadas = (f.cs_forcadas || []).map(x => x.id_cs);
+      const travada = id => sit[id] && !forcadas.includes(id);
+      const nConc = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'CONCLUIDA').length, nRota = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'EM_ROTA').length;
+      const selo = id => { const x = sit[id]; if (!x) return '<span class="muted">Disponível</span>';
+        return x.situacao === 'CONCLUIDA' ? `<span class="badge ok" title="Vistoria aprovada na rota ${esc(x.id_rota)}">✔ Concluída${x.em ? ' ' + esc(SN.dt(x.em).slice(0, 10)) : ''}</span>`
+          : `<span class="badge info" title="Rota ${esc(x.id_rota)} · ${esc(x.status_rota || '')}">Em rota ${esc(x.id_rota)}</span>`; };
+      f.cs_mostrar = f.cs_mostrar || 'disp';
       el.className = '';
       el.innerHTML = `<div class="acoes" style="margin-bottom:6px"><input class="inp" id="fCsQ" placeholder="Filtrar CS (ID ou endereço)" style="max-width:320px"><button type="button" class="btn sm" id="fCsTodas">Selecionar todas</button><button type="button" class="btn sm" id="fCsNenhuma">Limpar</button>
-          <label class="small" style="display:flex;align-items:center;gap:6px">Começar pela <select class="inp" id="fCsIni" style="max-width:260px"></select></label></div>
-        <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th title="Posição na rota que o técnico vai seguir">Na rota</th><th>CS</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>
+          <label class="small" style="display:flex;align-items:center;gap:6px">Começar pela <select class="inp" id="fCsIni" style="max-width:260px"></select></label>
+          <label class="small" style="display:flex;align-items:center;gap:6px">Mostrar <select class="inp" id="fCsMostrar"><option value="disp">Disponíveis</option><option value="todas">Todas</option></select></label></div>
+        <div class="small" style="margin-bottom:6px"><b>${lista.length}</b> CS no cluster · <b style="color:var(--ok)">${nConc}</b> concluída(s) · <b>${nRota}</b> em outra rota · <b>${lista.length - nConc - nRota}</b> disponível(is)</div>
+        ${nConc + nRota ? `<div class="faixa small" style="margin-bottom:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fForca" ${f.forcar ? 'checked' : ''}> <b>Forçar despacho</b> de CS já concluída ou em outra rota</label>
+          <div id="fForcaMot" style="display:none;margin-top:6px"><textarea class="inp" id="fForcaTxt" placeholder="Motivo para despachar de novo (obrigatório; fica no histórico da rota)">${esc(f.forcar_motivo || '')}</textarea></div></div>` : ''}
+        <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th title="Posição na rota que o técnico vai seguir">Na rota</th><th>CS</th><th>Situação</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>
         <div id="fCsSeq" style="margin-top:8px"></div>`;
       const reordenar = () => { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista, { inicio: f.cs_inicio }); };
       const linhas = () => {
         const q = SN.normal(SN.$('#fCsQ').value);
-        SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => !q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q)).map(cs => {
-          const i = f.cs_planejadas.indexOf(cs.id_cs);
-          return `<tr><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
+        SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => (f.cs_mostrar === 'todas' || !travada(cs.id_cs) || f.cs_planejadas.includes(cs.id_cs)) && (!q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q))).map(cs => {
+          const i = f.cs_planejadas.indexOf(cs.id_cs), trava = travada(cs.id_cs) && !f.forcar && i < 0;
+          return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava ? 'disabled title="Marque Forçar despacho para escolher"' : ''}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
             <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs.lat},${cs.lng}">${cs.lat}, ${cs.lng}</a></td></tr>`;
-        }).join('') || '<tr><td colspan="5" class="muted">Nenhuma CS.</td></tr>';
+        }).join('') || `<tr><td colspan="6" class="muted">${f.cs_mostrar === 'disp' && lista.length ? 'Nenhuma CS disponível (veja "Mostrar: Todas").' : 'Nenhuma CS.'}</td></tr>`;
         SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1);
           if (f.cs_inicio && !f.cs_planejadas.includes(f.cs_inicio)) f.cs_inicio = ''; reordenar(); linhas(); atualizarContagem(); });
       };
@@ -205,10 +228,16 @@
         // Roteiro na ordem que o técnico vai seguir.
         SN.$('#fCsSeq').innerHTML = f.cs_planejadas.length ? `<details ${f.cs_planejadas.length <= 30 ? 'open' : ''}><summary class="small"><b>Roteiro do técnico</b> (${f.cs_planejadas.length} CS)</summary>
           <ol class="small" style="margin:6px 0 0;padding-left:22px;columns:2;column-gap:24px">${f.cs_planejadas.map(id => `<li><span class="mono">${esc(id)}</span>${porId[id] && porId[id].endereco ? ' — ' + esc(porId[id].endereco) : ''}</li>`).join('')}</ol></details>` : '';
-        const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; };
+        const v = validarForm(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`;
+        const mot = SN.$('#fForcaMot'); if (mot) mot.style.display = f.forcar && v.conflitos && v.conflitos.length ? '' : 'none'; };
       SN.$('#fCsQ').oninput = SN.debounce(linhas, 200);
       SN.$('#fCsIni').onchange = e => { f.cs_inicio = e.target.value; reordenar(); linhas(); atualizarContagem(); };
-      SN.$('#fCsTodas').onclick = () => { f.cs_planejadas = f.cs_inicio ? VR.ordenarMenorCaminho(seq, lista, { inicio: f.cs_inicio }) : seq.slice(); linhas(); atualizarContagem(); };
+      // "Selecionar todas" pega só as disponíveis (concluídas/em rota só uma a uma, forçando).
+      SN.$('#fCsTodas').onclick = () => { const alvo = seq.filter(id => !travada(id) || f.cs_planejadas.includes(id));
+        f.cs_planejadas = f.cs_inicio ? VR.ordenarMenorCaminho(alvo, lista, { inicio: f.cs_inicio }) : alvo; linhas(); atualizarContagem(); };
+      SN.$('#fCsMostrar').value = f.cs_mostrar; SN.$('#fCsMostrar').onchange = e => { f.cs_mostrar = e.target.value; linhas(); };
+      if (SN.$('#fForca')) SN.$('#fForca').onchange = e => { f.forcar = e.target.checked; if (f.forcar) f.cs_mostrar = SN.$('#fCsMostrar').value = 'todas'; linhas(); atualizarContagem(); };
+      if (SN.$('#fForcaTxt')) SN.$('#fForcaTxt').oninput = e => { f.forcar_motivo = e.target.value; atualizarContagem(); };
       SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = []; f.cs_inicio = ''; linhas(); atualizarContagem(); };
       linhas(); atualizarContagem();
     } catch (e) { el.innerHTML = `<span style="color:var(--erro)">${esc(e.message)}</span>`; }
@@ -217,6 +246,10 @@
   // ═══════════════════════════ Base de CS ═══════════════════════════
   const pintarBase = () => {
     const b = d.base || { total: 0, clusters: {} }, imp = (d.importacoes || []).slice().reverse();
+    // Progresso por cluster (o cluster vem da rota em que a CS foi planejada/aprovada).
+    const rotaPor = {}; d.rotas.forEach(r => { rotaPor[r.id_rota] = r; });
+    const prog = {}; Object.values(VR.situacaoCs(d.rotas, d.vistorias)).forEach(x => { const cl = (rotaPor[x.id_rota] || {}).cluster; if (!cl) return;
+      const y = prog[cl] = prog[cl] || { c: 0, r: 0 }; if (x.situacao === 'CONCLUIDA') y.c++; else y.r++; });
     SN.$('#pCorpo').innerHTML = `<div class="grid g2">
       <div class="card"><h3>Importar base de CS</h3>
         <p class="small muted">CSV ou XLSX com colunas de ID da CS, cluster, latitude e longitude (cidade e endereço opcionais). Os nomes das colunas são reconhecidos sozinhos ou pelo mapeamento em Configurações. KMZ/KML: o nome do ponto vira o ID e a pasta vira o cluster.</p>
@@ -225,7 +258,9 @@
         <label class="btn">📂 Escolher arquivo (CSV, XLSX, KMZ, KML)<input type="file" id="bArq" accept=".csv,.xlsx,.xls,.kmz,.kml" hidden></label>
         <div id="bPrevia" style="margin-top:10px"></div></div>
       <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> CS em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
-        ${Object.keys(b.clusters).length ? `<table class="tab small"><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td></tr>`).join('')}</tbody></table>` : ''}
+        ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
+          return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td></tr>`; }).join('')}</tbody></table>
+          <p class="small muted">Concluída = vistoria aprovada na revisão. Concluídas e em rota não entram em rota nova sem "Forçar despacho".</p>` : ''}
         <h4 style="margin-top:12px">Importações</h4>${imp.length ? `<table class="tab small"><thead><tr><th>Quando</th><th>Versão</th><th>Arquivo</th><th class="num">CS</th><th>Por</th></tr></thead><tbody>
           ${imp.map(x => `<tr><td class="nowrap">${SN.dt(x.data)}</td><td>${esc(x.versao)}</td><td>${esc(x.arquivo || '')}</td><td class="num">${SN.num(x.qtd)}</td><td>${esc(x.por)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Nenhuma ainda.</p>'}</div></div>`;
     SN.$('#bArq').onchange = async e => {

@@ -166,6 +166,39 @@ var VR = (function () {
     });
     return { km: Math.round(m) / 1000, sem_posicao: sem };
   };
+  // Situação de cada CS da base, pelas rotas e vistorias:
+  //   CONCLUIDA → tem vistoria APROVADA (validada na revisão), em qualquer rota;
+  //   EM_ROTA   → está numa rota (planejada, despachada, em campo ou concluída
+  //               aguardando revisão) e ainda não foi aprovada.
+  // CS sem entrada no mapa está disponível. excetoRota: a rota que está sendo editada.
+  R.situacaoCs = function (rotas, vistorias, excetoRota) {
+    var out = {};
+    (rotas || []).forEach(function (r) {
+      if (r.segmento === 'AEREA' || r.importado_planilha || r.id_rota === excetoRota) return;
+      (r.cs_planejadas || []).forEach(function (id) { if (!out[id]) out[id] = { situacao: 'EM_ROTA', id_rota: r.id_rota, status_rota: r.status }; });
+    });
+    (vistorias || []).forEach(function (v) {
+      if (v.status_revisao !== 'APROVADA' || v.cs_nova || !v.id_cs) return;
+      var x = out[v.id_cs], em = v.data_revisao || v.enviado_em || '';
+      if (x && x.situacao === 'CONCLUIDA' && String(x.em) >= String(em)) return; // vale a aprovação mais recente
+      out[v.id_cs] = { situacao: 'CONCLUIDA', id_rota: v.id_rota, id_vistoria: v.id_vistoria, em: em };
+    });
+    return out;
+  };
+  // CS da rota que já estão concluídas ou em outra rota. Só passa forçando, com motivo.
+  R.conflitosCs = function (rota, rotas, vistorias) {
+    var sit = R.situacaoCs(rotas, vistorias, rota && rota.id_rota);
+    return ((rota && rota.cs_planejadas) || []).filter(function (id) { return sit[id]; })
+      .map(function (id) { var x = sit[id]; return { id_cs: id, situacao: x.situacao, id_rota: x.id_rota }; });
+  };
+  R.textoConflitos = function (c) {
+    var conc = c.filter(function (x) { return x.situacao === 'CONCLUIDA'; }), em = c.filter(function (x) { return x.situacao === 'EM_ROTA'; });
+    var p = [];
+    if (conc.length) p.push('CS já concluídas (vistoria aprovada): ' + conc.map(function (x) { return x.id_cs; }).join(', ') + '.');
+    if (em.length) p.push('CS já em outra rota: ' + em.map(function (x) { return x.id_cs + ' (' + x.id_rota + ')'; }).join(', ') + '.');
+    return p.join(' ') + ' Para despachar de novo, marque "Forçar" e informe o motivo.';
+  };
+
   // Sequência de atendimento: caminho contínuo (sem ir e voltar) passando por
   // todas as CS. Começa numa ponta (a CS mais longe do centro do grupo), vai
   // sempre para a mais próxima e depois desfaz cruzamentos (2-opt).
