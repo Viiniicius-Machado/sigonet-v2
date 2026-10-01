@@ -171,14 +171,16 @@ var VR = (function () {
   //   EM_ROTA   → está numa rota (planejada, despachada, em campo ou concluída
   //               aguardando revisão) e ainda não foi aprovada.
   // CS sem entrada no mapa está disponível. excetoRota: a rota que está sendo editada.
+  // Rota CANCELADA não prende CS (nem as vistorias dela contam).
   R.situacaoCs = function (rotas, vistorias, excetoRota) {
-    var out = {};
+    var out = {}, canc = {};
+    (rotas || []).forEach(function (r) { if (r.status === 'CANCELADA') canc[r.id_rota] = true; });
     (rotas || []).forEach(function (r) {
-      if (r.segmento === 'AEREA' || r.importado_planilha || r.id_rota === excetoRota) return;
+      if (r.segmento === 'AEREA' || r.importado_planilha || r.id_rota === excetoRota || canc[r.id_rota]) return;
       (r.cs_planejadas || []).forEach(function (id) { if (!out[id]) out[id] = { situacao: 'EM_ROTA', id_rota: r.id_rota, status_rota: r.status }; });
     });
     (vistorias || []).forEach(function (v) {
-      if (v.status_revisao !== 'APROVADA' || v.cs_nova || !v.id_cs) return;
+      if (v.status_revisao !== 'APROVADA' || v.cs_nova || !v.id_cs || canc[v.id_rota]) return;
       var x = out[v.id_cs], em = v.data_revisao || v.enviado_em || '';
       if (x && x.situacao === 'CONCLUIDA' && String(x.em) >= String(em)) return; // vale a aprovação mais recente
       out[v.id_cs] = { situacao: 'CONCLUIDA', id_rota: v.id_rota, id_vistoria: v.id_vistoria, em: em };

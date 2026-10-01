@@ -104,7 +104,8 @@ var VR_LISTAS = (function () {
     PLANEJADA:  { rot: 'Planejada',  cls: 'alerta' },
     DESPACHADA: { rot: 'Despachada', cls: 'info' },
     EM_CAMPO:   { rot: 'Em campo',   cls: 'verde' },
-    CONCLUIDA:  { rot: 'Concluída',  cls: 'ok' }
+    CONCLUIDA:  { rot: 'Concluída',  cls: 'ok' },
+    CANCELADA:  { rot: 'Cancelada',  cls: 'erro' }
   };
   L.status_vistoria = {
     RASCUNHO:           { rot: 'Rascunho',            cls: '' },

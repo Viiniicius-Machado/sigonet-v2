@@ -47,7 +47,9 @@
     return `${vs.length} / ${(r.cs_planejadas || []).length} CS · ${vs.filter(v => v.status_revisao === 'APROVADA').length} aprovadas`;
   };
   const pintarRotas = () => {
-    const todas = d.rotas.filter(r => !r.importado_planilha);
+    // Canceladas não vêm em d.rotas: só aparecem escolhendo o status "Cancelada" (auditoria).
+    const todas = filtro.status === 'CANCELADA' ? (d.canceladas || []) : d.rotas.filter(r => !r.importado_planilha);
+    const gestorTotal = ((SN.usuario() || {}).telas || []).includes('*');
     const vis = todas.filter(r => (!filtro.seg || r.segmento === filtro.seg || (!r.segmento && filtro.seg === 'SUBTERRANEA')) && (!filtro.status || r.status === filtro.status)
       && (!filtro.q || SN.normal([r.id_rota, r.cidade, r.cluster, r.motivo, r.prestador, r.tecnico, r.id_chamado, r.notificacao].join(' ')).includes(SN.normal(filtro.q))))
       .sort((a, b) => String(b.criada_em || b.data_planejada).localeCompare(String(a.criada_em || a.data_planejada)));
@@ -63,9 +65,9 @@
           <td>${r.segmento === 'AEREA' ? '<span class="badge verde">🗼 Aérea</span>' : '<span class="badge">🕳️ Subterrânea</span>'}</td>
           <td>${esc(r.cidade || '')}<div class="small muted">${r.segmento === 'AEREA' ? esc(r.motivo || '') + (r.notificacao ? ' · ' + esc(r.notificacao) : '') : 'Cluster ' + esc(r.cluster || '')}</div></td>
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
-          <td class="nowrap">${SN.vst.dia(r.data_planejada)}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${progresso(r)}</td>
+          <td class="nowrap">${SN.vst.dia(r.data_planejada)}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>'}</div>`;
     SN.$('#fSeg').onchange = e => { filtro.seg = e.target.value; pintarRotas(); };
     SN.$('#fSt').onchange = e => { filtro.status = e.target.value; pintarRotas(); };
@@ -75,6 +77,16 @@
     acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' }); SN.toast('Rota despachada: o chamado Preventiva foi criado e está na fila do técnico.', 'ok'); await recarregar(); });
     acao('[data-ret]', async b => { if (!await SN.confirmar('Retirar despacho', 'A rota volta a PLANEJADA e o chamado Preventiva dela é cancelado.', 'Retirar', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); await recarregar(); });
+    acao('[data-canc]', async b => {
+      const r = d.rotas.find(x => x.id_rota === b.dataset.canc);
+      const mot = await SN.modal({ titulo: 'Cancelar atividade ' + b.dataset.canc,
+        corpo: `<p>${r && r.status === 'EM_CAMPO' ? '<b>A rota está EM CAMPO.</b> ' : ''}Ela sai do app do técnico, o chamado ${r && r.id_chamado ? '<b>' + esc(r.id_chamado) + '</b> ' : ''}é cancelado e as CS voltam a ficar disponíveis para nova rota. O que já foi enviado fica guardado só para auditoria (status "Cancelada").</p>
+          <div class="campo"><label>Motivo do cancelamento *</label><textarea class="inp" id="mTxt"></textarea></div>`,
+        botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Cancelar atividade', cls: 'perigo', acao: m => { const v = SN.$('#mTxt', m).value.trim(); if (!v) { SN.toast('Informe o motivo.', 'erro'); return false; } return v; } }],
+        aoAbrir: m => SN.$('#mTxt', m).focus() });
+      if (!mot) { b.disabled = false; return; }
+      await SN.vst.exec('VST_ROTA_CANCELAR', { id_rota: b.dataset.canc, motivo: mot });
+      SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-ex]', async b => { if (!await SN.confirmar('Excluir rota', 'Excluir esta rota planejada?', 'Excluir', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_EXCLUIR', { id_rota: b.dataset.ex }); SN.toast('Rota excluída.', 'ok'); await recarregar(); });
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.pdf); if (r) SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg())); });
