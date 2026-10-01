@@ -166,19 +166,50 @@ var VR = (function () {
     });
     return { km: Math.round(m) / 1000, sem_posicao: sem };
   };
-  // Ordem de menor caminho (vizinho mais próximo), saindo da 1ª CS escolhida.
-  R.ordenarMenorCaminho = function (ids, base) {
+  // Sequência de atendimento: caminho contínuo (sem ir e voltar) passando por
+  // todas as CS. Começa numa ponta (a CS mais longe do centro do grupo), vai
+  // sempre para a mais próxima e depois desfaz cruzamentos (2-opt).
+  // opcoes.inicio: força a 1ª CS. CS sem coordenada vão para o fim.
+  R.ordenarMenorCaminho = function (ids, base, opcoes) {
+    opcoes = opcoes || {};
     var pos = {}; (base || []).forEach(function (c) { pos[String(c.id_cs)] = c; });
-    var com = (ids || []).filter(function (id) { var c = pos[String(id)]; return c && numero(c.lat) && numero(c.lng); });
-    var sem = (ids || []).filter(function (id) { return com.indexOf(id) < 0; });
-    if (com.length < 3) return com.concat(sem);
-    var out = [com.shift()];
-    while (com.length) {
-      var a = pos[String(out[out.length - 1])], melhor = 0, dm = Infinity;
-      com.forEach(function (id, i) { var c = pos[String(id)], dd = R.distanciaM(a.lat, a.lng, c.lat, c.lng); if (dd < dm) { dm = dd; melhor = i; } });
-      out.push(com.splice(melhor, 1)[0]);
+    var com = [], sem = [];
+    (ids || []).forEach(function (id) { var c = pos[String(id)]; (c && numero(c.lat) && numero(c.lng) ? com : sem).push(id); });
+    var n = com.length;
+    if (n < 3) return com.concat(sem);
+    // Plano local em metros (rápido e preciso o bastante dentro de uma cidade).
+    var lat0 = 0; com.forEach(function (id) { lat0 += Number(pos[String(id)].lat); }); lat0 /= n;
+    var kx = 111320 * Math.cos(lat0 * Math.PI / 180), ky = 110540;
+    var X = com.map(function (id) { return Number(pos[String(id)].lng) * kx; }), Y = com.map(function (id) { return Number(pos[String(id)].lat) * ky; });
+    var d = function (a, b) { var dx = X[a] - X[b], dy = Y[a] - Y[b]; return Math.sqrt(dx * dx + dy * dy); };
+    var ini = com.indexOf(opcoes.inicio);
+    if (ini < 0) {
+      var cx = 0, cy = 0, i; for (i = 0; i < n; i++) { cx += X[i]; cy += Y[i]; } cx /= n; cy /= n;
+      var dm = -1; for (i = 0; i < n; i++) { var dc = (X[i] - cx) * (X[i] - cx) + (Y[i] - cy) * (Y[i] - cy); if (dc > dm) { dm = dc; ini = i; } }
     }
-    return out.concat(sem);
+    // Vizinho mais próximo.
+    var usado = [], t = [ini]; usado[ini] = true;
+    while (t.length < n) {
+      var u = t[t.length - 1], prox = -1, best = Infinity;
+      for (var k = 0; k < n; k++) if (!usado[k]) { var dd = d(u, k); if (dd < best) { best = dd; prox = k; } }
+      usado[prox] = true; t.push(prox);
+    }
+    // 2-opt de caminho aberto (o início fica fixo); para em até ~0,4 s.
+    var fim = Date.now() + 400, melhorou = true;
+    while (melhorou && Date.now() < fim) {
+      melhorou = false;
+      for (var a = 0; a < n - 2; a++) {
+        for (var b = a + 2; b < n; b++) {
+          var antes = d(t[a], t[a + 1]) + (b + 1 < n ? d(t[b], t[b + 1]) : 0);
+          var depois = d(t[a], t[b]) + (b + 1 < n ? d(t[a + 1], t[b + 1]) : 0);
+          if (depois < antes - 0.01) {
+            for (var p = a + 1, q = b; p < q; p++, q--) { var tmp = t[p]; t[p] = t[q]; t[q] = tmp; }
+            melhorou = true;
+          }
+        }
+      }
+    }
+    return t.map(function (k) { return com[k]; }).concat(sem);
   };
   // divergente: true/false, ou null quando falta a tolerância ou uma das posições.
   R.gpsDivergencia = function (lat, lng, latCad, lngCad, maxM) {

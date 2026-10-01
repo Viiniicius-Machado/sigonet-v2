@@ -118,7 +118,7 @@
         <div class="campo"><label>Dono do duto (cenário esperado)</label><input class="inp" data-cen="dono_duto" value="${esc((f.cenario_esperado || {}).dono_duto || '')}"></div>
       </div>
       ${c.operadoras.length ? `<div class="campo"><label>Operadoras esperadas nos cabos</label><div class="chips">${c.operadoras.map(o => `<button type="button" class="chip ${((f.cenario_esperado || {}).operadoras || []).includes(o) ? 'sel' : ''}" data-op="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>` : ''}
-      <div class="campo"><label>CS da rota * <span class="muted">(${(f.cs_planejadas || []).length} selecionada(s), na ordem de clique)</span></label><div id="fCs" class="small muted">${f.cluster ? 'Carregando CS…' : 'Escolha o cluster.'}</div></div>`}
+      <div class="campo"><label>CS da rota * <span class="muted">(${(f.cs_planejadas || []).length} selecionada(s), em sequência de atendimento)</span></label><div id="fCs" class="small muted">${f.cluster ? 'Carregando CS…' : 'Escolha o cluster.'}</div></div>`}
       <div class="campo"><label>Observação</label><textarea class="inp" data-f="observacao">${esc(f.observacao || '')}</textarea></div>
       <div id="fErros"></div>
       <div class="acoes">
@@ -166,25 +166,34 @@
     };
     SN.$('#bCancelar').onclick = () => { form = null; aba = 'ROTAS'; pintar(); };
   };
-  // CS do cluster para escolher (ordem de clique = ordem da rota).
+  // CS do cluster para escolher. A ordem da rota é montada sozinha: caminho
+  // contínuo entre as CS marcadas (VR.ordenarMenorCaminho), que o técnico segue.
   const carregarCs = async f => {
     const el = SN.$('#fCs'); if (!el) return;
     try {
       const lista = csCache[f.cluster] || (csCache[f.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: f.cluster })).cs);
       if (form !== f || !SN.$('#fCs')) return;
+      // Sequência do cluster inteiro (uma vez por cluster): a lista já aparece em ordem de continuidade.
+      const seq = lista._seq || (lista._seq = VR.ordenarMenorCaminho(lista.map(c => c.id_cs), lista));
+      const porId = {}; lista.forEach(c => { porId[c.id_cs] = c; });
+      const emSeq = seq.map(id => porId[id]);
       el.className = '';
-      el.innerHTML = `<div class="acoes" style="margin-bottom:6px"><input class="inp" id="fCsQ" placeholder="Filtrar CS (ID ou endereço)" style="max-width:320px"><button type="button" class="btn sm" id="fCsTodas">Selecionar todas</button><button type="button" class="btn sm" id="fCsOrdem" title="Reordena as CS selecionadas indo sempre para a mais próxima, a partir da 1ª">Ordenar pelo menor caminho</button><button type="button" class="btn sm" id="fCsNenhuma">Limpar</button></div>
-        <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th>Ordem</th><th>CS</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>`;
+      el.innerHTML = `<div class="acoes" style="margin-bottom:6px"><input class="inp" id="fCsQ" placeholder="Filtrar CS (ID ou endereço)" style="max-width:320px"><button type="button" class="btn sm" id="fCsTodas">Selecionar todas</button><button type="button" class="btn sm" id="fCsNenhuma">Limpar</button>
+          <label class="small" style="display:flex;align-items:center;gap:6px">Começar pela <select class="inp" id="fCsIni" style="max-width:260px"></select></label></div>
+        <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th title="Posição na rota que o técnico vai seguir">Na rota</th><th>CS</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>
+        <div id="fCsSeq" style="margin-top:8px"></div>`;
+      const reordenar = () => { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista, { inicio: f.cs_inicio }); };
       const linhas = () => {
         const q = SN.normal(SN.$('#fCsQ').value);
-        SN.$('#fCsLinhas').innerHTML = lista.filter(cs => !q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q)).map(cs => {
+        SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => !q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q)).map(cs => {
           const i = f.cs_planejadas.indexOf(cs.id_cs);
-          return `<tr><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''}></td><td>${i >= 0 ? i + 1 : ''}</td><td class="mono">${esc(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
+          return `<tr><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
             <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs.lat},${cs.lng}">${cs.lat}, ${cs.lng}</a></td></tr>`;
         }).join('') || '<tr><td colspan="5" class="muted">Nenhuma CS.</td></tr>';
-        SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1); linhas(); atualizarContagem(); });
+        SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1);
+          if (f.cs_inicio && !f.cs_planejadas.includes(f.cs_inicio)) f.cs_inicio = ''; reordenar(); linhas(); atualizarContagem(); });
       };
-      const atualizarContagem = () => { const lb = SN.$('#fCs').previousElementSibling; if (lb) lb.innerHTML = `CS da rota * <span class="muted">(${f.cs_planejadas.length} selecionada(s), na ordem de clique)</span>`;
+      const atualizarContagem = () => { const lb = SN.$('#fCs').previousElementSibling; if (lb) lb.innerHTML = `CS da rota * <span class="muted">(${f.cs_planejadas.length} selecionada(s), em sequência de atendimento)</span>`;
         // Extensão automática pelas coordenadas da base (o servidor refaz a mesma conta ao salvar).
         const ext = VR.extensaoRotaKm(f.cs_planejadas, lista);
         f.extensao_km = f.cs_planejadas.length ? ext.km : '';
@@ -192,12 +201,15 @@
         if (km) km.value = f.extensao_km === '' ? '' : SN.num(f.extensao_km, 3);
         if (info) info.innerHTML = ext.sem_posicao.length ? `<span style="color:var(--erro)">Sem coordenada na base (fora da conta): ${ext.sem_posicao.map(esc).join(', ')}</span>`
           : f.cs_planejadas.length === 1 ? 'Rota de uma CS só: extensão 0.' : 'Soma em linha reta entre as CS, na ordem da rota.';
+        SN.$('#fCsIni').innerHTML = `<option value="">automático (uma das pontas)</option>` + f.cs_planejadas.slice().sort().map(id => `<option value="${esc(id)}" ${f.cs_inicio === id ? 'selected' : ''}>${esc(id)}${porId[id] && porId[id].endereco ? ' — ' + esc(porId[id].endereco) : ''}</option>`).join('');
+        // Roteiro na ordem que o técnico vai seguir.
+        SN.$('#fCsSeq').innerHTML = f.cs_planejadas.length ? `<details ${f.cs_planejadas.length <= 30 ? 'open' : ''}><summary class="small"><b>Roteiro do técnico</b> (${f.cs_planejadas.length} CS)</summary>
+          <ol class="small" style="margin:6px 0 0;padding-left:22px;columns:2;column-gap:24px">${f.cs_planejadas.map(id => `<li><span class="mono">${esc(id)}</span>${porId[id] && porId[id].endereco ? ' — ' + esc(porId[id].endereco) : ''}</li>`).join('')}</ol></details>` : '';
         const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; };
       SN.$('#fCsQ').oninput = SN.debounce(linhas, 200);
-      SN.$('#fCsTodas').onclick = () => { lista.forEach(cs => { if (!f.cs_planejadas.includes(cs.id_cs)) f.cs_planejadas.push(cs.id_cs); });
-        f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista); linhas(); atualizarContagem(); };
-      SN.$('#fCsOrdem').onclick = () => { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista); linhas(); atualizarContagem(); };
-      SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = []; linhas(); atualizarContagem(); };
+      SN.$('#fCsIni').onchange = e => { f.cs_inicio = e.target.value; reordenar(); linhas(); atualizarContagem(); };
+      SN.$('#fCsTodas').onclick = () => { f.cs_planejadas = f.cs_inicio ? VR.ordenarMenorCaminho(seq, lista, { inicio: f.cs_inicio }) : seq.slice(); linhas(); atualizarContagem(); };
+      SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = []; f.cs_inicio = ''; linhas(); atualizarContagem(); };
       linhas(); atualizarContagem();
     } catch (e) { el.innerHTML = `<span style="color:var(--erro)">${esc(e.message)}</span>`; }
   };
