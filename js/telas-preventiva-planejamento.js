@@ -113,7 +113,8 @@
       : `
       <div class="linha-form">
         <div class="campo"><label>Cluster *</label><select class="inp" data-f="cluster">${opcoes(clusters, f.cluster, clusters.length ? 'Escolha…' : 'Importe a base de CS primeiro')}</select></div>
-        <div class="campo"><label>Extensão da rota (km) *</label><input class="inp" type="number" min="0" step="any" data-f="extensao_km" data-num="1" value="${esc(f.extensao_km)}"></div>
+        <div class="campo"><label>Extensão da rota (km) — automática</label><input class="inp" id="fKm" readonly tabindex="-1" style="background:var(--fundo2,#f3f4f1)" value="${f.extensao_km === '' ? '' : SN.num(f.extensao_km, 3)}" placeholder="selecione as CS">
+          <div class="small muted" id="fKmInfo">Soma em linha reta entre as CS, na ordem da rota.</div></div>
         <div class="campo"><label>Dono do duto (cenário esperado)</label><input class="inp" data-cen="dono_duto" value="${esc((f.cenario_esperado || {}).dono_duto || '')}"></div>
       </div>
       ${c.operadoras.length ? `<div class="campo"><label>Operadoras esperadas nos cabos</label><div class="chips">${c.operadoras.map(o => `<button type="button" class="chip ${((f.cenario_esperado || {}).operadoras || []).includes(o) ? 'sel' : ''}" data-op="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>` : ''}
@@ -130,7 +131,7 @@
     SN.$$('[data-f]').forEach(i => {
       const k = i.dataset.f, ler = () => i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value;
       i.oninput = () => { f[k] = ler(); errosNaTela(); };
-      i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (k === 'cluster') f.cs_planejadas = []; if (['prestador', 'cluster', 'cidade', 'kmz_url'].includes(k)) pintarForm(); else errosNaTela(); };
+      i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (k === 'cluster') { f.cs_planejadas = []; f.extensao_km = ''; } if (['prestador', 'cluster', 'cidade', 'kmz_url'].includes(k)) pintarForm(); else errosNaTela(); };
     });
     SN.$$('[data-cen]').forEach(i => i.oninput = () => { f.cenario_esperado = f.cenario_esperado || {}; f.cenario_esperado[i.dataset.cen] = i.value; });
     SN.$$('[data-op]').forEach(b => b.onclick = () => { const ops = (f.cenario_esperado = f.cenario_esperado || {}).operadoras = f.cenario_esperado.operadoras || [];
@@ -172,7 +173,7 @@
       const lista = csCache[f.cluster] || (csCache[f.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: f.cluster })).cs);
       if (form !== f || !SN.$('#fCs')) return;
       el.className = '';
-      el.innerHTML = `<div class="acoes" style="margin-bottom:6px"><input class="inp" id="fCsQ" placeholder="Filtrar CS (ID ou endereço)" style="max-width:320px"><button type="button" class="btn sm" id="fCsTodas">Selecionar todas</button><button type="button" class="btn sm" id="fCsNenhuma">Limpar</button></div>
+      el.innerHTML = `<div class="acoes" style="margin-bottom:6px"><input class="inp" id="fCsQ" placeholder="Filtrar CS (ID ou endereço)" style="max-width:320px"><button type="button" class="btn sm" id="fCsTodas">Selecionar todas</button><button type="button" class="btn sm" id="fCsOrdem" title="Reordena as CS selecionadas indo sempre para a mais próxima, a partir da 1ª">Ordenar pelo menor caminho</button><button type="button" class="btn sm" id="fCsNenhuma">Limpar</button></div>
         <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th>Ordem</th><th>CS</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>`;
       const linhas = () => {
         const q = SN.normal(SN.$('#fCsQ').value);
@@ -184,11 +185,20 @@
         SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1); linhas(); atualizarContagem(); });
       };
       const atualizarContagem = () => { const lb = SN.$('#fCs').previousElementSibling; if (lb) lb.innerHTML = `CS da rota * <span class="muted">(${f.cs_planejadas.length} selecionada(s), na ordem de clique)</span>`;
+        // Extensão automática pelas coordenadas da base (o servidor refaz a mesma conta ao salvar).
+        const ext = VR.extensaoRotaKm(f.cs_planejadas, lista);
+        f.extensao_km = f.cs_planejadas.length ? ext.km : '';
+        const km = SN.$('#fKm'), info = SN.$('#fKmInfo');
+        if (km) km.value = f.extensao_km === '' ? '' : SN.num(f.extensao_km, 3);
+        if (info) info.innerHTML = ext.sem_posicao.length ? `<span style="color:var(--erro)">Sem coordenada na base (fora da conta): ${ext.sem_posicao.map(esc).join(', ')}</span>`
+          : f.cs_planejadas.length === 1 ? 'Rota de uma CS só: extensão 0.' : 'Soma em linha reta entre as CS, na ordem da rota.';
         const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; };
       SN.$('#fCsQ').oninput = SN.debounce(linhas, 200);
-      SN.$('#fCsTodas').onclick = () => { lista.forEach(cs => { if (!f.cs_planejadas.includes(cs.id_cs)) f.cs_planejadas.push(cs.id_cs); }); linhas(); atualizarContagem(); };
+      SN.$('#fCsTodas').onclick = () => { lista.forEach(cs => { if (!f.cs_planejadas.includes(cs.id_cs)) f.cs_planejadas.push(cs.id_cs); });
+        f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista); linhas(); atualizarContagem(); };
+      SN.$('#fCsOrdem').onclick = () => { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista); linhas(); atualizarContagem(); };
       SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = []; linhas(); atualizarContagem(); };
-      linhas();
+      linhas(); atualizarContagem();
     } catch (e) { el.innerHTML = `<span style="color:var(--erro)">${esc(e.message)}</span>`; }
   };
 

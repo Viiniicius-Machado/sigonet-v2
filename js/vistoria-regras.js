@@ -152,6 +152,34 @@ var VR = (function () {
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
   };
+  // Extensão da rota subterrânea: soma das distâncias em linha reta entre CS
+  // consecutivas, na ordem da rota. Calculada pela base (lat/lng), nunca digitada.
+  // CS sem coordenada é pulada (liga a anterior à seguinte) e volta em "sem_posicao".
+  R.extensaoRotaKm = function (ids, base) {
+    var pos = {}; (base || []).forEach(function (c) { pos[String(c.id_cs)] = c; });
+    var m = 0, ant = null, sem = [];
+    (ids || []).forEach(function (id) {
+      var c = pos[String(id)];
+      if (!c || !numero(c.lat) || !numero(c.lng)) { sem.push(id); return; }
+      if (ant) m += R.distanciaM(ant.lat, ant.lng, c.lat, c.lng);
+      ant = c;
+    });
+    return { km: Math.round(m) / 1000, sem_posicao: sem };
+  };
+  // Ordem de menor caminho (vizinho mais próximo), saindo da 1ª CS escolhida.
+  R.ordenarMenorCaminho = function (ids, base) {
+    var pos = {}; (base || []).forEach(function (c) { pos[String(c.id_cs)] = c; });
+    var com = (ids || []).filter(function (id) { var c = pos[String(id)]; return c && numero(c.lat) && numero(c.lng); });
+    var sem = (ids || []).filter(function (id) { return com.indexOf(id) < 0; });
+    if (com.length < 3) return com.concat(sem);
+    var out = [com.shift()];
+    while (com.length) {
+      var a = pos[String(out[out.length - 1])], melhor = 0, dm = Infinity;
+      com.forEach(function (id, i) { var c = pos[String(id)], dd = R.distanciaM(a.lat, a.lng, c.lat, c.lng); if (dd < dm) { dm = dd; melhor = i; } });
+      out.push(com.splice(melhor, 1)[0]);
+    }
+    return out.concat(sem);
+  };
   // divergente: true/false, ou null quando falta a tolerância ou uma das posições.
   R.gpsDivergencia = function (lat, lng, latCad, lngCad, maxM) {
     var d = R.distanciaM(lat, lng, latCad, lngCad);
@@ -357,7 +385,8 @@ var VR = (function () {
     var erros = [];
     if (vazio(r.cidade)) erros.push('Informe a cidade.');
     if (vazio(r.cluster)) erros.push('Escolha o cluster.');
-    if (!numero(r.extensao_km) || Number(r.extensao_km) <= 0) erros.push('Informe a extensão da rota em km.');
+    // Extensão vem da base (R.extensaoRotaKm); 0 é válido para rota de uma CS só.
+    if (!numero(r.extensao_km) || Number(r.extensao_km) < 0) erros.push('Extensão da rota não calculada: confira as CS selecionadas.');
     var cs = r.cs_planejadas || [];
     if (!cs.length) erros.push('Selecione ao menos uma CS.');
     if (cs.some(function (x, i) { return cs.indexOf(x) !== i; })) erros.push('Há CS repetidas na rota.');
