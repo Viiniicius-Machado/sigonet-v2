@@ -112,6 +112,7 @@ SN.rota('/tec/os/:id', id => {
       <div class="cli">${SN.esc(c.cliente)}</div>
       <div class="small">${SN.esc([c.tipo, c.cat1, c.cat2, c.cat3, c.cat4].filter(Boolean).join(' › '))}</div>
       <div style="margin:6px 0"><span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${!titular ? '<span class="badge">Você é APOIO</span>' : ''}</div>
+      ${SN.conversa ? SN.conversa.botao(c.id, 'Falar com a gestão', 'sm') : ''}
       <table class="tab" style="margin-top:6px"><tbody>
         <tr><td class="muted">Motivo</td><td>${SN.esc(c.motivo || '—')}</td></tr>
         <tr><td class="muted">Endereço</td><td>${SN.esc([c.endereco, c.cidade].filter(Boolean).join(' - ') || '—')}
@@ -163,6 +164,7 @@ SN.rota('/tec/os/:id', id => {
     ${titular && emCampo ? `<button class="btn ok lg bloco" id="bConcluir" style="margin-top:12px">✔ Concluir atendimento</button>
       <p class="small muted center">Concluir encerra a parte técnica e para o relógio do SLA. LPU, materiais e fibra podem ser apontados depois.</p>` : ''}
     ${['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) ? `<div class="aviso ok" style="margin-top:12px">Atendimento concluído em ${SN.dt(c.tempos.conclusaoTecnica)} · MTTR ${SN.dur(SN.metricas(c).mttr)}</div>` : ''}`);
+  if (SN.conversa) SN.conversa.flutuante(c.id);
 
   SN.$$('.modulo[data-go]').forEach(el => el.onclick = () => SN.navegar(el.dataset.go));
   let getClass = null;

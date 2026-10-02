@@ -184,6 +184,7 @@
     s.novo = false;
     await SN.VL.salvarRascunho({ id_vistoria: s.id_vistoria, id_rota: s.id_rota, ordem: s.ordem, status_local: s.status_local, dados: v,
       erro: s.erro || '', erros: s.erros || [], servidor: s.servidor || null });
+    SN.vst.publicarVivo(s.id_rota); // gestão acompanha o preenchimento (alguns segundos depois)
   };
   let timerSalvar = null;
   const salvarDepois = s => { clearTimeout(timerSalvar); timerSalvar = setTimeout(() => salvarSlot(s), 300); };
@@ -216,6 +217,8 @@
       ${r.status === 'DESPACHADA' ? '<button class="btn bloco" id="vIniciar" style="margin-top:12px">▶ Iniciar rota</button>' : ''}
       ${r.status === 'EM_CAMPO' ? '<button class="btn ok lg bloco" id="vConcluir" style="margin-top:12px">✔ Concluir rota</button><p class="small muted center">Só conclui com todas as CS planejadas enviadas e nenhuma rejeitada.</p>' : ''}`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => { flush(); SN.navegar(el.dataset.os); });
+    if (SN.conversa && r.id_chamado) SN.conversa.flutuante(r.id_chamado);
+    SN.vst.publicarVivo(r.id_rota);
     SN.$('#vQtdMais').onclick = () => mudarQtd(1);
     SN.$('#vQtdMenos').onclick = () => mudarQtd(-1);
     if (SN.$('#vIniciar')) SN.$('#vIniciar').onclick = () => mudarStatusRota('EM_CAMPO');
@@ -246,6 +249,7 @@
           <span class="st">${lpu ? esc(SN.LPU_STATUS[lpu.status].rot) : lpuLiberada ? 'conferir e enviar' : 'após aprovação'}</span></div>
         <div class="modulo ${fib ? 'feito' : ''} ${podeFib ? '' : 'bloq'}" ${podeFib ? `data-os="#/tec/fibra/${esc(r.id_chamado)}"` : ''}><span class="ico">🧵</span>Fibra
           <span class="st">${fib ? esc(SN.FIB_STATUS[fib.status].rot) : podeFib ? 'se houve fusão' : 'após a 1ª CS'}</span></div>
+        ${SN.conversa && SN.conversa.disponivel() ? `<div class="modulo" data-conversa="${esc(r.id_chamado)}"><span class="ico">💬</span>Conversa<span class="st">falar com a gestão<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span></span></div>` : ''}
       </div>
       ${comEmenda.length && !fib ? `<div class="aviso alerta small" style="margin-top:8px">Emenda aberta em ${comEmenda.join(', ')}: registre o <b>Cadastro de Fibra</b> do que foi executado.</div>` : ''}</div>`;
   };
@@ -257,7 +261,7 @@
     if (n < 1) return;
     if (delta < 0 && T.slots[T.qtd] && !T.slots[T.qtd].novo) return SN.toast('A última aba já tem dados. Não dá para diminuir.', 'erro');
     if (delta < 0) delete T.slots[T.qtd];
-    T.qtd = n; await SN.VL.meta.set('qtd|' + T.rota.id_rota, n);
+    T.qtd = n; await SN.VL.meta.set('qtd|' + T.rota.id_rota, n); SN.vst.publicarVivo(T.rota.id_rota);
     if (T.aba > n) T.aba = n;
     SN.$('#vQtd').textContent = n; pintarAbas(); pintarCs();
   };
@@ -292,7 +296,7 @@
       html += `<button class="vst-aba ${i === T.aba ? 'ativa' : ''}" data-aba="${i}"><span class="small">CS ${i}</span><b>${esc(nome)}</b>${s ? rotuloSlot(s) : SN.vst.badgeLocal('rascunho')}</button>`;
     }
     el.innerHTML = html;
-    SN.$$('[data-aba]', el).forEach(b => b.onclick = () => { flush(); T.aba = Number(b.dataset.aba); try { sessionStorage.setItem('vst_aba_' + T.rota.id_rota, T.aba); } catch (e) { } pintarAbas(); pintarCs(); SN.$('#vstAbas').scrollIntoView({ block: 'start' }); });
+    SN.$$('[data-aba]', el).forEach(b => b.onclick = () => { flush(); T.aba = Number(b.dataset.aba); try { sessionStorage.setItem('vst_aba_' + T.rota.id_rota, T.aba); } catch (e) { } pintarAbas(); pintarCs(); SN.$('#vstAbas').scrollIntoView({ block: 'start' }); SN.vst.publicarVivo(T.rota.id_rota); });
   };
   const flush = () => { if (timerSalvar) { clearTimeout(timerSalvar); timerSalvar = null; const s = T.slots[T.aba]; if (s && s.dados && editavel(s)) salvarSlot(s); } };
 
@@ -502,6 +506,15 @@
     return topo + inicio + trecho + ident + aviso + acesso + solo + tampa + interno + conclusao
       + (ro ? '' : `<div class="vst-envio" id="vEnvio"></div><div class="vst-barra" id="vBarra"></div>`);
   };
+
+  // Espelho para a gestão (acompanhamento ao vivo): a CS desenhada com o mesmo formulário
+  // do técnico, só leitura. ctx = { rota, cfg, cs: {id: base}, slots: {ordem: slot}, fotosLocais }.
+  SN.vst.espelhoCs = (ctx, ordem) => {
+    const antes = T; T = ctx;
+    try { const s = ctx.slots[ordem]; return s && s.dados ? htmlCs({ ...s, status_local: s.status_local === 'enviada' ? 'enviada' : 'espelho' }, s.dados, true) : ''; }
+    finally { T = antes; }
+  };
+  SN.vst.validarEspelho = (ctx, v) => { const antes = T; T = ctx; try { return validar(v); } finally { T = antes; } };
 
   const htmlGps = (lat, lng, precisao, prefixo, ro, campo) => {
     const tem = lat != null && lat !== '' && lng != null && lng !== '';

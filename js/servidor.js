@@ -104,6 +104,7 @@ SN.carregarRemoto = async () => {
   SN.guardarLocal();
   SN.carregarStatusAcessos();
   if (SN.vst && SN.vst.preaquecer) SN.vst.preaquecer();
+  if (SN.conversa) SN.conversa.iniciarAvisos(); // aviso de mensagem nova da conversa, em qualquer tela
   // Técnico: números para criar registro sem sinal. Horário sorteado (1 a 6 min): no começo do
   // turno todos entram juntos e o pedido usa a trava do servidor (teste de carga).
   if (SN.reabastecerIds) setTimeout(SN.reabastecerIds, 60000 + Math.random() * 300000);

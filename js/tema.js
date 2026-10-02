@@ -25,7 +25,12 @@ const ICO = {
   preventiva: 'M6 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM18 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM6 16v-5a4 4 0 0 1 4-4h6M18 8v5a4 4 0 0 1-4 4H8',
   financeiro: 'M3 7.5A2.5 2.5 0 0 1 5.5 5H18v3.5M3 7.5V18a2 2 0 0 0 2 2h15V9H5.5A2.5 2.5 0 0 1 3 7.5zM16.5 14.5h.01',
   camera: 'M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
-  ponto: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z'
+  ponto: 'M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+  conversa: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12zM8.5 12h.01M12 12h.01M15.5 12h.01',
+  imagem: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15.5 9.5h.01',
+  local: 'M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 12a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z',
+  clipe: 'M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9',
+  olho: 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'
 };
 SN.iconeSvg = nome => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICO[nome] || ICO.ponto}"/></svg>`;
 const ICO_POR_HREF = { '#/inicio': 'inicio', '#/chamados': 'chamados', '#/lpu': 'lpu', '#/servicedesk': 'servicedesk', '#/materiais': 'materiais', '#/fibra': 'fibra',
@@ -38,6 +43,7 @@ const icoModulo = el => { const m = el.closest('.modulo'); if (!m) return null;
   if (/\/tec\/mat\//.test(dest) || /^materiais/.test(txt)) return 'materiais';
   if (/\/tec\/fibra\//.test(dest) || /fibra/.test(txt)) return 'fibra';
   if (/\/tec\/os\//.test(dest) || /^os/.test(txt)) return 'fila';
+  if (m.dataset.conversa || /^conversa/.test(txt)) return 'conversa';
   return null; };
 
 // Emojis decorativos (pictogramas). Ficam: ✓ ✔ ✕ ✖ ☰ ⚠ ◀ ▶ (são sinais de interface, não enfeite).

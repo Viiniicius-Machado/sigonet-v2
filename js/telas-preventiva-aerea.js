@@ -24,6 +24,7 @@
     try { await recarregarLocais(true); }
     catch (e) { A = null; return SN.cascaTec('vst', `<div class="aviso erro">Não foi possível usar o armazenamento deste aparelho (${esc(e.message || e)}).</div>`); }
     SN.VF.ligarGps(); ligarOuvinte(); pintar();
+    if (SN.conversa && A.rota.id_chamado) SN.conversa.flutuante(A.rota.id_chamado);
     if (!d.offline) SN.vst.carregar().then(nd => { if (!aberta()) return; A.dados = nd; const r = nd.rotas.find(x => x.id_rota === id); if (r) A.rota = r; pintar(); }).catch(() => { });
   }, { familia: 'tecnico' });
 
@@ -133,7 +134,7 @@
   const salvarRascunho = () => {
     const f = A.form; clearTimeout(timer);
     timer = setTimeout(() => { if (!f || f._enviado || A.form !== f) return;
-      SN.VL.salvarApontamento({ id_apontamento: f.id_apontamento, id_rota: A.rota.id_rota, status_local: 'rascunho', dados: f }); }, 300);
+      SN.VL.salvarApontamento({ id_apontamento: f.id_apontamento, id_rota: A.rota.id_rota, status_local: 'rascunho', dados: f }).then(() => SN.vst.publicarVivo(A.rota.id_rota)); }, 300);
   };
 
   const pintarForm = () => {

@@ -504,3 +504,69 @@ img[data-ver]{cursor:zoom-in}
 .aviso-carregando{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--borda);border-radius:999px;padding:4px 16px 4px 6px;box-shadow:0 8px 24px rgba(22,26,21,.14);font-size:.88rem;color:var(--texto-2);animation:fgAparece .2s ease both}
 .aviso-carregando .foguete{width:34px;height:34px}
 @media (prefers-reduced-motion:reduce){.btn.ocupado::after,button.ocupado::after,.vst-cap.ocupado::after{animation:none}}
+
+/* ── Conversa da atividade (conversa.js) ── */
+.conv{display:flex;flex-direction:column;height:100%;min-height:0}
+.conv-topo{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 0 8px;border-bottom:1px solid var(--borda)}
+.conv-tit{display:flex;flex-direction:column;min-width:0}.conv-tit .small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv-lista{flex:1;overflow-y:auto;padding:10px 2px;display:flex;flex-direction:column;gap:6px;background:var(--bg-2);border-radius:8px;margin:8px 0;min-height:160px}
+.conv-dia{align-self:center;font-size:.72rem;color:var(--texto-3);background:#fff;border:1px solid var(--borda);border-radius:99px;padding:1px 10px;margin:4px 0}
+.conv-sis{align-self:center;font-size:.76rem;color:var(--texto-2);font-style:italic;text-align:center;padding:0 12px}
+.conv-msg{max-width:82%;align-self:flex-start;background:#fff;border:1px solid var(--borda);border-radius:12px 12px 12px 4px;padding:6px 10px;margin:0 6px;word-wrap:break-word}
+.conv-msg.gestao{border-color:var(--verde-borda)}
+.conv-msg.minha{align-self:flex-end;background:var(--verde-bg);border-color:var(--verde-borda);border-radius:12px 12px 4px 12px}
+.conv-de{font-size:.74rem;font-weight:700;color:var(--verde-escuro)}.conv-de span{font-weight:400;color:var(--texto-3);margin-left:6px}
+.conv-txt{white-space:pre-wrap;font-size:.9rem}
+.conv-img{display:block;max-width:240px;max-height:240px;border-radius:8px;margin:4px 0;cursor:zoom-in;object-fit:cover}
+.conv-coord{display:block;font-size:.85rem;margin-top:3px;padding:6px 8px;background:#fff;border:1px dashed var(--verde-borda);border-radius:8px}
+.conv-coord>span:last-child{display:block;font-size:.72rem;color:var(--texto-3)}
+.conv-hora{font-size:.68rem;color:var(--texto-3);text-align:right;margin-top:2px}
+.conv-reenviar{background:none;border:0;color:var(--erro);font-size:.72rem;cursor:pointer;padding:0}
+.conv-envio{display:flex;flex-direction:column;gap:6px}
+.conv-envio textarea{resize:none;min-height:40px}
+.conv-acoes{display:flex;gap:6px;align-items:center}
+.conv-anexo{display:flex;flex-wrap:wrap;gap:6px}
+.conv-chip{display:inline-flex;align-items:center;gap:6px;background:var(--verde-bg);border:1px solid var(--verde-borda);border-radius:99px;padding:2px 4px 2px 8px;font-size:.78rem}
+.conv-chip img{width:26px;height:26px;object-fit:cover;border-radius:4px}.conv-chip button{border:0;background:none;cursor:pointer;font-size:1rem;color:var(--texto-3)}
+.conv-selo{color:var(--erro);margin-left:4px;font-size:.8em;vertical-align:top}
+.conv-painel{position:fixed;inset:0;z-index:95;background:rgba(20,28,12,.35);display:flex;justify-content:flex-end}
+.conv-caixa{position:relative;background:#fff;width:440px;max-width:100%;height:100%;padding:14px 14px 12px;box-shadow:-10px 0 30px rgba(0,0,0,.18);display:flex;flex-direction:column}
+.conv-caixa>[data-conv-corpo]{flex:1;min-height:0}
+.conv-x{position:absolute;top:10px;right:12px;border:0;background:none;font-size:1.2rem;cursor:pointer;color:var(--texto-3);z-index:1}
+.conv-caixa .conv-topo{padding-right:30px}
+.conv-fab{position:fixed;right:16px;bottom:78px;z-index:40}
+.conv-fab button{width:52px;height:52px;border-radius:50%;border:0;background:var(--verde-escuro);color:#fff;font-size:1.4rem;box-shadow:0 6px 16px rgba(0,0,0,.25);cursor:pointer;position:relative}
+.conv-fab .conv-selo{position:absolute;top:2px;right:4px;font-size:.9rem}
+.conv-avisos{position:fixed;right:16px;bottom:84px;z-index:210;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.conv-aviso{background:#fff;border:1px solid var(--verde-borda);border-left:4px solid var(--verde);border-radius:10px;padding:10px 12px;box-shadow:0 10px 24px rgba(0,0,0,.18);font-size:.88rem}
+.conv-pessoas{margin:4px 0 0;padding-left:18px}
+.conv-contatos{max-height:260px;overflow:auto;border:1px solid var(--borda);border-radius:8px;margin-top:6px;padding:4px 8px}
+.conv-contatos label{display:block;padding:5px 0;border-bottom:1px solid var(--bg-2);cursor:pointer}
+@media (max-width:600px){ .conv-caixa{width:100%} .conv-avisos{left:12px;right:78px;bottom:80px;max-width:none} .conv-msg{max-width:90%} }
+
+/* ── Acompanhar rota ao vivo (vistoria-vivo.js) ── */
+.modal.av-modal{max-width:1280px}
+.av-modal .modal-corpo{max-height:calc(100vh - 170px)}
+.av-grade{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;height:calc(100vh - 260px);min-height:420px}
+.av-esq{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.av-dir{border-left:1px solid var(--borda);padding-left:14px;min-height:0;display:flex;flex-direction:column}
+.av-cab{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding-bottom:8px;border-bottom:1px solid var(--borda);margin-bottom:8px}
+.av-abas{flex:0 0 auto}
+.av-cs{flex:1;overflow-y:auto;padding-right:4px}
+.av-cs #vRefazer{display:none}
+.av-ponto{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--texto-3);margin-right:6px;vertical-align:middle}
+.av-ponto.on{background:var(--ok);box-shadow:0 0 0 3px rgba(46,125,50,.2)}
+@media (max-width:900px){ .av-grade{grid-template-columns:1fr;height:auto} .av-esq{max-height:none;overflow:visible} .av-cs{overflow:visible} .av-dir{border-left:0;padding-left:0;border-top:1px solid var(--borda);padding-top:10px;height:520px} }
+.conv-rapidas{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}.conv-rapidas .chip{flex:0 0 auto;font-size:.78rem;padding:4px 10px}
+.conv-ico{display:inline-flex;vertical-align:-3px;margin-right:4px}.conv-ico svg{width:16px;height:16px}
+.conv-acoes .conv-ico,.conv-fab .conv-ico{margin-right:0}.conv-fab .conv-ico svg{width:24px;height:24px}
+.conv-coord .conv-ico{margin-right:2px}
+.conv{position:relative}
+.conv-soltar{display:none;position:absolute;inset:0;z-index:5;border:2px dashed var(--verde);border-radius:10px;background:rgba(242,247,232,.92);
+  align-items:center;justify-content:center;gap:6px;font-weight:600;color:var(--verde-escuro);pointer-events:none}
+.conv.soltando .conv-soltar{display:flex}
+.conv-arq{display:flex;align-items:center;gap:8px;margin:4px 0;padding:8px 10px;background:#fff;border:1px solid var(--borda);border-radius:8px;color:var(--texto);text-decoration:none;max-width:280px}
+.conv-arq:hover{border-color:var(--verde);text-decoration:none}.conv-arq .conv-ico svg{width:22px;height:22px}
+.conv-arq span{display:flex;flex-direction:column;min-width:0}.conv-arq b{font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conv-arq small{color:var(--texto-3)}
+.conv-chip{max-width:100%}.conv-chip .muted{font-size:.72rem}
+.conv-txt .conv-coord{display:inline-block;margin:2px 0;padding:3px 8px}.conv-txt a{word-break:break-all}

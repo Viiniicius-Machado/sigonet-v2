@@ -35,7 +35,7 @@ SN.vst.semServidorHtml = '<div class="aviso alerta">A Preventiva precisa do serv
 // servidor recusa (ok:false com erros/fotos_pendentes). Só lança erro quando
 // não houve resposta (sem sinal, servidor ocupado) — err.rede = true.
 SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
-  const s = SN.sessao(), grava = !/^VST_(CARREGAR|CS_BASE|LER_KMZ|FOTOS_B64)$/.test(acao);
+  const s = SN.sessao(), grava = !/^(VST_(CARREGAR|CS_BASE|LER_KMZ|FOTOS_B64|VIVO|VIVO_PUBLICAR)|CONV_[A-Z_]+)$/.test(acao); // conversa e ao vivo não mexem na carga da Preventiva
   // Ninguém logado (ex.: saiu enquanto uma busca estava agendada): nem vai ao servidor.
   if (!s || !s.token) { const e = new Error('Sem sessão.'); e.sessao = true; throw e; }
   if (grava) { SN.vst.cargaTs = 0; SN.vst.gravacoes++; }

@@ -360,6 +360,7 @@ SN.rota('/chamado/:id', id => {
         ${c.status === 'CONCLUIDO_TECNICO' ? `${prev ? '' : '<button class="btn perigo" id="bDev">Devolver ao técnico</button>'}<button class="btn ok" id="bFechar">Fechar chamado</button>` : ''}
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev ? '<button class="btn perigo" id="bCanc">Cancelar</button>' : ''}
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev && c.tipo === 'Preventiva' && SN.vst && SN.vst.transformarChamado && SN.remoto ? '<button class="btn ok" id="bVstRota">🧭 Transformar em rota de Preventiva</button>' : ''}
+        ${SN.conversa ? SN.conversa.botao(c.id) : ''}
         <button class="btn" id="bPdf">PDF do atendimento</button></div></div>
     ${prev ? `<div class="aviso info" style="margin-bottom:12px">🧭 Chamado ligado à rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. ${c.origem === 'Preventiva' ? '' : 'Aberto pelo NOC. '}Despacho, chegada e conclusão técnica vêm da rota (conclui quando tudo for aprovado na revisão). Para cancelar: retire o despacho da rota (se só despachada) ou, gestor com acesso total, use <b>Cancelar</b> em Preventiva → Planejamento (vale também em campo).${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}</div>` : ''}
     ${(() => { const ant = SN.reincidencia(c); if (!ant) return '';
@@ -435,11 +436,12 @@ SN.rota('/chamado/:id', id => {
     c.status = 'CANCELADO'; c.tempos.fechamento = SN.agora(); SN.hist(c, 'Cancelado', mot); SN.log('CANCELAR_CHAMADO', c.id, mot);
     SN.int.ellevenStatus(c, 'Cancelada'); SN.salvar(); SN.render();
   });
-  b('bPdf').onclick = () => SN.abrirPdfDepois(() => SN.pdfChamado(c, false));
+  b('bPdf').onclick = () => SN.conversa ? SN.conversa.pdfComConversa(c.id, cv => SN.pdfChamado(c, false, cv)) : SN.abrirPdfDepois(() => SN.pdfChamado(c, false));
 });
 
 // PDF do atendimento (história operacional). Também é gerado ao concluir.
-SN.pdfChamado = async (c, abrir) => {
+// conversa: { modo, msgs } quando o gestor escolheu incluir a conversa da atividade.
+SN.pdfChamado = async (c, abrir, conversa) => {
   const doc = SN.novoPdf('Relatório de atendimento · ' + c.id); if (!doc) return null;
   const m = SN.metricas(c);
   doc.secao('Identificação');
@@ -456,6 +458,7 @@ SN.pdfChamado = async (c, abrir) => {
   if (c.rfo.localFalha || c.rfo.gpsFalha) doc.linha('Local da falha', [c.rfo.localFalha, c.rfo.gpsFalha && 'GPS ' + c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng].filter(Boolean).join(' · '));
   if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
   await SN.pdfFotos(doc, c.fotos || [], 'Fotos do atendimento'); // na ordem em que foram adicionadas
+  if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
   if (abrir) window.open(doc.output('bloburl'));
   return doc;
 };

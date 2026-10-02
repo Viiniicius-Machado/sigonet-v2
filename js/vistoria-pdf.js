@@ -158,7 +158,7 @@ SN.vst = SN.vst || {};
     .map(([cod, q]) => `${cod} × ${SN.num(q, cod === 'SEV0009' ? 1 : 0)}${(SN.itemLpu && SN.itemLpu(cod)) ? ' (' + SN.itemLpu(cod).desc + ')' : ''}`).join('; ') || '—';
 
   // Resumo de UMA rota: dados, andamento, o que foi aprovado e a LPU que a rota gera.
-  SN.vst.pdfResumoRota = async (rota, d, config) => {
+  SN.vst.pdfResumoRota = async (rota, d, config, conversa) => {
     const aerea = rota.segmento === 'AEREA';
     const doc = SN.novoPdf(`Preventiva ${aerea ? 'aérea' : 'subterrânea'} · Resumo da rota ${rota.id_rota}`); if (!doc) return null;
     doc.secao('Rota');
@@ -211,6 +211,7 @@ SN.vst = SN.vst || {};
           rot('conclusao', v.conclusao), rot('prioridade', v.prioridade), stRev(v.status_revisao), v.revisor || '']),
         [10, 36, 14, 38, 24, 30, 38]);
     }
+    if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
     SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · rota ${rota.id_rota}`);
     return doc;
   };
