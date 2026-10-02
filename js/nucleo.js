@@ -138,15 +138,67 @@ SN.anexarPdf = async (doc, nome, pasta) => {
   catch (e) { SN.toast('PDF gerado, mas não foi possível guardá-lo: ' + (e.message || e), 'erro'); return null; }
 };
 SN.driveId = id => String(id || '').startsWith('drive:') ? id.slice(6) : null;
+// Foto em tela cheia, na própria página (no celular, abrir outra aba com a foto
+// costuma falhar). Toque na foto = zoom (arrasta para ver os detalhes da marca
+// d'água); ‹ › ou deslizar = próxima; ✕, Esc ou "voltar" do celular = fecha.
+// fotos: [src] ou [{ src, legenda }]
+SN.verFoto = (fotos, ini = 0) => {
+  const lista = (Array.isArray(fotos) ? fotos : [fotos]).map(f => typeof f === 'string' ? { src: f } : f).filter(f => f && f.src);
+  if (!lista.length) return;
+  SN.$('#verFoto') && SN.$('#verFoto').remove();
+  let i = Math.min(Math.max(0, ini), lista.length - 1);
+  const ov = document.createElement('div'); ov.id = 'verFoto'; ov.className = 'ver-foto';
+  ov.innerHTML = `<div class="vf-area"><img alt=""></div><div class="vf-leg"></div>
+    <button type="button" class="vf-x" title="Fechar">✕</button>${lista.length > 1 ? '<button type="button" class="vf-ant" title="Anterior">‹</button><button type="button" class="vf-prox" title="Próxima">›</button>' : ''}`;
+  const area = SN.$('.vf-area', ov), img = SN.$('img', ov), leg = SN.$('.vf-leg', ov);
+  const mostrar = () => { ov.classList.remove('zoom'); img.src = lista[i].src; leg.textContent = (lista.length > 1 ? (i + 1) + ' de ' + lista.length + (lista[i].legenda ? ' · ' : '') : '') + (lista[i].legenda || ''); };
+  const ir = d => { if (lista.length > 1) { i = (i + d + lista.length) % lista.length; mostrar(); } };
+  const fechar = () => { ov.remove(); document.removeEventListener('keydown', tecla); window.removeEventListener('popstate', voltar); };
+  const tecla = e => { if (e.key === 'Escape') history.back(); else if (e.key === 'ArrowLeft') ir(-1); else if (e.key === 'ArrowRight') ir(1); };
+  const voltar = () => fechar();
+  img.onclick = e => { e.stopPropagation(); const z = !ov.classList.contains('zoom'), r = img.getBoundingClientRect(); ov.classList.toggle('zoom', z);
+    if (z) { requestAnimationFrame(() => { area.scrollLeft = (area.scrollWidth - area.clientWidth) * ((e.clientX - r.left) / r.width); area.scrollTop = (area.scrollHeight - area.clientHeight) * ((e.clientY - r.top) / r.height); }); } };
+  area.onclick = e => { if (e.target === area && !ov.classList.contains('zoom')) history.back(); };
+  SN.$('.vf-x', ov).onclick = () => history.back();
+  if (lista.length > 1) { SN.$('.vf-ant', ov).onclick = () => ir(-1); SN.$('.vf-prox', ov).onclick = () => ir(1); }
+  let x0 = null; // deslizar para o lado troca de foto (sem zoom)
+  area.addEventListener('touchstart', e => { x0 = e.touches.length === 1 && !ov.classList.contains('zoom') ? e.touches[0].clientX : null; }, { passive: true });
+  area.addEventListener('touchend', e => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 60) ir(dx < 0 ? 1 : -1); });
+  document.addEventListener('keydown', tecla);
+  history.pushState({ verFoto: 1 }, ''); window.addEventListener('popstate', voltar);
+  document.body.appendChild(ov); mostrar();
+};
+// Miniaturas com data-ver (Preventiva): toque abre em tela cheia, com as outras do mesmo campo.
+// "local:<id_foto>" = foto ainda no aparelho (fila offline): busca a original só no toque.
+document.addEventListener('click', async e => {
+  const img = e.target.closest && e.target.closest('img[data-ver]'); if (!img) return;
+  e.preventDefault();
+  const grupo = [...(img.closest('.vst-thumbs') || img.parentNode).querySelectorAll('img[data-ver]')];
+  const fotos = await Promise.all(grupo.map(async x => {
+    let src = x.dataset.ver;
+    if (src.startsWith('local:')) { const f = SN.VL ? await SN.VL.fotos.get(src.slice(6)).catch(() => null) : null; src = (f && (f.dataUrl || (f.drive_id && 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600'))) || x.src; }
+    return { src, legenda: x.dataset.leg || '' };
+  }));
+  SN.verFoto(fotos, grupo.indexOf(img));
+});
+SN.fotoGrande = id => { const fid = SN.driveId(id); return SN._fotoCache[id] || (fid ? `https://drive.google.com/thumbnail?id=${fid}&sz=w1600` : null); };
 SN.abrirAnexo = async id => {
   const cache = SN._fotoCache[id];
-  if (cache && cache.startsWith('data:image')) { const w = window.open(); if (w) w.document.write(`<body style="margin:0;background:#111"><img src="${cache}" style="max-width:100%;display:block;margin:auto"></body>`); return; }
+  if (cache && cache.startsWith('data:image')) return SN.verFoto(cache);
   if (SN.driveId(id)) { window.open('https://drive.google.com/file/d/' + SN.driveId(id) + '/view', '_blank', 'noopener'); return; }
   const d = await SN.anexos.get(id);
   if (!d) return SN.toast('Anexo não encontrado neste navegador.', 'erro');
   const w = window.open(); if (!w) return;
   if (d.startsWith('data:application/pdf')) w.document.write(`<iframe src="${d}" style="border:0;width:100%;height:100vh"></iframe>`);
   else w.document.write(`<img src="${d}" style="max-width:100%">`);
+};
+// Abre a foto da lista em tela cheia, com as outras fotos da mesma lista.
+const verDaLista = async (lista, a) => {
+  const fotos = [];
+  for (const x of lista.filter(y => y.tipo === 'imagem')) { const src = SN.fotoGrande(x.id) || await SN.anexos.get(x.id).catch(() => null); if (src) fotos.push({ id: x.id, src }); }
+  const i = fotos.findIndex(f => f.id === a.id);
+  if (i < 0) return SN.abrirAnexo(a.id);
+  SN.verFoto(fotos, i);
 };
 SN.pintarFotos = async (el, lista, opc) => {
   if (!el) return;
@@ -162,7 +214,7 @@ SN.pintarFotos = async (el, lista, opc) => {
   for (const [a, d] of itens) {
     if (a.pendente && !d) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = '⏳ ' + (a.tipo === 'imagem' ? 'foto' : a.nome) + ' subindo do celular'; el.appendChild(b); continue; }
     if (a.tipo === 'imagem' && d) {
-      const img = document.createElement('img'); img.src = d; img.title = a.nome + (a.pendente ? ' (ainda subindo)' : ''); img.onclick = () => SN.abrirAnexo(a.id);
+      const img = document.createElement('img'); img.src = d; img.title = a.nome + (a.pendente ? ' (ainda subindo)' : ''); img.onclick = () => verDaLista(lista, a);
       if (opc && opc.remover) {
         const w = document.createElement('span'); w.className = 'foto-rm';
         const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = 'Remover foto';

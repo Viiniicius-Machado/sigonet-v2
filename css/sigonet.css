@@ -483,3 +483,16 @@ html[data-tema] .vazio svg{width:26px;height:26px;opacity:.55}
 html[data-tema="a"]{--verde-medio:#7ea32a}
 html[data-tema] .app-tec .tec-os{border-left:3px solid var(--verde)}
 html[data-tema] .app-tec .tec-os.estourado{border-left-color:var(--erro)}
+
+/* Foto em tela cheia (SN.verFoto) */
+img[data-ver]{cursor:zoom-in}
+.ver-foto{position:fixed;inset:0;z-index:9999;background:rgba(10,12,8,.96);display:flex;flex-direction:column}
+.ver-foto .vf-area{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:pinch-zoom}
+.ver-foto img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;user-select:none;-webkit-user-select:none}
+.ver-foto.zoom .vf-area{overflow:auto;display:block;touch-action:auto}
+.ver-foto.zoom img{max-width:none;max-height:none;width:auto;cursor:zoom-out}
+.ver-foto .vf-leg{color:#e9f7c8;font-size:.85rem;text-align:center;padding:8px 56px calc(10px + env(safe-area-inset-bottom));min-height:1em}
+.ver-foto button{position:absolute;border:0;border-radius:50%;width:44px;height:44px;background:rgba(255,255,255,.16);color:#fff;font-size:1.4rem;line-height:1;cursor:pointer}
+.ver-foto .vf-x{top:calc(10px + env(safe-area-inset-top));right:10px}
+.ver-foto .vf-ant{left:8px;top:50%;transform:translateY(-50%);font-size:2rem}
+.ver-foto .vf-prox{right:8px;top:50%;transform:translateY(-50%);font-size:2rem}

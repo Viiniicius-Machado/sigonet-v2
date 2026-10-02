@@ -355,7 +355,7 @@
       const st = !l ? 'enviada' : l.status;
       const ico = { pendente: '⏳', enviando: '⟳', enviada: '✓', erro: '⚠' }[st] || '';
       return `<div class="vst-thumb ${f.flag_suspeita ? 'suspeita' : ''} st-${st}" title="${esc(l && l.erro ? l.erro : st)}">
-        ${src ? `<img src="${src}" alt="">` : '<div class="vazio">📷</div>'}<span class="st">${ico}</span>
+        ${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}<span class="st">${ico}</span>
         ${f.flag_suspeita ? '<span class="sus">suspeita</span>' : ''}
         ${!ro ? `<button type="button" class="del" data-del-foto="${esc(f.id_foto)}" title="Remover">×</button>` : ''}</div>`;
     }).join('');

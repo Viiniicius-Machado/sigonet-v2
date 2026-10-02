@@ -71,8 +71,27 @@ const fotografar = () => {
 };
 const tirarVersoes = (col, docs) => docs.map(d => { (SN._ver[col] = SN._ver[col] || {})[d[SN.CHAVES[col]]] = d._v; const x = { ...d }; delete x._v; return x; });
 
+// Limpeza dos dados de teste (LIMPAR_OPERACIONAL): o servidor marca config.limpeza.
+// O aparelho que ainda não viu essa marca descarta o que guardou daquela época:
+// números reservados (iam repetir com a numeração recomeçada), rascunhos, fotos e
+// apontamentos da Preventiva na fila e a carga da Preventiva em memória.
+const CHAVE_LIMPEZA = 'sigonet_v2_limpeza';
+SN.conferirLimpeza = async ts => {
+  if (!ts) return false;
+  let vista = ''; try { vista = localStorage.getItem(CHAVE_LIMPEZA) || ''; } catch (e) { }
+  if (vista === ts) return false;
+  try { Object.keys(localStorage).filter(k => k.startsWith('sigonet_v2_ids|')).forEach(k => localStorage.removeItem(k)); } catch (e) { }
+  if (SN.VL) for (const loja of ['rascunhos', 'fotos', 'apontamentos']) {
+    const todos = await SN.VL[loja].todos().catch(() => []);
+    for (const x of todos) await SN.VL[loja].del(x.id_vistoria || x.id_foto || x.id_apontamento).catch(() => { });
+  }
+  if (SN.vst) SN.vst.dados = null;
+  try { localStorage.setItem(CHAVE_LIMPEZA, ts); } catch (e) { }
+  return true;
+};
 SN.carregarRemoto = async () => {
   const r = await SN.api('CARREGAR');
+  await SN.conferirLimpeza(r.db.config && r.db.config.limpeza);
   const db = SN.baseVazia();
   SN._ver = {};
   Object.keys(SN.CHAVES).forEach(col => { db[col] = tirarVersoes(col, r.db[col] || []); });
@@ -294,6 +313,9 @@ SN.sincronizar = async () => {
   sincronizando = true;
   try {
     const r = await SN.api('SINCRONIZAR', { desde: SN._ultimaSync });
+    if (r.config && await SN.conferirLimpeza(r.config.limpeza)) { // dados de teste apagados: recarrega tudo
+      await SN.carregarRemoto(); SN.aoMudarBase(); return;
+    }
     let mudou = mesclar(r.mudancas);
     // Saiu do recorte desta pessoa (ex.: chamado reatribuído a outra empresa): tira da
     // tela e do "que o servidor tem" — senão o envio entenderia como exclusão.

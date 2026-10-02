@@ -277,12 +277,18 @@ SN.rota('/cadastros', () => {
     <div class="card"><h3>Onde os dados ficam</h3><p class="small">Conectado ao servidor do V2: os registros ficam na planilha <b>SigoNet V2 - Base</b> (uma aba por assunto)
       e fotos, PDFs e NFs na pasta do Drive <b>SigoNet V2 - Anexos</b>. O V1 não é alterado.</p>
       <p class="small muted">Endereço: <span class="mono">${SN.esc(SIGONET_SERVIDOR)}</span></p>
-      <div class="acoes"><button class="btn" id="bBackup">Baixar cópia (.json)</button></div></div></div>` : `<div class="grid g2">
+      <div class="acoes"><button class="btn" id="bBackup">Baixar cópia (.json)</button></div></div>
+    ${SN.usuario().telas.includes('*') ? `<div class="card" style="border-color:var(--erro)"><h3>Apagar dados de teste</h3>
+      <p class="small">Apaga <b>todos</b> os chamados, LPUs, materiais, fibra, pagamentos, fechamentos e disponibilidade, e as rotas, vistorias e apontamentos da Preventiva,
+        e recomeça a numeração (CH-00001, ROT-00001…). <b>Ficam</b>: cadastros e acessos, base de CS, configurações, o histórico da Preventiva importado da planilha de KPIs, o log e os arquivos no Drive.</p>
+      <p class="small muted">Não dá para desfazer. Baixe a cópia (.json) antes, se quiser guardar.</p>
+      <div class="acoes"><button class="btn perigo" id="bLimpar">Apagar dados de teste…</button></div></div>` : ''}</div>` : `<div class="grid g2">
     <div class="card"><h3>Backup da base</h3><p class="small muted">Modo teste: os dados ficam só neste navegador. Para a equipe usar junto, configure o servidor (README → Servidor).</p>
       <div class="acoes"><button class="btn" id="bBackup">Baixar backup (.json)</button></div></div>
     <div class="card"><h3>Demonstração</h3><p class="small muted">Gera chamados fictícios no mês atual (marcados como "Demo") com os técnicos reais, para testar telas e indicadores.</p>
       <div class="acoes"><button class="btn" id="bDemo">Gerar dados de demonstração</button></div></div></div>`;
-  // Sem "Zerar" nem "Restaurar backup": nenhuma opção da tela apaga ou substitui a base inteira.
+  // Sem "Zerar" nem "Restaurar backup". A única limpeza é "Apagar dados de teste" (só gestor com acesso
+  // total, digitando APAGAR TUDO): apaga o operacional e mantém cadastros, base de CS e histórico importado.
   SN.casca('cadastros', `<div class="cab-pagina"><div><h1>Cadastros e Acessos</h1><p>Tudo editável aqui — sem mexer em código.</p></div></div>
     <div class="abas">${abas.map(([k, r]) => `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>${html}`);
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaCad = b.dataset.aba; SN.render(); });
@@ -298,6 +304,21 @@ SN.rota('/cadastros', () => {
     q('bBackup').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(SN.db)], { type: 'application/json' }));
       a.download = 'sigonet_v2_backup_' + SN.agora().slice(0, 10) + '.json'; a.click(); SN.log('BACKUP', ''); SN.salvar(); };
     if (q('bDemo')) q('bDemo').onclick = () => { SN.gerarDemo(); SN.toast('Dados de demonstração gerados.', 'ok'); };
+    if (q('bLimpar')) q('bLimpar').onclick = () => SN.modal({ titulo: 'Apagar dados de teste',
+      corpo: `<div class="aviso alerta small">Todos os chamados (${SN.db.chamados.length} carregados), LPUs, materiais, fibra, pagamentos, fechamentos e as rotas da Preventiva serão apagados para todos. A numeração recomeça.</div>
+        <div class="campo"><label>Para confirmar, digite <b>APAGAR TUDO</b></label><input class="inp" id="lConf" autocomplete="off" autocapitalize="characters"></div>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Apagar', cls: 'perigo', acao: async f => {
+        const conf = SN.$('#lConf', f).value.trim().toUpperCase();
+        if (conf !== 'APAGAR TUDO') { SN.toast('Digite APAGAR TUDO para confirmar.', 'erro'); return false; }
+        const fim = SN.cobrirCarregando('Apagando os dados de teste…');
+        try {
+          const r = await SN.api('LIMPAR_OPERACIONAL', { confirmar: conf });
+          await SN.conferirLimpeza(r.limpeza); await SN.carregarRemoto(); fim();
+          const a = r.apagados || {};
+          SN.toast(`Pronto: ${a.chamados || 0} chamado(s), ${a.lpus || 0} LPU(s), ${a.materiais || 0} material(is) e ${a.vst_rotas || 0} rota(s) apagados.`, 'ok');
+          SN.navegar('#/inicio'); return null;
+        } catch (e) { fim(); SN.toast(e.message, 'erro'); return false; }
+      } }] });
   }
 }, { tela: 'cadastros' });
 
