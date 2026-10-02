@@ -281,7 +281,9 @@
 
   const pintarSub = (d, cfg) => {
     const rotas = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias;
-    const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs);
+    const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs), mtr = VR.metragemRotas(rotas, vs);
+    const difTxt = x => { if (x.diferenca_m == null || !x.previsto_m) return '—'; if (x.cs_enviadas < x.cs_planejadas) return '<span class="muted">parcial</span>'; const p = Math.round(100 * x.diferenca_m / x.previsto_m);
+      return `<span class="${Math.abs(p) >= 20 ? 'badge alerta' : ''}">${x.diferenca_m > 0 ? '+' : ''}${SN.num(x.diferenca_m)} m (${p > 0 ? '+' : ''}${p}%)</span>`; };
     const pend = VR.pendenciasConfig(cfg);
     SN.$('#dCorpo').innerHTML = `
       ${pend.length ? `<div class="aviso alerta small" style="margin-bottom:12px"><b>Configurações a definir:</b> ${pend.map(esc).join(' · ')}</div>` : ''}
@@ -305,10 +307,21 @@
       <div class="grid g2">
         <div class="card"><h3>Produção do prestador</h3><table class="tab small"><thead><tr><th>Prestador</th><th class="num">Planejadas</th><th class="num">Enviadas</th><th class="num">Aprovadas</th><th class="num">Rejeitadas</th></tr></thead>
           <tbody>${prod.map(x => `<tr><td>${esc(x.prestador)}</td><td class="num">${x.planejadas}</td><td class="num">${x.enviadas}</td><td class="num">${x.aprovadas}</td><td class="num">${x.rejeitadas}${x.rejeicoes_total > x.rejeitadas ? ` <span class="muted">(${x.rejeicoes_total} no total)</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div>
-        <div class="card"><h3>Medição (só APROVADAS)</h3><table class="tab small"><thead><tr><th>Prestador</th><th class="num">CS aprovadas</th><th class="num">km</th></tr></thead>
-          <tbody>${med.linhas.map(x => `<tr><td>${esc(x.prestador)}</td><td class="num">${x.cs_aprovadas}</td><td class="num">${SN.num(x.km, 3)}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">—</td></tr>'}
-          <tr><td><b>Total</b></td><td class="num"><b>${med.total_cs}</b></td><td class="num"><b>${SN.num(med.total_km, 3)}</b></td></tr></tbody></table></div>
-      </div>`;
+        <div class="card"><h3>Medição (só APROVADAS)</h3><p class="small muted" style="margin:-4px 0 8px">Metros de campo = distância entre as posições GPS que o técnico registrou em cada CS, na ordem do relatório.</p>
+          <table class="tab small"><thead><tr><th>Prestador</th><th class="num">CS aprovadas</th><th class="num">Previsto (m)</th><th class="num">Campo (m)</th></tr></thead>
+          <tbody>${med.linhas.map(x => `<tr><td>${esc(x.prestador)}</td><td class="num">${x.cs_aprovadas}</td><td class="num muted">${SN.num(x.previsto_m)}</td><td class="num"><b>${SN.num(x.metros)}</b></td></tr>`).join('') || '<tr><td colspan="4" class="muted">—</td></tr>'}
+          <tr><td><b>Total</b></td><td class="num"><b>${med.total_cs}</b></td><td class="num muted">${SN.num(med.total_previsto_m)}</td><td class="num"><b>${SN.num(med.total_metros)} m</b></td></tr></tbody></table></div>
+      </div>
+      <div class="card"><div class="card-tit"><h3>Metragem por rota · relatório do técnico</h3><span class="small muted">previsto = base/KMZ · campo = GPS de CS a CS</span></div>
+        ${mtr.length ? `<div class="tabela-wrap"><table class="tab small"><thead><tr><th>Rota</th><th>Cluster</th><th>Prestador / técnico</th><th class="num">CS enviadas</th><th class="num">Previsto (m)</th><th class="num">Campo (m)</th><th class="num">Diferença</th><th class="num">Aprovado (m)</th></tr></thead>
+          <tbody>${mtr.map(x => `<tr><td>${esc(x.id_rota)}</td><td>${esc(x.cluster || '')}</td><td>${esc(x.prestador || '')}${x.tecnico ? ' · ' + esc(x.tecnico) : ''}</td>
+            <td class="num">${x.cs_enviadas}/${x.cs_planejadas}</td><td class="num muted">${SN.num(x.previsto_m)}</td>
+            <td class="num"><b>${SN.num(x.metros)}</b>${x.origem === 'previsto' ? ' <span class="badge" title="Nenhuma CS com GPS: rateio do previsto">sem GPS</span>' : x.sem_gps.length ? ` <span class="badge alerta" title="Sem GPS: ${esc(x.sem_gps.join(', '))}">${x.sem_gps.length} sem GPS</span>` : ''}</td>
+            <td class="num">${difTxt(x)}</td><td class="num">${SN.num(x.metros_aprovados)}</td></tr>
+            ${x.trechos.length ? `<tr><td colspan="8" style="padding-top:0"><details><summary class="small muted">Trechos (${x.trechos.length})</summary>
+              <div class="small">${x.trechos.map(t => `${esc(t.de)} → ${esc(t.para)}: <b>${SN.num(t.metros)} m</b>`).join(' · ')}</div></details></td></tr>` : ''}`).join('')}
+          <tr><td colspan="4"><b>Total</b></td><td class="num muted">${SN.num(mtr.reduce((s, x) => s + x.previsto_m, 0))}</td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros, 0))} m</b></td><td></td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros_aprovados, 0))} m</b></td></tr></tbody></table></div>`
+          : '<p class="muted small">Nenhuma CS enviada ainda.</p>'}</div>`;
     SN.$('#dExportar').onclick = () => SN.exportar('Preventiva subterrânea', vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
       Prestador: v.prestador, Técnico: v.tecnico, Status: v.status_revisao, Conclusão: rot('conclusao', v.conclusao), Prioridade: rot('prioridade', v.prioridade), Abriu: sn(v.abriu),
       'Tampa': rot('tampa_estado', v.tampa_estado), 'Água': rot('agua', v.agua), 'Profundidade (cm)': v.profundidade_cm, 'Fora do critério': (v.flags || {}).fora_criterio ? 'SIM' : '',

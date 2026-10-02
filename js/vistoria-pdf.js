@@ -41,7 +41,7 @@ SN.vst = SN.vst || {};
     const doc = SN.novoPdf(`Preventiva · Ficha da CS ${nomeCs}`); if (!doc) return null;
     const cen = rota.cenario_esperado || {}, fl = v.flags || {};
     doc.secao('Rota');
-    doc.linha('Rota', `${rota.id_rota} · ${rota.cidade || ''} · Cluster ${rota.cluster} · ${rota.extensao_km} km`);
+    doc.linha('Rota', `${rota.id_rota} · ${rota.cidade || ''} · Cluster ${rota.cluster} · previsto ${SN.num(Math.round((Number(rota.extensao_km) || 0) * 1000))} m`);
     doc.linha('Prestador / técnico', `${rota.prestador} · ${v.tecnico || ''}`);
     if (rota.id_chamado) doc.linha('Chamado', rota.id_chamado);
     doc.linha('CS nº / horário', `${v.ordem} · início ${SN.dt(v.inicio)} · fim ${SN.dt(v.fim)}`);
@@ -163,7 +163,7 @@ SN.vst = SN.vst || {};
     const doc = SN.novoPdf(`Preventiva ${aerea ? 'aérea' : 'subterrânea'} · Resumo da rota ${rota.id_rota}`); if (!doc) return null;
     doc.secao('Rota');
     doc.linha('Rota / status', `${rota.id_rota} · ${stRota(rota.status)}`);
-    doc.linha('Onde', aerea ? `${rota.cidade || ''}${rota.regiao ? ' · ' + rota.regiao : ''}` : `${rota.cidade || ''} · Cluster ${rota.cluster || '—'} · ${SN.num(rota.extensao_km, 2)} km`);
+    doc.linha('Onde', aerea ? `${rota.cidade || ''}${rota.regiao ? ' · ' + rota.regiao : ''}` : `${rota.cidade || ''} · Cluster ${rota.cluster || '—'} · previsto ${SN.num(Math.round((Number(rota.extensao_km) || 0) * 1000))} m`);
     if (aerea) {
       doc.linha('Motivo / solicitante', `${rota.motivo || '—'} · ${rota.solicitante || '—'}`);
       if (rota.notificacao) doc.linha('Notificação', rota.notificacao);
@@ -194,6 +194,9 @@ SN.vst = SN.vst || {};
       doc.linha('CS', `${(rota.cs_planejadas || []).length} planejadas · ${vs.length} enviadas · ${r.cs_aprovadas} aprovadas · ${r.pendentes} pendentes de revisão`);
       doc.linha('Aprovadas', `${r.cs_abertas} abertas · ${r.cs_nao_abertas} não abertas`);
       doc.linha('Pronta para concluir', r.pronto ? 'Sim — todas as CS aprovadas' : 'Não');
+      const mc = VR.metrosCampoRota(rota, d.vistorias || [], { todas: true });
+      doc.linha('Metragem previsto (base/KMZ)', SN.num(mc.previsto_m) + ' m');
+      doc.linha('Metragem de campo (GPS do técnico)', `${SN.num(mc.metros)} m${mc.origem === 'previsto' ? ' (sem GPS: rateio do previsto)' : ''}${mc.sem_gps.length ? ' · sem GPS: ' + mc.sem_gps.join(', ') : ''} · aprovado: ${SN.num(r.metros)} m`);
       doc.linha('LPU gerada', lpuTxt(r.lpu_sugerida));
       doc.secao('Conformidade (só aprovadas)');
       doc.linha('Conforme', `${c.conforme} (${c.pct_conforme}%)`);
@@ -206,10 +209,15 @@ SN.vst = SN.vst || {};
         ['Não consta no cadastro', dv.nao_consta], ['Cabos divergentes', dv.cabos_divergentes]]
         .forEach(([k, v]) => doc.linha(k, typeof v === 'number' ? SN.num(v) : v));
       doc.secao('CS da rota');
-      tabela(doc, ['Nº', 'CS', 'Abriu', 'Conclusão', 'Prioridade', 'Revisão', 'Revisor'],
-        vs.sort((a, b) => Number(a.ordem) - Number(b.ordem)).map(v => [v.ordem, v.cs_nova ? 'fora do cadastro' : v.id_cs, v.abriu === 'sim' ? 'Sim' : v.abriu === 'nao' ? 'Não' : '—',
-          rot('conclusao', v.conclusao), rot('prioridade', v.prioridade), stRev(v.status_revisao), v.revisor || '']),
-        [10, 36, 14, 38, 24, 30, 38]);
+      // Distância da CS anterior (GPS do técnico, na ordem do relatório).
+      let ant = null; const dist = {};
+      vs.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.gps_em || '').localeCompare(String(b.gps_em || ''))).forEach(v => {
+        if (v.lat == null || v.lng == null || v.lat === '' || v.lng === '') return;
+        if (ant) dist[v.id_vistoria] = Math.round(VR.distanciaM(ant.lat, ant.lng, v.lat, v.lng)); ant = v; });
+      tabela(doc, ['Nº', 'CS', 'Da anterior', 'Abriu', 'Conclusão', 'Prioridade', 'Revisão', 'Revisor'],
+        vs.map(v => [v.ordem, v.cs_nova ? 'fora do cadastro' : v.id_cs, dist[v.id_vistoria] != null ? SN.num(dist[v.id_vistoria]) + ' m' : (v.lat == null || v.lat === '' ? 'sem GPS' : '—'),
+          v.abriu === 'sim' ? 'Sim' : v.abriu === 'nao' ? 'Não' : '—', rot('conclusao', v.conclusao), rot('prioridade', v.prioridade), stRev(v.status_revisao), v.revisor || '']),
+        [10, 32, 20, 12, 34, 22, 28, 32]);
     }
     if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
     SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · rota ${rota.id_rota}`);
@@ -256,7 +264,7 @@ SN.vst = SN.vst || {};
           y.meta_km != null ? SN.num(y.meta_km, 3) : '—', y.pct_meta != null ? y.pct_meta + '%' : '—']; }),
       [34, 14, 22, 20, 20, 28, 24, 20]);
     doc.secao('Medição por prestador (só aprovadas)');
-    tabela(doc, ['Prestador', 'CS aprovadas', 'km'], med.linhas.map(x => [x.prestador, x.cs_aprovadas, SN.num(x.km, 3)]).concat([['Total', med.total_cs, SN.num(med.total_km, 3)]]), [100, 40, 40]);
+    tabela(doc, ['Prestador', 'CS aprovadas', 'Previsto (m)', 'Campo (m)'], med.linhas.map(x => [x.prestador, x.cs_aprovadas, SN.num(x.previsto_m), SN.num(x.metros)]).concat([['Total', med.total_cs, SN.num(med.total_previsto_m), SN.num(med.total_metros)]]), [80, 34, 34, 34]);
     SN.vst.pdfRodape(doc, `Relatório gerado em ${SN.dt(SN.agora())} · SigoNet · Preventiva`);
     return doc;
   };

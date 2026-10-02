@@ -495,16 +495,59 @@ var VR = (function () {
   };
   var arred = function (x, d) { var k = Math.pow(10, d == null ? 2 : d); return Math.round(x * k) / k; };
 
-  R.medicao = function (vistorias, rotas) {
-    var rm = mapaRotas(rotas), por = {};
-    R.aprovadas(vistorias).forEach(function (v) {
-      var p = v.prestador || '(sem prestador)';
-      var x = por[p] = por[p] || { prestador: p, cs_aprovadas: 0, km: 0 };
-      x.cs_aprovadas++; x.km += R.kmDaVistoria(v, rm[v.id_rota]);
+  // Metragem de CAMPO da rota: distância em linha reta entre as posições GPS que
+  // o técnico capturou em cada CS, na ordem do relatório (Nº da CS; empate pela
+  // hora do GPS). O KMZ/base pode divergir do físico, por isso a medição vale o
+  // que o técnico registrou. opts.todas: conta enviadas (não só APROVADA).
+  // CS sem GPS é pulada (liga a anterior à seguinte) e volta em "sem_gps".
+  // Rota sem nenhum GPS no relatório cai no rateio do previsto (origem 'previsto').
+  R.metrosCampoRota = function (rota, vistorias, opts) {
+    opts = opts || {};
+    var vs = (vistorias || []).filter(function (v) {
+      return v.id_rota === rota.id_rota && (opts.todas ? v.status_revisao && v.status_revisao !== 'RASCUNHO' && v.status_revisao !== 'REJEITADA' : v.status_revisao === 'APROVADA');
+    }).sort(function (a, b) {
+      return (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.gps_em || '').localeCompare(String(b.gps_em || ''));
     });
-    var linhas = Object.keys(por).sort().map(function (k) { por[k].km = arred(por[k].km, 3); return por[k]; });
-    return { linhas: linhas, total_cs: linhas.reduce(function (s, l) { return s + l.cs_aprovadas; }, 0),
-      total_km: arred(linhas.reduce(function (s, l) { return s + l.km; }, 0), 3) };
+    var previsto = numero(rota.extensao_km) ? Math.round(Number(rota.extensao_km) * 1000) : 0;
+    var nome = function (v) { return v.cs_nova ? 'fora do cadastro' : v.id_cs; };
+    var trechos = [], sem = [], ant = null, m = 0;
+    vs.forEach(function (v) {
+      if (!numero(v.lat) || !numero(v.lng)) { sem.push(nome(v)); return; }
+      if (ant) { var d = Math.round(R.distanciaM(ant.lat, ant.lng, v.lat, v.lng)); m += d; trechos.push({ de: nome(ant), para: nome(v), ordem: v.ordem, metros: d }); }
+      ant = v;
+    });
+    var comGps = vs.length - sem.length;
+    if (vs.length && !comGps) { // sem GPS nenhum: rateio do previsto pelas CS contadas
+      var n = (rota.cs_planejadas || []).length || 1;
+      return { metros: Math.round(previsto * vs.length / n), previsto_m: previsto, origem: 'previsto', cs: vs.length, trechos: [], sem_gps: sem };
+    }
+    return { metros: m, previsto_m: previsto, origem: 'campo', cs: vs.length, trechos: trechos, sem_gps: sem };
+  };
+
+  // Medição por prestador: CS aprovadas e metros de campo (relatório do técnico)
+  // × metros previstos (base/KMZ) das rotas que têm CS aprovada.
+  R.medicao = function (vistorias, rotas) {
+    var rm = mapaRotas(rotas), por = {}, ids = {};
+    var linha = function (p) { return por[p] = por[p] || { prestador: p, cs_aprovadas: 0, metros: 0, previsto_m: 0, rotas: 0 }; };
+    R.aprovadas(vistorias).forEach(function (v) { linha(v.prestador || '(sem prestador)').cs_aprovadas++; ids[v.id_rota] = v.prestador || '(sem prestador)'; });
+    Object.keys(ids).forEach(function (id) {
+      var r = rm[id]; if (!r) return;
+      var c = R.metrosCampoRota(r, vistorias), x = linha(r.prestador || ids[id]);
+      x.metros += c.metros; x.previsto_m += c.previsto_m; x.rotas++;
+    });
+    var linhas = Object.keys(por).sort().map(function (k) { por[k].km = arred(por[k].metros / 1000, 3); return por[k]; });
+    var soma = function (k) { return linhas.reduce(function (s, l) { return s + l[k]; }, 0); };
+    return { linhas: linhas, total_cs: soma('cs_aprovadas'), total_metros: soma('metros'), total_previsto_m: soma('previsto_m'), total_km: arred(soma('metros') / 1000, 3) };
+  };
+  // Metragem por rota (subterrânea) para o dashboard: campo × previsto.
+  R.metragemRotas = function (rotas, vistorias) {
+    return (rotas || []).filter(function (r) { return r.segmento !== 'AEREA' && r.status !== 'CANCELADA'; }).map(function (r) {
+      var c = R.metrosCampoRota(r, vistorias, { todas: true }), ap = R.metrosCampoRota(r, vistorias);
+      return { id_rota: r.id_rota, cluster: r.cluster, prestador: r.prestador, tecnico: r.tecnico, status: r.status, data_planejada: r.data_planejada,
+        cs_planejadas: (r.cs_planejadas || []).length, cs_enviadas: c.cs, cs_aprovadas: ap.cs, previsto_m: c.previsto_m, metros: c.metros,
+        metros_aprovados: ap.metros, origem: c.origem, trechos: c.trechos, sem_gps: c.sem_gps,
+        diferenca_m: c.cs ? c.metros - c.previsto_m : null };
+    }).filter(function (x) { return x.cs_enviadas > 0; });
   };
 
   var pct = function (n, d) { return d ? arred(100 * n / d, 1) : 0; };
@@ -569,7 +612,10 @@ var VR = (function () {
     var cfg = R.normalizarConfig(config), rm = mapaRotas(rotas), out = {};
     var linha = function (k) { return out[k] = out[k] || { cluster: k, km_planejado: 0, km_vistoriado: 0, meta_km: null, pct_meta: null }; };
     (rotas || []).forEach(function (r) { linha(r.cluster || '(sem cluster)').km_planejado += numero(r.extensao_km) ? Number(r.extensao_km) : 0; });
-    R.aprovadas(vistorias).forEach(function (v) { linha(v.cluster || '(sem cluster)').km_vistoriado += R.kmDaVistoria(v, rm[v.id_rota]); });
+    var rotasAp = {}; R.aprovadas(vistorias).forEach(function (v) { rotasAp[v.id_rota] = true; });
+    Object.keys(rotasAp).forEach(function (id) { // metros de campo (relatório do técnico)
+      var r = rm[id]; if (r) linha(r.cluster || '(sem cluster)').km_vistoriado += R.metrosCampoRota(r, vistorias).metros / 1000;
+    });
     Object.keys(out).forEach(function (k) {
       var x = out[k], c = cfg.clusters[k] || {};
       var metaPct = c.meta_pct != null ? c.meta_pct : cfg.meta_padrao_pct;
@@ -632,10 +678,11 @@ var VR = (function () {
     var cobertas = (rota.cs_planejadas || []).every(function (cs) { return ap.some(function (v) { return v.id_cs === cs; }); });
     var abertas = ap.filter(function (v) { return v.abriu === 'sim'; }).length;
     var naoAbertas = ap.filter(function (v) { return v.abriu === 'nao'; }).length;
-    var metros = numero(rota.extensao_km) ? Math.round(Number(rota.extensao_km) * 1000) : 0;
+    var campo = R.metrosCampoRota(rota, vistorias), metros = campo.metros; // SEV0083 = metragem do relatório do técnico
     var lpu = {}; lpu[R.LPU_PREVENTIVA.abertura] = abertas; lpu[R.LPU_PREVENTIVA.metro] = metros; lpu[R.LPU_PREVENTIVA.improdutiva] = naoAbertas;
     return { pronto: rota.status === 'CONCLUIDA' && cobertas && pendentes === 0 && ap.length > 0,
-      cs_aprovadas: ap.length, cs_abertas: abertas, cs_nao_abertas: naoAbertas, pendentes: pendentes, metros: metros, lpu_sugerida: lpu };
+      cs_aprovadas: ap.length, cs_abertas: abertas, cs_nao_abertas: naoAbertas, pendentes: pendentes, metros: metros,
+      metros_previstos: campo.previsto_m, metros_origem: campo.origem, trechos: campo.trechos, lpu_sugerida: lpu };
   };
 
   // ═══════════════════════════ Preventiva AÉREA ═══════════════════════════
