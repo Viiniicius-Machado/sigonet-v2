@@ -483,6 +483,83 @@ var VR = (function () {
     return { ok: !erros.length, erros: erros };
   };
 
+  // ═══════════════════════ Correção pelo revisor e reabertura ═══════════════════════
+  // O revisor corrige o que o técnico preencheu (sem mexer em fotos, CS, rota
+  // nem horários). Cada mudança fica no histórico com o valor anterior.
+  // tipo: lista (VR_LISTAS), int, num, txt, tampa (lista da configuração).
+  R.CAMPOS_CORRECAO_CS = [
+    { k: 'endereco', rot: 'Endereço e referência', tipo: 'txt' },
+    { k: 'lat', rot: 'Latitude', tipo: 'num' }, { k: 'lng', rot: 'Longitude', tipo: 'num' },
+    { k: 'situacao_cadastro', rot: 'Situação no cadastro', tipo: 'lista', lista: 'situacao_cadastro', soBase: true },
+    { k: 'gps_justificativa', rot: 'Justificativa GPS', tipo: 'txt' },
+    { k: 'abriu', rot: 'Conseguiu abrir', tipo: 'lista', lista: 'sim_nao' },
+    { k: 'motivo_nao_abriu', rot: 'Motivo de não abrir', tipo: 'lista', lista: 'motivo_nao_abriu' },
+    { k: 'motivo_nao_abriu_texto', rot: 'Motivo (texto)', tipo: 'txt' },
+    { k: 'solo_entorno', rot: 'Solo no entorno', tipo: 'lista', lista: 'solo_entorno' },
+    { k: 'tampa_tipo', rot: 'Tipo da tampa', tipo: 'tampa' },
+    { k: 'tampa_estado', rot: 'Estado da tampa', tipo: 'lista', lista: 'tampa_estado' },
+    { k: 'tampa_identificacao', rot: 'Identificação na tampa', tipo: 'lista', lista: 'tampa_identificacao' },
+    { k: 'agua', rot: 'Água', tipo: 'lista', lista: 'agua' }, { k: 'limpeza', rot: 'Limpeza', tipo: 'lista', lista: 'limpeza' },
+    { k: 'assoreamento', rot: 'Assoreamento', tipo: 'lista', lista: 'assoreamento' },
+    { k: 'terra_dutos', rot: 'Terra pelos dutos', tipo: 'lista', lista: 'sim_nao' },
+    { k: 'infiltracao', rot: 'Infiltração', tipo: 'lista', lista: 'sim_nao' },
+    { k: 'estrutura', rot: 'Estrutura', tipo: 'lista', lista: 'estrutura' },
+    { k: 'dutos_entradas', rot: 'Dutos: entradas', tipo: 'int' }, { k: 'dutos_ocupadas', rot: 'Dutos: ocupadas', tipo: 'int' },
+    { k: 'dutos_vagas', rot: 'Dutos: vagas', tipo: 'int' },
+    { k: 'tamponamento', rot: 'Tamponamento', tipo: 'lista', lista: 'sim_nao_parcial' },
+    { k: 'profundidade_cm', rot: 'Profundidade (cm)', tipo: 'num' },
+    { k: 'cabos_batem', rot: 'Cabos batem com o cenário', tipo: 'lista', lista: 'sim_nao' },
+    { k: 'fixacao', rot: 'Fixação dos cabos', tipo: 'lista', lista: 'sim_nao_parcial' },
+    { k: 'reserva', rot: 'Reserva técnica', tipo: 'lista', lista: 'reserva' },
+    { k: 'organizacao', rot: 'Estado geral', tipo: 'lista', lista: 'organizacao' },
+    { k: 'emenda_existe', rot: 'Existe emenda', tipo: 'lista', lista: 'sim_nao' },
+    { k: 'emenda_caixa', rot: 'Caixa de emenda', tipo: 'lista', lista: 'emenda_caixa' },
+    { k: 'emenda_fixacao', rot: 'Fixação da emenda', tipo: 'lista', lista: 'emenda_fixacao' },
+    { k: 'emenda_submersa', rot: 'Emenda submersa', tipo: 'lista', lista: 'emenda_submersa' },
+    { k: 'emenda_vedacao', rot: 'Vedação da emenda', tipo: 'lista', lista: 'emenda_vedacao' },
+    { k: 'conclusao', rot: 'Conclusão', tipo: 'lista', lista: 'conclusao' },
+    { k: 'prioridade', rot: 'Prioridade', tipo: 'lista', lista: 'prioridade' },
+    { k: 'observacao', rot: 'Observação', tipo: 'txt' }
+  ];
+  R.CAMPOS_CORRECAO_AEREA = [
+    { k: 'metros', rot: 'Rota percorrida (m)', tipo: 'num' }, { k: 'postes', rot: 'Postes equipados', tipo: 'int' },
+    { k: 'cordoalha', rot: 'Cordoalha (m)', tipo: 'num' }, { k: 'plaquetas', rot: 'Plaquetas', tipo: 'int' },
+    { k: 'caixas', rot: 'Caixas/CEO regularizadas', tipo: 'int' }, { k: 'sobra', rot: 'Sobra técnica', tipo: 'int' },
+    { k: 'observacao', rot: 'Observação', tipo: 'txt' }
+  ];
+  // Aplica as correções (só campos da lista) numa cópia. Devolve { doc, mudancas }.
+  R.aplicarCorrecao = function (doc, campos, aerea) {
+    var defs = aerea ? R.CAMPOS_CORRECAO_AEREA : R.CAMPOS_CORRECAO_CS;
+    var novo = JSON.parse(JSON.stringify(doc || {})), mudancas = [], erros = [];
+    defs.forEach(function (d) {
+      if (!campos || !Object.prototype.hasOwnProperty.call(campos, d.k)) return;
+      var v = campos[d.k];
+      if (d.tipo === 'num' || d.tipo === 'int') {
+        if (v === '' || v == null) v = '';
+        else if (!numero(String(v).replace(',', '.'))) { erros.push(d.rot + ': número inválido.'); return; }
+        else v = Number(String(v).replace(',', '.'));
+        if (d.tipo === 'int' && v !== '' && (v < 0 || Math.floor(v) !== v)) { erros.push(d.rot + ': use um número inteiro.'); return; }
+      } else v = v == null ? '' : String(v).trim();
+      if (d.tipo === 'lista' && v !== '' && L.valores(d.lista).indexOf(v) < 0) { erros.push(d.rot + ': valor fora da lista.'); return; }
+      var ant = novo[d.k] == null ? '' : novo[d.k];
+      if (String(ant) === String(v)) return;
+      mudancas.push({ campo: d.k, rot: d.rot, de: ant, para: v });
+      novo[d.k] = v;
+    });
+    return { ok: !erros.length, erros: erros, doc: novo, mudancas: mudancas };
+  };
+  // Reabrir um item já revisado (APROVADA ou REJEITADA) → volta a AGUARDANDO_REVISAO.
+  // Não reabre se o chamado já foi fechado ou a LPU já saiu da mão do líder.
+  R.LPU_TRAVA_REABRIR = ['NO_SERVICE_DESK', 'CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'];
+  R.podeReabrir = function (doc, chamado, lpus) {
+    if (!doc || ['APROVADA', 'REJEITADA'].indexOf(doc.status_revisao) < 0) return { ok: false, erro: 'Só dá para reabrir o que já foi aprovado ou rejeitado.' };
+    if (doc.importado_planilha) return { ok: false, erro: 'Histórico importado da planilha não é reaberto.' };
+    if (chamado && chamado.status === 'FECHADO') return { ok: false, erro: 'O chamado ' + chamado.id + ' já foi fechado: não dá para reabrir a revisão.' };
+    var travada = (lpus || []).filter(function (l) { return R.LPU_TRAVA_REABRIR.indexOf(l.status) >= 0; })[0];
+    if (travada) return { ok: false, erro: 'A LPU ' + travada.id + ' do chamado já passou do líder (' + travada.status + '): não dá para reabrir.' };
+    return { ok: true };
+  };
+
   // ═══════════════════════════ Medição e dashboard ═══════════════════════════
   // Regra de negócio: SÓ vistoria APROVADA entra na medição e no pagamento.
   R.aprovadas = function (vistorias) { return (vistorias || []).filter(function (v) { return v.status_revisao === 'APROVADA'; }); };

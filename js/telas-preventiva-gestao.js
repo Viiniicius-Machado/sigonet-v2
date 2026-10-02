@@ -27,7 +27,7 @@
   const abrirImagem = src => { const w = window.open(); if (w) w.document.write(`<body style="margin:0;background:#111"><img src="${src}" style="max-width:100%;display:block;margin:auto"></body>`); };
 
   // ═══════════════════════════ REVISÃO ═══════════════════════════
-  let filtroSeg = 'TODOS';
+  let filtroSeg = 'TODOS', buscaRev = '';
   SN.rota('/vst/revisao', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_revisao', SN.vst.semServidorHtml);
     SN.casca('vst_revisao', SN.carregando('Carregando fila de revisão…'));
@@ -40,7 +40,9 @@
     const recentes = [
       ...d.vistorias.filter(v => v.data_revisao).map(v => ({ seg: 'SUBTERRANEA', doc: v, rota: rm[v.id_rota] || {} })),
       ...(d.producao || []).filter(a => a.data_revisao && !a.importado_planilha).map(a => ({ seg: 'AEREA', doc: a, rota: rm[a.id_rota] || {} }))
-    ].sort((a, b) => String(b.doc.data_revisao).localeCompare(String(a.doc.data_revisao))).slice(0, 15);
+    ].sort((a, b) => String(b.doc.data_revisao).localeCompare(String(a.doc.data_revisao)))
+      .filter(x => !buscaRev || [x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.doc.prestador, x.rota.cluster].some(t => String(t || '').toLowerCase().includes(buscaRev.toLowerCase())))
+      .slice(0, buscaRev ? 100 : 15);
     const vis = itens.filter(x => filtroSeg === 'TODOS' || x.seg === filtroSeg);
     const n = s => itens.filter(x => x.seg === s).length;
     const linha = x => {
@@ -66,9 +68,11 @@
       <div class="card"><div class="card-tit"><h3>Aguardando revisão (${vis.length})</h3><span class="small muted">mais antigas primeiro</span></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Segmento</th><th>Rota</th><th>O que revisar</th><th>Prestador / técnico</th><th>Enviado</th></tr></thead>
           <tbody>${vis.map(linha).join('')}</tbody></table></div>` : '<p class="muted">Nada aguardando revisão. 🎉</p>'}</div>
-      <div class="card"><h3>Revisadas recentemente</h3>
+      <div class="card"><div class="card-tit"><h3>Revisadas ${buscaRev ? '' : 'recentemente'}</h3>
+          <input class="inp" id="rBusca" style="max-width:260px" placeholder="Buscar rota, CS, técnico…" value="${esc(buscaRev)}"></div>
+        <p class="small muted" style="margin:-4px 0 8px">Toque numa linha para ver ou <b>reabrir</b> (volta para "aguardando revisão" e libera a correção).</p>
         ${recentes.length ? `<div class="tabela-wrap"><table class="tab small"><thead><tr><th>Quando</th><th>Rota</th><th>Item</th><th>Decisão</th><th>Revisor</th></tr></thead><tbody>
-          ${recentes.map(x => `<tr><td class="nowrap">${SN.dt(x.doc.data_revisao)}</td><td class="mono">${esc(x.doc.id_rota)}</td>
+          ${recentes.map(x => `<tr class="clic" data-revisada="${esc(x.seg === 'AEREA' ? x.doc.id_apontamento : x.doc.id_vistoria)}"><td class="nowrap">${SN.dt(x.doc.data_revisao)}</td><td class="mono">${esc(x.doc.id_rota)}</td>
             <td>${x.seg === 'AEREA' ? (x.doc.tipo === 'final' ? 'Apontamento final' : 'Apontamento parcial') + ' · ' + SN.num(x.doc.metros) + ' m' : 'CS ' + esc(x.doc.cs_nova ? 'fora do cadastro' : x.doc.id_cs)}</td>
             <td>${SN.vst.badgeVistoria(x.doc.status_revisao)}${x.doc.status_revisao === 'REJEITADA' ? '<div class="small muted">' + (x.doc.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ') + '</div>' : ''}</td>
             <td>${esc(x.doc.revisor || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Nenhuma revisão ainda.</p>'}</div>`);
@@ -78,6 +82,9 @@
     };
     SN.$$('[data-f]').forEach(b => b.onclick = () => { filtroSeg = b.dataset.f; SN.render(); });
     SN.$$('[data-rev]').forEach(tr => tr.onclick = () => { const x = itens.find(i => i.id === tr.dataset.rev); if (x) abrirRevisao(x, d); });
+    SN.$$('[data-revisada]').forEach(tr => tr.onclick = () => { const x = recentes.find(i => (i.doc.id_vistoria || i.doc.id_apontamento) === tr.dataset.revisada); if (x) abrirRevisao({ ...x, id: tr.dataset.revisada }, d); });
+    const busca = SN.$('#rBusca'); let tBusca;
+    busca.oninput = () => { clearTimeout(tBusca); tBusca = setTimeout(() => { buscaRev = busca.value.trim(); SN.render(); setTimeout(() => { const b = SN.$('#rBusca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }); }, 300); };
   }, { tela: 'vst_revisao' });
 
   // Seção da revisão: campos à esquerda, as fotos daquela parte à direita.
@@ -130,9 +137,69 @@
         ['% do previsto', p.pct != null ? p.pct + '%' : '—', p.pct != null && (p.pct < 80 || p.pct > 120)], ['Apontamentos', p.apontamentos]], []);
   };
 
+  // Correções do revisor e reaberturas, mais recentes primeiro.
+  const htmlAlteracoes = a => {
+    const h = (a.historico || []).filter(e => e.acao === 'CORRIGIDA' || e.acao === 'REABERTA').slice(-6).reverse();
+    if (!h.length) return '';
+    const fmt = v => v === '' || v == null ? '—' : esc(String(v));
+    return `<div class="aviso info small" style="margin-bottom:8px"><b>Alterações na revisão</b>${h.map(e => {
+      let det = esc(e.detalhe || '');
+      if (e.acao === 'CORRIGIDA') { try { det = JSON.parse(e.detalhe).map(m => `${esc(m.rot)}: <s>${fmt(m.de)}</s> → <b>${fmt(m.para)}</b>`).join(' · '); } catch (er) { } }
+      return `<div style="margin-top:4px">${SN.dt(e.ts)} · ${esc(e.usuario)} · ${e.acao === 'CORRIGIDA' ? '✏️ corrigiu' : '↺ reabriu'} — ${det}</div>`;
+    }).join('')}</div>`;
+  };
+  // Depois de reabrir/corrigir: recarrega e abre o item de novo com os dados do servidor.
+  const reabrirModal = async x => {
+    let nd; try { nd = await SN.vst.carregar(true); } catch (e) { SN.toast(e.message, 'erro'); SN.render(); return; }
+    SN.render();
+    const doc = x.seg === 'AEREA' ? (nd.producao || []).find(p => p.id_apontamento === x.id) : nd.vistorias.find(v => v.id_vistoria === x.id);
+    if (doc) abrirRevisao({ ...x, doc, rota: nd.rotas.find(r => r.id_rota === doc.id_rota) || x.rota }, nd);
+  };
+  const reabrir = async x => {
+    const motivo = await SN.pedirTexto('Reabrir revisão', 'Motivo (fica no histórico). O item volta para "aguardando revisão"; se o chamado já estava em conclusão técnica, ele volta para "em campo" até você aprovar de novo.');
+    if (!motivo) return false;
+    try { await SN.vst.exec('VST_REABRIR', { motivo, [x.seg === 'AEREA' ? 'id_apontamento' : 'id_vistoria']: x.id }); }
+    catch (e) { SN.toast(e.message, 'erro'); return false; }
+    SN.toast('Reaberto: está aguardando revisão de novo.', 'ok');
+    setTimeout(() => reabrirModal(x), 50); return true;
+  };
+  // Editor do preenchimento do técnico (campos de VR.CAMPOS_CORRECAO_*).
+  const abrirCorrecao = async (x, d) => {
+    const a = x.doc, aerea = x.seg === 'AEREA', defs = aerea ? VR.CAMPOS_CORRECAO_AEREA : VR.CAMPOS_CORRECAO_CS;
+    const tampas = VR.normalizarConfig(d.config).tampa_tipos;
+    const campo = c => {
+      const v = a[c.k] == null ? '' : a[c.k];
+      let inp;
+      if (c.tipo === 'lista' || (c.tipo === 'tampa' && tampas.length)) {
+        const ops = c.tipo === 'tampa' ? tampas.map(t => [t, t]) : L[c.lista];
+        inp = `<select class="inp" data-cor="${c.k}"><option value="">—</option>${ops.map(([val, t]) => `<option value="${esc(val)}" ${String(val) === String(v) ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+      } else if (c.tipo === 'txt' || c.tipo === 'tampa') inp = c.k === 'observacao' || c.k === 'endereco' ? `<textarea class="inp" data-cor="${c.k}" rows="2">${esc(v)}</textarea>` : `<input class="inp" data-cor="${c.k}" value="${esc(v)}">`;
+      else inp = `<input class="inp" data-cor="${c.k}" inputmode="decimal" value="${esc(v)}">`;
+      return `<div class="campo"><label>${esc(c.rot)}</label>${inp}</div>`;
+    };
+    const lista = defs.filter(c => !(c.soBase && a.cs_nova));
+    const corpo = `<p class="small muted">Corrija o que o técnico preencheu. Fotos, CS e horários não mudam. Cada alteração fica no histórico com o valor anterior.
+      ${aerea ? '' : 'A CS passa de novo pelas regras do formulário (ex.: ocupadas + vagas = entradas).'}</p>
+      <div class="grid g2">${lista.map(campo).join('')}</div>`;
+    return SN.modal({ titulo: `Corrigir ${aerea ? 'apontamento' : 'CS ' + (a.cs_nova ? '(fora do cadastro)' : a.id_cs)} · ${a.id_rota}`, largo: true, corpo,
+      botoes: [{ rot: 'Cancelar', valor: false }, { rot: 'Salvar correção', cls: 'ok', acao: async f => {
+        const campos = {}; SN.$$('[data-cor]', f).forEach(e => { campos[e.dataset.cor] = e.value; });
+        const prev = VR.aplicarCorrecao(a, campos, aerea);
+        if (!prev.ok) { SN.toast(prev.erros[0], 'erro'); return false; }
+        if (!prev.mudancas.length) { SN.toast('Nada foi alterado.'); return false; }
+        try { await SN.vst.exec('VST_CORRIGIR', { campos, [aerea ? 'id_apontamento' : 'id_vistoria']: x.id }); }
+        catch (e) { SN.toast(e.message, 'erro'); return false; }
+        SN.toast(`Corrigido (${prev.mudancas.length} campo${prev.mudancas.length > 1 ? 's' : ''}).`, 'ok');
+        setTimeout(() => reabrirModal(x), 50); return true;
+      } }] });
+  };
+
   const abrirRevisao = (x, d) => {
     const a = x.doc, r = x.rota, ficha = (a.fotos || []).find(f => f.tipo_foto === 'ficha_pdf');
+    const emRevisao = a.status_revisao === 'AGUARDANDO_REVISAO';
     const corpo = `<div class="small muted" style="margin-bottom:8px">${x.seg === 'AEREA' ? '🗼 Preventiva aérea' : '🕳️ Preventiva subterrânea'} · enviado em ${SN.dt(a.enviado_em)}${ficha && ficha.url ? ` · <a href="${esc(ficha.url)}" target="_blank" rel="noopener">📄 Ficha PDF de controle</a>` : ''}</div>
+      ${!emRevisao ? `<div class="aviso ${a.status_revisao === 'APROVADA' ? 'ok' : 'erro'} small" style="margin-bottom:8px">${SN.vst.badgeVistoria(a.status_revisao)} por ${esc(a.revisor || '—')} em ${SN.dt(a.data_revisao)}. Para mudar a decisão ou corrigir o preenchimento, use <b>↺ Reabrir</b>.</div>` : ''}
+      ${htmlAlteracoes(a)}
       ${x.seg === 'AEREA' ? htmlApontamento(a, r, d) : htmlCs(a, r)}
       <div class="card" id="rDecisao" style="margin-top:12px;display:none"><h4>Motivo da rejeição (pode marcar mais de um)</h4>
         <div class="chips">${L.motivos_rejeicao.map(([v, t]) => `<button type="button" class="chip" data-mot="${v}">${esc(t)}</button>`).join('')}</div>
@@ -163,8 +230,11 @@
       setTimeout(() => SN.render(), 50); return true;
     };
     SN.modal({ titulo: x.seg === 'AEREA' ? `Revisar apontamento · ${r.id_rota}` : `Revisar CS ${a.cs_nova ? '(fora do cadastro)' : a.id_cs} · ${r.id_rota}`, largo: true, corpo,
-      botoes: [{ rot: 'Fechar', valor: null },
+      botoes: !emRevisao ? [{ rot: 'Fechar', valor: null },
         { rot: '📄 PDF', acao: () => { baixarPdf(); return false; } },
+        { rot: '↺ Reabrir', cls: 'prim', acao: async () => (await reabrir(x)) ? null : false }] : [{ rot: 'Fechar', valor: null },
+        { rot: '📄 PDF', acao: () => { baixarPdf(); return false; } },
+        { rot: '✏️ Corrigir preenchimento', acao: async () => (await abrirCorrecao(x, d)) ? null : false },
         { rot: '✖ Rejeitar', cls: 'perigo', acao: async f => { if (!rejeitando) { rejeitando = true; SN.$('#rDecisao', f).style.display = ''; SN.$('#rDecisao', f).scrollIntoView({ behavior: 'smooth' }); SN.toast('Marque o motivo e toque em Rejeitar de novo.'); return false; } return (await decidir('REJEITADA', f)) ? null : false; } },
         { rot: '✔ Aprovar', cls: 'ok', acao: async f => (await decidir('APROVADA', f)) ? null : false }],
       aoAbrir: async f => {
