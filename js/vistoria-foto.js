@@ -66,9 +66,16 @@ SN.VF = (() => {
   //   Rua X, 123 - Bairro, Cidade - SP, 13000-000
   //   -23.561300, -46.656500 ±8 m
   //   CS-001 · ROT-00001 · Foto 3
-  // Só as informações da foto, sem logo (decisão de 2026-09-30).
+  // Logo oficial Net Turbo (MARCA.NETTURBO, versão horizontal do manual de marca)
+  // à direita da hora; se a foto for estreita demais, a logo fica de fora.
   // marca = { agora (ISO), pos {lat,lng,precisao} | null, endereco (texto | null), contexto (texto) }
+  let logoImg = null;
+  const logo = () => {
+    if (!logoImg && typeof MARCA !== 'undefined' && MARCA.NETTURBO) logoImg = new Promise(ok => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = MARCA.NETTURBO; });
+    return logoImg || Promise.resolve(null);
+  };
   VF.processar = async (file, marca) => {
+    const lg = await logo();
     const img = await carregar(file);
     const w0 = img.width, h0 = img.height, k = Math.min(1, VF.LADO_MAX / Math.max(w0, h0));
     const c = document.createElement('canvas'); c.width = Math.round(w0 * k); c.height = Math.round(h0 * k);
@@ -102,6 +109,13 @@ SN.VF = (() => {
     g.shadowBlur = Math.round(fs * 0.25); g.fillStyle = '#ffffff';
     g.font = fonte(700, Math.round(fs * 0.95)); g.fillText(data, xBarra + fs * 0.6, y + hHora * 0.1);
     g.font = fonte(500, Math.round(fs * 0.9)); g.fillText(dia, xBarra + fs * 0.6, y + hHora * 0.1 + fs * 1.15);
+    if (lg) {
+      g.font = fonte(700, Math.round(fs * 0.95)); const lData = g.measureText(data).width;
+      g.font = fonte(500, Math.round(fs * 0.9)); const fimData = xBarra + fs * 0.6 + Math.max(lData, g.measureText(dia).width);
+      let lh = hHora * 0.95, lw = lh * lg.width / lg.height;
+      const livre = W - pad - fimData - fs; if (lw > livre) { lw = livre; lh = lw * lg.height / lg.width; }
+      if (lh >= fs * 1.2) { g.shadowBlur = 0; g.drawImage(lg, W - pad - lw, y + (hHora - lh) / 2, lw, lh); g.shadowBlur = Math.round(fs * 0.25); }
+    }
     y += hHora + fs * 0.5;
     g.font = fonte(500, Math.round(fs * 0.95)); endLinhas.forEach(l => { g.fillText(l, pad, y); y += lin; });
     if (coords) { g.font = fonte(500, Math.round(fs * 0.85)); g.fillStyle = '#e9f7c8'; g.fillText(coords, pad, y); y += lin; }

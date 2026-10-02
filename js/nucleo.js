@@ -360,10 +360,14 @@ SN.ETAPAS = [
 //   TMC  = Chegada → Conclusão técnica  (tempo médio em campo)
 //   SLA  = Conclusão técnica ≤ Prazo limite (Abertura + SLA da matriz)
 // Nada administrativo (LPU, materiais, fibra, fechamento pelo NOC) entra nessas contas.
+// Atividade PLANEJADA (chamado ligado a rota de Preventiva): o prazo é o fim do dia
+// da data-limite da rota e MTTD/MTTA/MTTR ficam vazios (são métricas de corretiva);
+// conta só o tempo em campo e se concluiu no prazo.
+SN.ehPlanejada = c => !!(c && (c.planejada || (c.preventiva && c.preventiva.id_rota)));
 SN.metricas = c => {
-  const t = c.tempos || {};
-  const mttd = SN.min(t.abertura, t.atribuicao), mtta = SN.min(t.atribuicao, t.chegada);
-  const mttr = SN.min(t.abertura, t.conclusaoTecnica), tmc = SN.min(t.chegada, t.conclusaoTecnica);
+  const t = c.tempos || {}, plan = SN.ehPlanejada(c);
+  const mttd = plan ? null : SN.min(t.abertura, t.atribuicao), mtta = plan ? null : SN.min(t.atribuicao, t.chegada);
+  const mttr = plan ? null : SN.min(t.abertura, t.conclusaoTecnica), tmc = SN.min(t.chegada, t.conclusaoTecnica);
   let sla = null;
   if (c.prazoLimite && t.conclusaoTecnica) sla = new Date(t.conclusaoTecnica) <= new Date(c.prazoLimite);
   return { mttd, mtta, mttr, tmc, sla };
@@ -421,6 +425,13 @@ SN.prazoInfo = c => {
   const fim = c.tempos && c.tempos.conclusaoTecnica;
   const ref = fim ? new Date(fim) : new Date();
   const diff = Math.round((new Date(c.prazoLimite) - ref) / 60000);
+  if (SN.ehPlanejada(c)) {
+    const ate = SN.data(c.prazoLimite);
+    if (fim) return diff >= 0 ? { txt: 'Concluída no prazo', cls: 'ok' } : { txt: 'Concluída com atraso (' + SN.dur(-diff) + ')', cls: 'erro' };
+    if (diff < 0) return { txt: 'Atrasada há ' + SN.dur(-diff), cls: 'erro', estourado: true };
+    if (diff < 24 * 60) return { txt: 'Prazo hoje (até ' + ate + ')', cls: 'alerta', atencao: true };
+    return { txt: 'Planejada · até ' + ate, cls: '' };
+  }
   if (fim) return diff >= 0 ? { txt: 'Dentro do SLA', cls: 'ok' } : { txt: 'Fora do SLA (' + SN.dur(-diff) + ')', cls: 'erro' };
   if (diff < 0) return { txt: 'ESTOURADO há ' + SN.dur(-diff), cls: 'erro', estourado: true };
   if (diff < 60) return { txt: 'Vence em ' + SN.dur(diff), cls: 'alerta', atencao: true };
@@ -576,7 +587,7 @@ SN.login = async ({ tipo, nome, empresa, pin, complemento, novoComplemento }) =>
   const reg = lista.find(x => x.nome === nome && x.ativo && (tipo === 'lideranca' || x.empresa === empresa));
   const falha = msg => { tt.n++; if (tt.n >= 5) { tt.ate = Date.now() + 15 * 60000; tt.n = 0; } tentativas[chave] = tt; throw new Error(msg); };
   if (!reg) falha('Usuário não encontrado ou inativo.');
-  if (String(reg.pin) !== String(pin)) falha('PIN incorreto.');
+  if (String(reg.pin).trim().toUpperCase() !== String(pin).trim().toUpperCase()) falha('PIN incorreto.');
   if (!reg.complementoHash) {
     if (!novoComplemento) return { primeiroAcesso: true };
     if (novoComplemento.length < 4) throw new Error('O complemento precisa ter pelo menos 4 caracteres.');

@@ -458,6 +458,7 @@ var VR = (function () {
     if (cs.some(function (x, i) { return cs.indexOf(x) !== i; })) erros.push('Há CS repetidas na rota.');
     if (vazio(r.prestador)) erros.push('Escolha o prestador.');
     if (R.ms(r.data_planejada) == null) erros.push('Informe a data planejada.');
+    validarLimite(r, erros);
     return { ok: !erros.length, erros: erros };
   };
   // Só conclui quando cada CS planejada foi enviada e nenhuma está rejeitada.
@@ -602,6 +603,21 @@ var VR = (function () {
   // cobra, no fluxo normal de LPU). Classificação = linha da matriz oficial
   // (catalogos.js: Preventiva › Preventiva de Rede › Preventiva Rede (Externa)).
   R.CHAMADO_PREVENTIVA = { tipo: 'Preventiva', cat1: 'Preventiva de Rede', cat2: 'Preventiva Rede (Externa)', slaHoras: 8, conta: '3.1.1.2.05.0101' };
+  // Atividade PLANEJADA não segue o SLA em horas da matriz (decisão de 2026-10-01):
+  // o prazo do chamado é o fim do dia da data-limite da rota (sem data-limite = o
+  // próprio dia planejado), no horário de Brasília. O chamado ganha planejada: true
+  // e fica fora das médias de MTTD/MTTA/MTTR (métricas de corretiva).
+  R.diaLimite = function (r) { r = r || {}; return String(r.data_limite || r.data_planejada || '').slice(0, 10); };
+  R.prazoPlanejado = function (r) {
+    var d = R.diaLimite(r); if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    var t = new Date(d + 'T23:59:59-03:00').getTime(); return isNaN(t) ? null : new Date(t).toISOString();
+  };
+  var validarLimite = function (r, erros) {
+    if (vazio(r.data_limite)) return;
+    var dl = String(r.data_limite).slice(0, 10), dp = String(r.data_planejada || '').slice(0, 10);
+    if (R.ms(dl) == null) erros.push('Data-limite inválida.');
+    else if (dp && dl < dp) erros.push('A data-limite não pode ser antes da data planejada.');
+  };
   // Itens de LPU já existentes no catálogo:
   //   SEV0022b Abertura/Fechamento Tampa Caixa Subterrânea — por CS aberta
   //   SEV0083  Preventiva Rede Externa Percorrendo Cabo Óptico — por metro
@@ -651,6 +667,7 @@ var VR = (function () {
     if (!numero(r.metros_previstos) || Number(r.metros_previstos) < 0) erros.push('Informe os metros previstos da rota (0 se for pontual).');
     if (vazio(r.prestador)) erros.push('Escolha o prestador (equipe).');
     if (R.ms(r.data_planejada) == null) erros.push('Informe a data.');
+    validarLimite(r, erros);
     if (!vazio(r.kmz_url) && !/^https?:\/\//i.test(String(r.kmz_url))) erros.push('O link do KMZ precisa começar com http:// ou https://.');
     return { ok: !erros.length, erros: erros };
   };

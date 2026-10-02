@@ -72,7 +72,7 @@
           <td>${r.segmento === 'AEREA' ? '<span class="badge verde">🗼 Aérea</span>' : '<span class="badge">🕳️ Subterrânea</span>'}</td>
           <td>${esc(r.cidade || '')}<div class="small muted">${r.segmento === 'AEREA' ? esc(r.motivo || '') + (r.notificacao ? ' · ' + esc(r.notificacao) : '') : 'Cluster ' + esc(r.cluster || '')}</div></td>
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
-          <td class="nowrap">${SN.vst.dia(r.data_planejada)}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
+          <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ""}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
             : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : (todas.length && (iv || filtro.seg || filtro.status || filtro.q) ? '<p class="muted">Nenhuma rota neste período/filtro. Troque o período (ou "Tudo") para ver as outras.</p>' : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>')}</div>`;
@@ -103,7 +103,7 @@
   };
 
   // ═══════════════════════════ Nova / editar rota ═══════════════════════════
-  const novaRota = seg => ({ segmento: seg, cidade: '', prestador: '', tecnico: '', data_planejada: hoje(), observacao: '',
+  const novaRota = seg => ({ segmento: seg, cidade: '', prestador: '', tecnico: '', data_planejada: hoje(), data_limite: '', observacao: '',
     motivo: '', solicitante: '', notificacao: '', kmz_url: '', metros_previstos: '', cluster: '', cs_planejadas: [], extensao_km: '', cenario_esperado: { dono_duto: '', operadoras: [] } });
   // A extensão fica guardada em km (dashboard, medição, PDF); no formulário aparece em metros.
   const metrosRota = km => km === '' || km == null ? '' : SN.num(Math.round(Number(km) * 1000)) + ' m';
@@ -121,6 +121,8 @@
         <div class="campo"><label>Prestador (equipe) *</label><select class="inp" data-f="prestador">${opcoes(empresas(), f.prestador, 'Escolha…')}</select></div>
         <div class="campo"><label>Técnico</label><select class="inp" data-f="tecnico">${opcoes(tecnicosDe(f.prestador), f.tecnico, f.prestador ? 'Qualquer técnico do prestador' : 'Escolha o prestador')}</select></div>
         <div class="campo"><label>Data *</label><input class="inp" type="date" data-f="data_planejada" value="${esc(String(f.data_planejada || '').slice(0, 10))}"></div>
+        <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-f="data_limite" min="${esc(String(f.data_planejada || '').slice(0, 10))}" value="${esc(String(f.data_limite || '').slice(0, 10))}">
+          <div class="small muted">Prazo do chamado: até o fim deste dia. Em branco = o próprio dia planejado.</div></div>
       </div>
       ${aerea ? `
       <div class="linha-form">
@@ -150,7 +152,7 @@
         <button class="btn" id="bCancelar">Cancelar</button></div></div>`;
     const errosNaTela = () => { const v = validarForm(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
     errosNaTela();
-    SN.$$('[data-seg]').forEach(b => b.onclick = () => { form = Object.assign(novaRota(b.dataset.seg), { cidade: f.cidade, prestador: f.prestador, tecnico: f.tecnico, data_planejada: f.data_planejada, observacao: f.observacao }); pintarForm(); });
+    SN.$$('[data-seg]').forEach(b => b.onclick = () => { form = Object.assign(novaRota(b.dataset.seg), { cidade: f.cidade, prestador: f.prestador, tecnico: f.tecnico, data_planejada: f.data_planejada, data_limite: f.data_limite, observacao: f.observacao }); pintarForm(); });
     SN.$$('[data-f]').forEach(i => {
       const k = i.dataset.f, ler = () => i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value;
       i.oninput = () => { f[k] = ler(); errosNaTela(); };
@@ -440,7 +442,8 @@
         <div class="campo"><label>Cidade *</label><input class="inp" data-t="cidade" value="${esc(r.cidade)}"></div>
         <div class="campo"><label>Motivo *</label><select class="inp" data-t="motivo">${opcoes(cf.motivos_aerea, r.motivo, 'Escolha…')}</select></div>
         <div class="campo"><label>Solicitante *</label><select class="inp" data-t="solicitante">${opcoes(cf.solicitantes, r.solicitante, 'Escolha…')}</select></div>
-        <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-t="metros_previstos" value="${esc(r.metros_previstos)}"></div></div>
+        <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-t="metros_previstos" value="${esc(r.metros_previstos)}"></div>
+        <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-t="data_limite" min="${esc(r.data_planejada)}" value="${esc(r.data_limite || '')}"><div class="small muted">Em branco = ${esc(SN.data(r.data_planejada + 'T12:00:00'))}</div></div></div>
         <div class="campo"><label>Notificação / referência</label><input class="inp" data-t="notificacao" value="${esc(r.notificacao)}"></div>
         <div class="campo"><label>Link do KMZ</label><div style="display:flex;gap:8px"><input class="inp" style="flex:1" data-t="kmz_url" placeholder="https://…" value="${esc(r.kmz_url)}">
           <label class="btn">📎 Arquivo<input type="file" id="tKmz" accept=".kmz,.kml" hidden></label></div></div>`;
@@ -455,7 +458,7 @@
     await SN.modal({ titulo: 'Transformar em rota de Preventiva', corpo: corpo(), botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Continuar', cls: 'prim', acao: async f => {
       if (seg === 'SUBTERRANEA') {
         if (!SN.temTela('vst_planejamento')) { SN.toast('Seu acesso não inclui o Planejamento da Preventiva.', 'erro'); return false; }
-        form = Object.assign(novaRota('SUBTERRANEA'), { cidade: r.cidade, prestador: r.prestador, tecnico: r.tecnico, data_planejada: r.data_planejada, observacao: r.observacao, vincular_chamado: c.id });
+        form = Object.assign(novaRota('SUBTERRANEA'), { cidade: r.cidade, prestador: r.prestador, tecnico: r.tecnico, data_planejada: r.data_planejada, data_limite: r.data_limite || '', observacao: r.observacao, vincular_chamado: c.id });
         aba = 'NOVA'; setTimeout(() => SN.navegar('#/vst/planejamento'), 0); return null;
       }
       r.segmento = 'AEREA';

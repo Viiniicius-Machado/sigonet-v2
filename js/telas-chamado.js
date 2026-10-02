@@ -34,7 +34,7 @@ SN.rota('/login', () => {
             ${emps.map(e => `<option>${SN.esc(e)}</option>`).join('')}</select></div>
           <div class="campo"><label>Técnico</label><select class="inp" id="lgTec"><option value="">Selecione a empresa</option></select></div>
         </div>
-        <div class="campo"><label>PIN</label><input class="inp" id="lgPin" type="password" inputmode="numeric" placeholder="PIN fornecido pela gestão"></div>
+        <div class="campo"><label>PIN</label><input class="inp" id="lgPin" type="password" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="PIN fornecido pela gestão"></div>
         <div class="campo" id="cpComp"><label>Complemento</label><input class="inp" id="lgComp" type="password" placeholder="Sua senha pessoal"></div>
         <div id="cpNovo" class="oculto">
           <div class="aviso info small" style="margin-bottom:10px">Primeiro acesso: crie seu complemento pessoal (mín. 4 caracteres). Só você sabe — a gestão não vê.</div>
@@ -303,7 +303,7 @@ SN.atribuir = c => {
     return `<option value="${SN.esc(t.nome)}" ${ind ? 'disabled' : ''} ${t.nome === sel ? 'selected' : ''}>${SN.esc(SN.nomeExibicao(t.nome))} · ${SN.cargaAberta(t.nome)} OS${t.frente ? ' · ' + t.frente : ''}${ind ? ' · ' + MOTIVOS_DISPONIBILIDADE[ind.motivo] : ''}</option>`; }).join('')}</optgroup>`).join('');
   const todos = SN.db.tecnicos.filter(t => t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome));
   SN.modal({ titulo: (c.tecnico ? 'Reatribuir ' : 'Atribuir ') + c.id, corpo: `
-    <p class="small muted">${SN.esc(c.cliente)} · ${SN.esc(c.tipo)} · SLA ${c.slaHoras}h</p>
+    <p class="small muted">${SN.esc(c.cliente)} · ${SN.esc(c.tipo)} · ${SN.ehPlanejada(c) ? 'planejada' : 'SLA ' + c.slaHoras + 'h'}</p>
     <div class="campo"><label>Técnico titular</label><select class="inp" id="aTec"><option value="">Selecione…</option>${opts(c.tecnico)}</select></div>
     <div class="campo"><label>Equipe de apoio (opcional)</label><select class="inp" id="aApo"><option value="">Sem apoio</option>
       ${todos.map(t => `<option value="${SN.esc(t.empresa + '|' + t.nome)}" ${c.apoio && c.apoio.tecnico === t.nome ? 'selected' : ''}>${SN.esc(t.empresa)} · ${SN.esc(t.nome)}</option>`).join('')}</select></div>
@@ -354,7 +354,7 @@ SN.rota('/chamado/:id', id => {
   SN.casca('chamados', `
     <div class="cab-pagina"><div><a href="#/chamados" class="small">← Chamados</a>
       <h1>${c.id} · ${SN.esc(c.cliente)}</h1>
-      <p>${SN.badgeStatus(c.status)} <span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${c.tipo ? `<span class="badge verde">${SN.esc(c.tipo)} · SLA ${c.slaHoras}h</span>` : '<span class="badge alerta">Sem classificação</span>'}</p></div>
+      <p>${SN.badgeStatus(c.status)} <span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${c.tipo ? `<span class="badge verde">${SN.esc(c.tipo)} · ${SN.ehPlanejada(c) ? 'planejada' : 'SLA ' + c.slaHoras + 'h'}</span>` : '<span class="badge alerta">Sem classificação</span>'}</p></div>
       <div class="acoes">
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev ? `<button class="btn" id="bClass">${c.tipo ? 'Reclassificar' : 'Classificar'}</button><button class="btn prim" id="bAtr">${c.tecnico ? 'Reatribuir' : 'Atribuir técnico'}</button>` : ''}
         ${c.status === 'CONCLUIDO_TECNICO' ? `${prev ? '' : '<button class="btn perigo" id="bDev">Devolver ao técnico</button>'}<button class="btn ok" id="bFechar">Fechar chamado</button>` : ''}
@@ -368,9 +368,10 @@ SN.rota('/chamado/:id', id => {
         <a href="#/chamado/${ant.id}">${ant.id}</a> encerrado ${dias} dia(s) antes desta abertura${ant.tecnico ? ` · atendido por ${SN.esc(SN.nomeExibicao(ant.tecnico))}` : ''}${ant.rfo && ant.rfo.causa ? ` · causa: ${SN.esc(ant.rfo.causa)}` : ''}.</div>`; })()}
     <div class="card"><div class="timeline">${etapas}</div></div>
     <div class="grid g6" style="margin-top:14px">
+      ${SN.ehPlanejada(c) ? `<div class="kpi" style="grid-column:span 3"><div class="rot">Atividade planejada</div><div class="val" style="font-size:1.2rem">Prazo até ${SN.dt(c.prazoLimite)}</div><div class="sub">MTTD/MTTA/MTTR não se aplicam: conta o tempo em campo e se concluiu até a data-limite da rota</div></div>` : `
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(m.mttd)}</div><div class="sub">abertura → despacho</div></div>
       <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(m.mtta)}</div><div class="sub">despacho → em campo</div></div>
-      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(m.mttr)}</div><div class="sub">abertura → conclusão técnica</div></div>
+      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(m.mttr)}</div><div class="sub">abertura → conclusão técnica</div></div>`}
       <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(m.tmc)}</div><div class="sub">chegada → conclusão</div></div>
       <div class="kpi"><div class="rot">SLA</div><div class="val" style="color:${m.sla === false ? 'var(--erro)' : m.sla ? 'var(--ok)' : 'inherit'}">${m.sla == null ? '—' : m.sla ? 'Dentro' : 'Fora'}</div><div class="sub">prazo ${SN.dt(c.prazoLimite)}</div></div>
       ${(() => { if (SN.empresa(c.empresa).vinculo !== 'CLT') return `<div class="kpi"><div class="rot">Origem</div><div class="val" style="font-size:1.2rem">${SN.esc(c.origem)}</div><div class="sub">aberto ${SN.dt(c.tempos.abertura)}</div></div>`;
