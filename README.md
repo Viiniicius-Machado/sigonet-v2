@@ -20,7 +20,7 @@ Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a p
 | **Service Desk, Materiais e Cadastro de Fibra** | Gestões ligadas ao chamado, cada uma com seu ciclo; elas não mexem no MTTR/SLA. |
 | **Portal de Gestão** | KPIs do mês nas visões **Global, Rompimento, Massiva e Improdutivas**, com MTTD, MTTA, MTTR, SLA e **IRR** (reincidência por circuito). Exporta para Excel. |
 | **Preventiva** | Rotas de preventiva **aérea** (KMZ, metros percorridos, postes, cordoalha, plaquetas, caixas e sobra técnica; meta mensal) e **subterrânea** (vistoria caixa a caixa, com fotos padronizadas e listas fechadas). Telas: Planejamento, Revisão e Dashboard, mais o app do técnico, que funciona offline. A cobrança sai pelo fluxo normal de chamado e LPU. O manual completo (`docs/PREVENTIVA.md`) fica na pasta de trabalho. |
-| **Cadastros e Acessos, Auditoria** | Empresas, técnicos, liderança e telas liberadas por pessoa; log de tudo o que foi alterado. Em *Sistema*, o gestor com acesso total pode **apagar os dados de teste** (veja abaixo). |
+| **Cadastros e Acessos, Auditoria** | Empresas, técnicos, liderança e telas liberadas por pessoa; log de tudo o que foi alterado. |
 
 ## Preventiva: como criar as atividades
 
@@ -43,14 +43,6 @@ Só o que foi **aprovado na Revisão** entra na medição e no pagamento.
 - **Botões:** toda ação que busca ou grava no servidor mostra que está carregando (o botão gira e fica travado, sem clique duplo). Se passar de ~1 s, aparece o foguete "Carregando…" no rodapé.
 - **Fotos:** toque na miniatura abre em tela cheia; outro toque amplia no ponto tocado; deslize ou use ‹ › para passar; "voltar" fecha.
 - **Sem sinal:** o técnico continua trabalhando; fotos, CS e apontamentos ficam no celular e sobem quando o sinal voltar.
-
-## Apagar os dados de teste
-
-Em **Cadastros e Acessos → Sistema → Apagar dados de teste** (só gestor com acesso total, digitando *APAGAR TUDO*):
-
-- **Apaga:** chamados, LPUs, materiais, fibra, pagamentos, fechamentos, disponibilidade e as rotas, vistorias e apontamentos da Preventiva. A numeração recomeça (CH-00001, ROT-00001…).
-- **Mantém:** cadastros e acessos, base de CS, configurações, histórico da Preventiva importado da planilha de KPIs, log e arquivos no Drive.
-- Os aparelhos abertos descartam sozinhos o que tinham guardado dos testes. Não dá para desfazer: baixe a cópia (.json) antes, se quiser guardar.
 
 ## Estrutura
 

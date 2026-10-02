@@ -71,7 +71,8 @@ const fotografar = () => {
 };
 const tirarVersoes = (col, docs) => docs.map(d => { (SN._ver[col] = SN._ver[col] || {})[d[SN.CHAVES[col]]] = d._v; const x = { ...d }; delete x._v; return x; });
 
-// Limpeza dos dados de teste (LIMPAR_OPERACIONAL): o servidor marca config.limpeza.
+// Limpeza dos dados de teste (feita em 2026-10-01; a ação LIMPAR_OPERACIONAL foi retirada depois):
+// a configuração do servidor guarda config.limpeza.
 // O aparelho que ainda não viu essa marca descarta o que guardou daquela época:
 // números reservados (iam repetir com a numeração recomeçada), rascunhos, fotos e
 // apontamentos da Preventiva na fila e a carga da Preventiva em memória.
