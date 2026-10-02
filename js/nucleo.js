@@ -11,6 +11,49 @@ window.SN = window.SN || {};
 // ═══════════════════════════ Utilidades ═══════════════════════════
 SN.$ = (sel, el) => (el || document).querySelector(sel);
 SN.$$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
+// Todo botão cuja ação demora mostra que está trabalhando (pedido do usuário em 2026-10-01).
+// Vale para qualquer "botao.onclick = async () => …" e para os campos de arquivo (onchange)
+// dentro de um <label class="btn">: enquanto a ação não termina, o botão fica com o
+// indicador girando e não aceita outro clique; passou de ~1 s sem modal aberto, aparece
+// também o foguete "Carregando…" no rodapé. Ação que só abre um modal e espera a pessoa
+// não mostra o foguete.
+(() => {
+  let pendentes = 0, longos = 0, timerAviso = null, aviso = null;
+  const temModal = () => !!document.querySelector('.fundo-modal, .carregando-sobre, .ver-foto');
+  const pintarAviso = () => {
+    const mostrar = longos > 0 && !temModal();
+    if (mostrar && !aviso) { aviso = document.createElement('div'); aviso.className = 'aviso-carregando'; aviso.setAttribute('role', 'status'); aviso.innerHTML = (SN.foguete ? SN.foguete() : '') + '<span>Carregando…</span>'; document.body.appendChild(aviso); }
+    if (!mostrar && aviso) { aviso.remove(); aviso = null; }
+  };
+  const acompanhar = (alvo, r) => {
+    if (!r || typeof r.then !== 'function' || !alvo) return r;
+    pendentes++;
+    const t = setTimeout(() => { alvo.classList.add('ocupado'); alvo.setAttribute('aria-busy', 'true'); if (alvo.tagName === 'BUTTON' && !alvo.disabled) { alvo.disabled = true; alvo._snDesab = true; } }, 120);
+    let longo = false; const t2 = setTimeout(() => { longo = true; longos++; pintarAviso(); }, 900);
+    if (!timerAviso) timerAviso = setInterval(pintarAviso, 300); // modal abriu/fechou no meio
+    const fim = () => {
+      clearTimeout(t); clearTimeout(t2); if (longo) longos--; alvo.classList.remove('ocupado'); alvo.removeAttribute('aria-busy'); if (alvo._snDesab) { alvo._snDesab = false; alvo.disabled = false; } // só reabilita o que este código travou
+      if (--pendentes <= 0) { pendentes = 0; longos = 0; clearInterval(timerAviso); timerAviso = null; pintarAviso(); }
+    };
+    r.then(fim, fim);
+    return r;
+  };
+  const envolver = (proto, evento, alvoDe) => {
+    const d = Object.getOwnPropertyDescriptor(HTMLElement.prototype, evento);
+    if (!d || !d.set) return;
+    Object.defineProperty(proto, evento, { configurable: true, enumerable: d.enumerable, get() { return this['_sn_' + evento] || null; },
+      set(fn) {
+        this['_sn_' + evento] = fn;
+        d.set.call(this, typeof fn !== 'function' ? fn : function (e) {
+          const alvo = alvoDe(this);
+          if (alvo && alvo.classList.contains('ocupado')) { e && e.preventDefault && e.preventDefault(); return; } // clique duplo
+          return acompanhar(alvo, fn.call(this, e));
+        });
+      } });
+  };
+  envolver(HTMLButtonElement.prototype, 'onclick', el => el);
+  envolver(HTMLInputElement.prototype, 'onchange', el => el.type === 'file' ? el.closest('label.btn, .btn, .vst-cap') : null);
+})();
 SN.esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 SN.agora = () => new Date().toISOString();
 SN.uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

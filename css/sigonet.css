@@ -496,3 +496,11 @@ img[data-ver]{cursor:zoom-in}
 .ver-foto .vf-x{top:calc(10px + env(safe-area-inset-top));right:10px}
 .ver-foto .vf-ant{left:8px;top:50%;transform:translateY(-50%);font-size:2rem}
 .ver-foto .vf-prox{right:8px;top:50%;transform:translateY(-50%);font-size:2rem}
+
+/* Botão trabalhando (nucleo.js: onclick async) e aviso "Carregando…" com o foguete */
+.btn.ocupado,button.ocupado,.vst-cap.ocupado{position:relative;cursor:progress;opacity:.85}
+.btn.ocupado::after,button.ocupado::after,.vst-cap.ocupado::after{content:"";display:inline-block;width:.9em;height:.9em;margin-left:8px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:snGira .7s linear infinite}
+@keyframes snGira{to{transform:rotate(360deg)}}
+.aviso-carregando{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:9000;display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--borda);border-radius:999px;padding:4px 16px 4px 6px;box-shadow:0 8px 24px rgba(22,26,21,.14);font-size:.88rem;color:var(--texto-2);animation:fgAparece .2s ease both}
+.aviso-carregando .foguete{width:34px;height:34px}
+@media (prefers-reduced-motion:reduce){.btn.ocupado::after,button.ocupado::after,.vst-cap.ocupado::after{animation:none}}
