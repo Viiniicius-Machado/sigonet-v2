@@ -422,7 +422,7 @@ SN.noIntervalo = (iso, iv) => { if (!iso) return false; if (!iv) return true; co
 SN.dataMat =(m, base) => base === 'baixa' ? ((m.baixa && m.baixa.em) || m.baixadoEm || '') : (m.registradoEm || '');
 SN.segmentoMat = m => { const c = SN.db.chamados.find(x => x.id === m.chamadoId); return (c && c.tipo) || 'Sem classificação'; };
 SN.baixaPorMat = m => (m.baixa && m.baixa.operador) || m.baixadoPor || '';
-SN.custoMat = m => m.itens.reduce((s, i) => s + ((SN.material(i.cod) || {}).p || 0) * i.qtd, 0);
+SN.custoMat = m => m.itens.reduce((s, i) => s + SN.precoMaterial(i.cod, m.registradoEm) * i.qtd, 0); // preço do dia do apontamento
 SN.COLS_MAT = [ // [chave, título, valor] — tudo o que a busca geral procura
   ['data', 'Data', (m, f) => SN.dt(SN.dataMat(m, f.base))], ['id', 'Registro', m => m.id], ['chamado', 'Chamado', m => m.chamadoId], ['etiqueta', 'Etiqueta', m => (m.cab || {}).etiqueta || ''],
   ['cliente', 'Cliente', m => m.cliente || ''], ['tecnico', 'Técnico', m => (m.cab || {}).tecnico || ''], ['empresa', 'Empresa', m => (m.cab || {}).empresa || ''],
@@ -452,7 +452,8 @@ SN.telaMateriais = (abrirId, opc) => {
   const qtdItens = lista.reduce((s, m) => s + m.itens.reduce((t, i) => t + (Number(i.qtd) || 0), 0), 0);
   // Visão por material: soma de cada código no que está filtrado.
   const porCod = {};
-  lista.forEach(m => m.itens.forEach(i => { const x = porCod[i.cod] = porCod[i.cod] || { cod: i.cod, desc: i.desc, tipo: i.tipo, qtd: 0, qtdBaixada: 0, regs: new Set(), seriais: 0 };
+  lista.forEach(m => m.itens.forEach(i => { const x = porCod[i.cod] = porCod[i.cod] || { cod: i.cod, desc: i.desc, tipo: i.tipo, qtd: 0, qtdBaixada: 0, regs: new Set(), seriais: 0, custo: 0 };
+    x.custo += SN.precoMaterial(i.cod, m.registradoEm) * (Number(i.qtd) || 0);
     x.qtd += Number(i.qtd) || 0; if (['BAIXADO_SAP', 'ALOCADO_CLIENTE'].includes(m.status)) x.qtdBaixada += Number(i.qtd) || 0; x.regs.add(m.id); x.seriais += (i.seriais || []).filter(Boolean).length; }));
   const consolidado = Object.values(porCod).sort((a, b) => b.qtd - a.qtd);
   // Acumulado do ano (mês a mês): custo por empresa, quantidade por material e registros por status.
@@ -490,7 +491,7 @@ SN.telaMateriais = (abrirId, opc) => {
       + SN.tabelaAno(`Quantidade por material · ${ano} (qtd)`, 'Material', anoMat, v => SN.num(v, 0), 'Nenhum material no ano.')
     : f.vis === 'material' ? `<div class="card"><div class="tabela-wrap"><table class="tab"><thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th class="num">Qtd apontada</th><th class="num">Qtd com baixa informada</th><th class="num">Registros</th><th class="num">Seriais</th><th class="num">Custo</th></tr></thead><tbody>
       ${consolidado.map(x => `<tr><td class="mono">${SN.esc(x.cod)}</td><td>${SN.esc(x.desc)}</td><td>${SN.esc(x.tipo)}</td><td class="num">${SN.num(x.qtd, 2)}</td><td class="num">${SN.num(x.qtdBaixada, 2)}</td>
-        <td class="num">${x.regs.size}</td><td class="num">${x.seriais || ''}</td><td class="num">${SN.brl(((SN.material(x.cod) || {}).p || 0) * x.qtd)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Nenhum material no período.</td></tr>'}
+        <td class="num">${x.regs.size}</td><td class="num">${x.seriais || ''}</td><td class="num">${SN.brl(x.custo)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Nenhum material no período.</td></tr>'}
     </tbody></table></div></div>` : `
     <div class="card"><div class="tabela-wrap"><table class="tab"><thead><tr><th>Data</th><th>Registro</th><th>Chamado</th><th>Etiqueta</th><th>Cliente</th><th>Técnico</th><th>Empresa</th><th>Itens</th><th class="num">Custo</th><th>Status</th><th>Baixa informada por</th><th>Titular do estoque</th><th>Ref. Elleven</th></tr></thead><tbody>
       ${lista.map(m => `<tr class="clic" data-id="${m.id}"><td class="nowrap">${SN.dt(SN.dataMat(m, f.base))}</td><td class="mono nowrap">${m.id}</td><td class="mono nowrap">${m.chamadoId}</td><td class="mono nowrap">${SN.esc((m.cab || {}).etiqueta || '—')}</td><td>${SN.esc(m.cliente)}</td>
@@ -516,10 +517,10 @@ SN.telaMateriais = (abrirId, opc) => {
   SN.$('#bExpMat').onclick = () => anual ? SN.exportar('materiais_acumulado_' + ano, SN.linhasAnoExcel('Material', anoMat).concat(SN.linhasAnoExcel('Empresa (custo R$)', anoEmp)))
     : f.vis === 'material'
     ? SN.exportar(nomeArq + '_por_material', consolidado.map(x => ({ Codigo: x.cod, Descricao: x.desc, Tipo: x.tipo, QtdApontada: x.qtd, QtdBaixaInformada: x.qtdBaixada,
-      Registros: x.regs.size, Seriais: x.seriais, Custo: ((SN.material(x.cod) || {}).p || 0) * x.qtd })))
+      Registros: x.regs.size, Seriais: x.seriais, Custo: x.custo })))
     : SN.exportar(nomeArq, lista.flatMap(m => m.itens.map(i => ({ Registro: m.id, Chamado: m.chamadoId, Segmento: SN.segmentoMat(m), Cliente: m.cliente,
       Etiqueta: (m.cab || {}).etiqueta, Tecnico: (m.cab || {}).tecnico, Empresa: (m.cab || {}).empresa, Apontado: SN.dt(m.registradoEm), Tipo: i.tipo, Codigo: i.cod, Descricao: i.desc, Quantidade: i.qtd,
-      Seriais: (i.seriais || []).join(', '), CustoUnit: (SN.material(i.cod) || {}).p || '', Status: SN.MAT_STATUS[m.status].rot,
+      Seriais: (i.seriais || []).join(', '), CustoUnit: SN.precoMaterial(i.cod, m.registradoEm) || '', Status: SN.MAT_STATUS[m.status].rot,
       BaixaInformadaEm: SN.dt((m.baixa && m.baixa.em) || m.baixadoEm), BaixaInformadaPor: SN.baixaPorMat(m), TitularEstoque: (m.baixa || {}).titular || '',
       EstoqueElleven: (m.baixa || {}).estoque || '', RefElleven: (m.baixa || {}).documento || '', DocSimulado: m.docSap && !m.baixa ? m.docSap : '' }))));
   if (abrirId) SN.detalheMaterial(abrirId);
@@ -551,7 +552,7 @@ SN.detalheMaterial = id => {
     ${m.motivo ? `<div class="aviso erro small">Divergência: ${SN.esc(m.motivo)}</div>` : ''}
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Tipo</th><th>Código</th><th>Descrição</th><th class="num">Qtd</th><th>Seriais</th><th class="num">Custo</th></tr></thead><tbody>
     ${m.itens.map(i => `<tr><td>${i.tipo}</td><td class="mono">${i.cod}</td><td>${SN.esc(i.desc)}</td><td class="num">${SN.num(i.qtd, 2)}</td><td class="small">${SN.esc((i.seriais || []).join(', '))}</td>
-      <td class="num">${SN.brl(((SN.material(i.cod) || {}).p || 0) * i.qtd)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted center">${m.semMaterial ? 'O técnico informou que nenhum material foi utilizado.' : 'Nenhum item.'}</td></tr>`}</tbody></table></div>
+      <td class="num">${SN.brl(SN.precoMaterial(i.cod, m.registradoEm) * i.qtd)}</td></tr>`).join('') || `<tr><td colspan="6" class="muted center">${m.semMaterial ? 'O técnico informou que nenhum material foi utilizado.' : 'Nenhum item.'}</td></tr>`}</tbody></table></div>
     ${m.obs ? `<p class="small"><b>Obs.:</b> ${SN.esc(m.obs)}</p>` : ''}
     ${blocoBaixa}
     <h4>Histórico</h4><table class="tab small"><tbody>${m.historico.slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe || '')}</td></tr>`).join('')}</tbody></table>` });

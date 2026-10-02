@@ -408,6 +408,14 @@ SN.itensDaConta = cod => {
 };
 SN.itemLpu = cod => LPU_CATALOGO.find(i => i.cod === cod);
 SN.material = cod => CATALOGO_MATERIAIS.find(m => m.c === cod);
+// Preço válido no dia (data local) em que o material foi apontado; sem data = hoje.
+SN.precoMaterial = (cod, quando) => {
+  const m = SN.material(cod); let p = m ? m.p : 0;
+  const d = quando ? new Date(quando) : new Date();
+  const dia = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  ((typeof PRECOS_VIGENCIA !== 'undefined' && PRECOS_VIGENCIA[cod]) || []).forEach(([desde, v]) => { if (dia >= desde) p = v; });
+  return p || 0;
+};
 SN.tecnico = nome => SN.db.tecnicos.find(t => t.nome === nome);
 SN.parceiros = tec => {
   const t = typeof tec === 'string' ? SN.tecnico(tec) : tec;
