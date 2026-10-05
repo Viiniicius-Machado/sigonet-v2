@@ -122,7 +122,8 @@
     for (const f of await SN.VL.fotos.todos()) if (f.id_rota === T.rota.id_rota) T.fotosLocais[f.id_foto] = f;
     const maxOrdem = Math.max(0, ...Object.keys(slots).map(Number));
     let qtdSalva = 0; try { qtdSalva = Number(await SN.VL.meta.get('qtd|' + T.rota.id_rota)) || 0; } catch (e) { }
-    T.qtd = Math.max(1, maxOrdem, qtdSalva || (T.rota.cs_planejadas || []).length);
+    // Planejamento pode somar CS com a rota já em campo: as abas acompanham.
+    T.qtd = Math.max(1, maxOrdem, qtdSalva, (T.rota.cs_planejadas || []).length);
   };
 
   // Saiu da tela da rota: salva o que falta, desliga GPS e para de ouvir a fila.

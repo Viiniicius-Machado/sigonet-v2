@@ -167,27 +167,36 @@ var VR = (function () {
     return { km: Math.round(m) / 1000, sem_posicao: sem };
   };
   // Situação de cada CS da base, pelas rotas e vistorias:
-  //   CONCLUIDA → tem vistoria APROVADA (validada na revisão), em qualquer rota;
   //   EM_ROTA   → está numa rota (planejada, despachada, em campo ou concluída
-  //               aguardando revisão) e ainda não foi aprovada.
+  //               aguardando revisão) e ainda não foi aprovada NESSA rota. Trava
+  //               dura: não entra em outra rota nem forçando (duas equipes na mesma CS).
+  //               concluida: true quando já tinha aprovação antiga (refazer forçado).
+  //   CONCLUIDA → tem vistoria APROVADA (validada na revisão) e não está em rota aberta.
   // CS sem entrada no mapa está disponível. excetoRota: a rota que está sendo editada.
   // Rota CANCELADA não prende CS (nem as vistorias dela contam).
   R.situacaoCs = function (rotas, vistorias, excetoRota) {
-    var out = {}, canc = {};
+    var out = {}, canc = {}, aprov = {}, conc = {};
     (rotas || []).forEach(function (r) { if (r.status === 'CANCELADA') canc[r.id_rota] = true; });
-    (rotas || []).forEach(function (r) {
-      if (r.segmento === 'AEREA' || r.importado_planilha || r.id_rota === excetoRota || canc[r.id_rota]) return;
-      (r.cs_planejadas || []).forEach(function (id) { if (!out[id]) out[id] = { situacao: 'EM_ROTA', id_rota: r.id_rota, status_rota: r.status }; });
-    });
     (vistorias || []).forEach(function (v) {
       if (v.status_revisao !== 'APROVADA' || v.cs_nova || !v.id_cs || canc[v.id_rota]) return;
-      var x = out[v.id_cs], em = v.data_revisao || v.enviado_em || '';
-      if (x && x.situacao === 'CONCLUIDA' && String(x.em) >= String(em)) return; // vale a aprovação mais recente
-      out[v.id_cs] = { situacao: 'CONCLUIDA', id_rota: v.id_rota, id_vistoria: v.id_vistoria, em: em };
+      aprov[v.id_rota + '|' + v.id_cs] = true;
+      var x = conc[v.id_cs], em = v.data_revisao || v.enviado_em || '';
+      if (x && String(x.em) >= String(em)) return; // vale a aprovação mais recente
+      conc[v.id_cs] = { situacao: 'CONCLUIDA', id_rota: v.id_rota, id_vistoria: v.id_vistoria, em: em };
     });
+    (rotas || []).forEach(function (r) {
+      if (r.segmento === 'AEREA' || r.importado_planilha || r.id_rota === excetoRota || canc[r.id_rota]) return;
+      (r.cs_planejadas || []).forEach(function (id) {
+        if (out[id] || aprov[r.id_rota + '|' + id]) return;
+        out[id] = { situacao: 'EM_ROTA', id_rota: r.id_rota, status_rota: r.status };
+        if (conc[id]) out[id].concluida = true;
+      });
+    });
+    Object.keys(conc).forEach(function (id) { if (!out[id]) out[id] = conc[id]; });
     return out;
   };
-  // CS da rota que já estão concluídas ou em outra rota. Só passa forçando, com motivo.
+  // CS da rota que já estão concluídas ou em outra rota.
+  // Concluída só passa forçando, com motivo; em outra rota não passa nunca.
   R.conflitosCs = function (rota, rotas, vistorias) {
     var sit = R.situacaoCs(rotas, vistorias, rota && rota.id_rota);
     return ((rota && rota.cs_planejadas) || []).filter(function (id) { return sit[id]; })
@@ -196,9 +205,26 @@ var VR = (function () {
   R.textoConflitos = function (c) {
     var conc = c.filter(function (x) { return x.situacao === 'CONCLUIDA'; }), em = c.filter(function (x) { return x.situacao === 'EM_ROTA'; });
     var p = [];
-    if (conc.length) p.push('CS já concluídas (vistoria aprovada): ' + conc.map(function (x) { return x.id_cs; }).join(', ') + '.');
-    if (em.length) p.push('CS já em outra rota: ' + em.map(function (x) { return x.id_cs + ' (' + x.id_rota + ')'; }).join(', ') + '.');
-    return p.join(' ') + ' Para despachar de novo, marque "Forçar" e informe o motivo.';
+    if (em.length) p.push('CS já em outra rota (outra equipe pode estar indo nela): ' + em.map(function (x) { return x.id_cs + ' (' + x.id_rota + ')'; }).join(', ') + '. Tire a CS da outra rota antes (botão "CS da rota").');
+    if (conc.length) p.push('CS já concluídas (vistoria aprovada): ' + conc.map(function (x) { return x.id_cs; }).join(', ') + '. Para vistoriar de novo, marque "Forçar" e informe o motivo.');
+    return p.join(' ');
+  };
+
+  // Trocar / somar / tirar CS de rota já despachada (ou em campo).
+  // CS que já tem vistoria enviada nesta rota não sai; a lista não fica vazia.
+  R.validarEdicaoCs = function (rota, novas, vistorias) {
+    var erros = [], antes = (rota && rota.cs_planejadas) || [];
+    novas = (novas || []).map(String);
+    var vist = {}; (vistorias || []).forEach(function (v) { if (v.id_rota === rota.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO') vist[v.id_cs] = v.status_revisao; });
+    var removidas = antes.filter(function (id) { return novas.indexOf(id) < 0; }), adicionadas = novas.filter(function (id) { return antes.indexOf(id) < 0; });
+    var presas = removidas.filter(function (id) { return vist[id]; });
+    if (!rota || rota.segmento === 'AEREA') erros.push('Só rota subterrânea tem CS.');
+    else if (['DESPACHADA', 'EM_CAMPO'].indexOf(rota.status) < 0) erros.push('Só dá para mexer nas CS de rota despachada ou em campo (esta está ' + (rota.status || '?') + ').');
+    if (!novas.length) erros.push('A rota precisa de pelo menos uma CS (para tirar tudo, use Cancelar).');
+    if (novas.some(function (id, i) { return novas.indexOf(id) !== i; })) erros.push('CS repetida na lista.');
+    if (presas.length) erros.push('CS com vistoria já enviada não sai da rota: ' + presas.join(', ') + '.');
+    if (!removidas.length && !adicionadas.length && novas.join('|') === antes.join('|')) erros.push('Nada mudou.');
+    return { ok: !erros.length, erros: erros, removidas: removidas, adicionadas: adicionadas, com_vistoria: Object.keys(vist) };
   };
 
   // Sequência de atendimento: caminho contínuo (sem ir e voltar) passando por

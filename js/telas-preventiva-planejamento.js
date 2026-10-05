@@ -1,7 +1,8 @@
 // SIGONET V2 — Preventiva: Planejamento (tela vst_planejamento).
 //
 // Abas:
-//   Rotas         — lista, despachar / retirar despacho / editar / excluir.
+//   Rotas         — lista, despachar / retirar despacho / editar / excluir;
+//                   "CS da rota" tira / soma / troca CS de rota já despachada.
 //   Nova rota     — AÉREA (cidade, motivo, solicitante, notificação, KMZ, metros)
 //                   ou SUBTERRÂNEA (cluster e CS da base). Despachar cria o
 //                   chamado Preventiva sozinho (servidor).
@@ -31,7 +32,7 @@
 
   const cfg = () => VR.normalizarConfig(d.config);
   const pintar = () => {
-    const abas = [['ROTAS', '🗺️ Rotas'], ['NOVA', form && form.id_rota ? '✏️ Editar rota' : '➕ Nova rota'], ['BASE', '🕳️ Base de CS'], ['HIST', '📚 Histórico'], ['CFG', '⚙️ Configurações']];
+    const abas = [['ROTAS', '🗺️ Rotas'], ['NOVA', form && form.modo_cs ? '✏️ CS da rota ' + form.id_rota : form && form.id_rota ? '✏️ Editar rota' : '➕ Nova rota'], ['BASE', '🕳️ Base de CS'], ['HIST', '📚 Histórico'], ['CFG', '⚙️ Configurações']];
     SN.casca('vst_planejamento', `
       <div class="cab-pagina"><div><h1>Preventiva · Planejamento</h1><p>Crie e despache rotas aéreas e subterrâneas. Ao despachar, o chamado Preventiva é criado sozinho e aparece na fila do técnico.</p></div></div>
       <div class="abas">${abas.map(([k, r]) => `<button class="aba ${aba === k ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>
@@ -74,7 +75,7 @@
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ""}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está preenchendo e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.segmento !== 'AEREA' && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm" data-edcs="${esc(r.id_rota)}" title="Tirar, somar ou trocar CS desta rota já despachada">CS da rota</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : (todas.length && (iv || filtro.seg || filtro.status || filtro.q) ? '<p class="muted">Nenhuma rota neste período/filtro. Troque o período (ou "Tudo") para ver as outras.</p>' : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>')}</div>`;
     SN.ligarPeriodo(pintarRotas, periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { periodo.per = 'tudo'; filtro.status = andamentoFora.every(r => r.status === 'EM_CAMPO') ? 'EM_CAMPO' : ''; pintarRotas(); };
@@ -103,6 +104,8 @@
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.pdf); if (!r) return;
       if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoRota(r, d, cfg(), cv));
       else SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg())); });
+    SN.$$('[data-edcs]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.edcs); if (!r) return;
+      form = Object.assign(JSON.parse(JSON.stringify(r)), { segmento: 'SUBTERRANEA', modo_cs: true, cs_originais: (r.cs_planejadas || []).slice(), forcar: false, forcar_motivo: '', motivo_cs: '' }); aba = 'NOVA'; pintar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { form = JSON.parse(JSON.stringify(d.rotas.find(r => r.id_rota === b.dataset.ed))); form.segmento = form.segmento || 'SUBTERRANEA'; aba = 'NOVA'; pintar(); });
   };
 
@@ -114,9 +117,11 @@
   const cidadesConhecidas = () => [...new Set(Object.values(cfg().regioes).flat().concat(d.rotas.map(r => VR.normCidade(r.cidade))).filter(Boolean))].sort();
 
   const pintarForm = () => {
-    const f = form || (form = novaRota('AEREA')), c = cfg(), editando = !!f.id_rota, aerea = f.segmento === 'AEREA';
+    const f = form || (form = novaRota('AEREA')), c = cfg(), editando = !!f.id_rota, aerea = f.segmento === 'AEREA', soCs = !!f.modo_cs;
     const clusters = Object.keys((d.base || {}).clusters || {}).sort();
-    SN.$('#pCorpo').innerHTML = `<div class="card">
+    const pre = `<div class="card">
+      ${soCs ? `<div class="aviso info" style="margin-bottom:10px">Rota <b>${esc(f.id_rota)}</b> ${SN.vst.badgeRota(f.status)} · ${esc(f.prestador || '')}${f.tecnico ? ' · ' + esc(f.tecnico) : ''}. Aqui só as <b>CS</b> mudam: desmarque para tirar, marque para somar. CS com vistoria já enviada ficam. CS em rota de outra equipe não podem entrar. O técnico vê a lista nova ao atualizar a rota.</div>` : ''}`;
+    const corpoForm = `
       ${f.vincular_chamado ? `<div class="aviso info" style="margin-bottom:10px">Esta rota será <b>ligada ao chamado ${esc(f.vincular_chamado)}</b> aberto pelo NOC (não abre outro chamado).</div>` : ''}
       <div class="campo"><label>Segmento *</label><div class="chips">${L.segmentos.map(([k, r]) => `<button type="button" class="chip ${f.segmento === k ? 'sel' : ''}" data-seg="${k}" ${editando || f.vincular_chamado ? 'disabled' : ''}>${k === 'AEREA' ? '🗼' : '🕳️'} ${r}</button>`).join('')}</div></div>
       <div class="linha-form">
@@ -148,12 +153,15 @@
       </div>
       ${c.operadoras.length ? `<div class="campo"><label>Operadoras esperadas nos cabos</label><div class="chips">${c.operadoras.map(o => `<button type="button" class="chip ${((f.cenario_esperado || {}).operadoras || []).includes(o) ? 'sel' : ''}" data-op="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>` : ''}
       <div class="campo"><label>CS da rota * <span class="muted">(${(f.cs_planejadas || []).length} selecionada(s), em sequência de atendimento)</span></label><div id="fCs" class="small muted">${f.cluster ? 'Carregando CS…' : 'Escolha o cluster.'}</div></div>`}
-      <div class="campo"><label>Observação</label><textarea class="inp" data-f="observacao">${esc(f.observacao || '')}</textarea></div>
+      ${soCs ? `<div class="campo"><label>Motivo da alteração</label><input class="inp" id="fMotCs" value="${esc(f.motivo_cs || '')}" placeholder="ex.: só 8 CS hoje; CS 0123 passou para a equipe B"></div>`
+        : `<div class="campo"><label>Observação</label><textarea class="inp" data-f="observacao">${esc(f.observacao || '')}</textarea></div>`}
       <div id="fErros"></div>
       <div class="acoes">
-        ${f.vincular_chamado ? '<button class="btn prim" id="bVinc">🔗 Criar rota ligada ao chamado</button>'
+        ${soCs ? '<button class="btn prim" id="bSalvarCs">💾 Salvar CS da rota</button>' : f.vincular_chamado ? '<button class="btn prim" id="bVinc">🔗 Criar rota ligada ao chamado</button>'
           : `<button class="btn prim" id="bSalvar">💾 Salvar${editando ? '' : ' (planejada)'}</button><button class="btn ok" id="bSalvarDesp">🚀 Salvar e despachar</button>`}
         <button class="btn" id="bCancelar">Cancelar</button></div></div>`;
+    SN.$('#pCorpo').innerHTML = pre + corpoForm;
+    if (soCs) SN.$$('#pCorpo [data-f], #pCorpo [data-cen], #pCorpo [data-op]').forEach(i => { i.disabled = true; });
     const errosNaTela = () => { const v = validarForm(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
     errosNaTela();
     SN.$$('[data-seg]').forEach(b => b.onclick = () => { form = Object.assign(novaRota(b.dataset.seg), { cidade: f.cidade, prestador: f.prestador, tecnico: f.tecnico, data_planejada: f.data_planejada, data_limite: f.data_limite, observacao: f.observacao }); pintarForm(); });
@@ -186,6 +194,17 @@
     };
     if (SN.$('#bSalvar')) SN.$('#bSalvar').onclick = () => salvar(false);
     if (SN.$('#bSalvarDesp')) SN.$('#bSalvarDesp').onclick = () => salvar(true);
+    if (SN.$('#fMotCs')) SN.$('#fMotCs').oninput = e => { f.motivo_cs = e.target.value; };
+    if (SN.$('#bSalvarCs')) SN.$('#bSalvarCs').onclick = async () => {
+      const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
+      const ed = VR.validarEdicaoCs({ ...f, cs_planejadas: f.cs_originais }, f.cs_planejadas, d.vistorias); if (!ed.ok) return SN.toast(ed.erros[0], 'erro');
+      const txt = [ed.removidas.length ? 'Sai(em): <b>' + ed.removidas.map(esc).join(', ') + '</b>' : '', ed.adicionadas.length ? 'Entra(m): <b>' + ed.adicionadas.map(esc).join(', ') + '</b>' : ''].filter(Boolean).join('<br>') || 'Só a ordem muda.';
+      if (!await SN.confirmar('CS da rota ' + f.id_rota, txt + '<br>A rota fica com ' + f.cs_planejadas.length + ' CS.', 'Salvar')) return;
+      const bt = SN.$('#bSalvarCs'); bt.disabled = true;
+      try { const r = await SN.vst.exec('VST_ROTA_EDITAR_CS', { id_rota: f.id_rota, cs_planejadas: f.cs_planejadas, motivo: f.motivo_cs || '', forcar: !!f.forcar, forcar_motivo: f.forcar_motivo || '' });
+        SN.toast(`Rota ${f.id_rota}: ${r.rota.cs_planejadas.length} CS.`, 'ok'); form = null; aba = 'ROTAS'; await recarregar();
+      } catch (e) { bt.disabled = false; SN.toast(e.message, 'erro'); }
+    };
     if (SN.$('#bVinc')) SN.$('#bVinc').onclick = async () => {
       const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
       const bt = SN.$('#bVinc'); bt.disabled = true; bt.textContent = 'Enviando…';
@@ -195,16 +214,20 @@
     };
     SN.$('#bCancelar').onclick = () => { form = null; aba = 'ROTAS'; pintar(); };
   };
-  // Regras da rota + CS já concluídas (vistoria aprovada) ou em outra rota, que só
-  // passam forçando com motivo (o servidor confere de novo). CS forçadas numa edição
-  // anterior da mesma rota não pedem de novo.
+  // Regras da rota + CS em outra rota (não passa nunca: duas equipes na mesma CS) ou
+  // já concluídas (vistoria aprovada; só forçando com motivo). O servidor confere de
+  // novo. CS concluída forçada numa edição anterior da mesma rota não pede de novo.
+  // modo_cs (rota já despachada): só as CS que entram são conferidas.
   const validarForm = f => {
-    const v = VR.validarRota(f);
+    const v = f.modo_cs ? { erros: [] } : VR.validarRota(f);
     if (f.segmento === 'AEREA') return v;
-    const ja = (f.cs_forcadas || []).map(x => x.id_cs);
-    const c = VR.conflitosCs(f, d.rotas, d.vistorias).filter(x => !ja.includes(x.id_cs));
-    if (c.length && !(f.forcar && String(f.forcar_motivo || '').trim())) v.erros.push(VR.textoConflitos(c));
-    return { ok: !v.erros.length, erros: v.erros, conflitos: c };
+    if (f.modo_cs) { const ed = VR.validarEdicaoCs({ ...f, cs_planejadas: f.cs_originais }, f.cs_planejadas, d.vistorias); v.erros.push(...ed.erros.filter(x => x !== 'Nada mudou.')); }
+    const ja = (f.cs_forcadas || []).filter(x => x.situacao === 'CONCLUIDA').map(x => x.id_cs), velhas = f.modo_cs ? f.cs_originais : [];
+    const c = VR.conflitosCs(f, d.rotas, d.vistorias).filter(x => !velhas.includes(x.id_cs) && (x.situacao === 'EM_ROTA' || !ja.includes(x.id_cs)));
+    const em = c.filter(x => x.situacao === 'EM_ROTA'), conc = c.filter(x => x.situacao === 'CONCLUIDA');
+    if (em.length) v.erros.push(VR.textoConflitos(em));
+    if (conc.length && !(f.forcar && String(f.forcar_motivo || '').trim())) v.erros.push(VR.textoConflitos(conc));
+    return { ok: !v.erros.length, erros: v.erros, conflitos: conc };
   };
   // CS do cluster para escolher. A ordem da rota é montada sozinha: caminho
   // contínuo entre as CS marcadas (VR.ordenarMenorCaminho), que o técnico segue.
@@ -218,8 +241,13 @@
       const porId = {}; lista.forEach(c => { porId[c.id_cs] = c; });
       const emSeq = seq.map(id => porId[id]);
       // Situação na base: concluída (vistoria aprovada) / em outra rota / disponível.
-      const sit = VR.situacaoCs(d.rotas, d.vistorias, f.id_rota), forcadas = (f.cs_forcadas || []).map(x => x.id_cs);
+      const sit = VR.situacaoCs(d.rotas, d.vistorias, f.id_rota), forcadas = (f.cs_forcadas || []).filter(x => x.situacao === 'CONCLUIDA').map(x => x.id_cs);
       const travada = id => sit[id] && !forcadas.includes(id);
+      // Em outra rota: trava dura (nem forçando). Concluída: só com "Forçar".
+      const emOutra = id => sit[id] && sit[id].situacao === 'EM_ROTA';
+      // Rota já despachada: CS com vistoria enviada não sai e fica no começo do roteiro, na ordem enviada.
+      const enviadas = f.modo_cs ? d.vistorias.filter(v => v.id_rota === f.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO')
+        .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0)).map(v => v.id_cs).filter((id, i, a) => a.indexOf(id) === i) : [];
       const nConc = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'CONCLUIDA').length, nRota = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'EM_ROTA').length;
       const selo = id => { const x = sit[id]; if (!x) return '<span class="muted">Disponível</span>';
         return x.situacao === 'CONCLUIDA' ? `<span class="badge ok" title="Vistoria aprovada na rota ${esc(x.id_rota)}">✔ Concluída${x.em ? ' ' + esc(SN.dt(x.em).slice(0, 10)) : ''}</span>`
@@ -230,16 +258,23 @@
           <label class="small" style="display:flex;align-items:center;gap:6px">Começar pela <select class="inp" id="fCsIni" style="max-width:260px"></select></label>
           <label class="small" style="display:flex;align-items:center;gap:6px">Mostrar <select class="inp" id="fCsMostrar"><option value="disp">Disponíveis</option><option value="todas">Todas</option></select></label></div>
         <div class="small" style="margin-bottom:6px"><b>${lista.length}</b> CS no cluster · <b style="color:var(--ok)">${nConc}</b> concluída(s) · <b>${nRota}</b> em outra rota · <b>${lista.length - nConc - nRota}</b> disponível(is)</div>
-        ${nConc + nRota ? `<div class="faixa small" style="margin-bottom:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fForca" ${f.forcar ? 'checked' : ''}> <b>Forçar despacho</b> de CS já concluída ou em outra rota</label>
+        ${nRota ? `<div class="small muted" style="margin-bottom:6px">🔒 CS em outra rota não entram aqui (outra equipe já vai nelas). Para trocar de equipe, tire a CS da outra rota primeiro ("CS da rota" ou Editar).</div>` : ''}
+        ${enviadas.length ? `<div class="small muted" style="margin-bottom:6px">✔ ${enviadas.length} CS já com vistoria enviada nesta rota (não saem).</div>` : ''}
+        ${nConc ? `<div class="faixa small" style="margin-bottom:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fForca" ${f.forcar ? 'checked' : ''}> <b>Forçar</b> nova vistoria de CS já concluída</label>
           <div id="fForcaMot" style="display:none;margin-top:6px"><textarea class="inp" id="fForcaTxt" placeholder="Motivo para despachar de novo (obrigatório; fica no histórico da rota)">${esc(f.forcar_motivo || '')}</textarea></div></div>` : ''}
         <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th title="Posição na rota que o técnico vai seguir">Na rota</th><th>CS</th><th>Situação</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>
         <div id="fCsSeq" style="margin-top:8px"></div>`;
-      const reordenar = () => { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista, { inicio: f.cs_inicio }); };
+      const reordenar = () => {
+        if (!enviadas.length) { f.cs_planejadas = VR.ordenarMenorCaminho(f.cs_planejadas, lista, { inicio: f.cs_inicio }); return; }
+        const fixas = enviadas.filter(id => f.cs_planejadas.includes(id)), resto = f.cs_planejadas.filter(id => !fixas.includes(id)), ult = fixas[fixas.length - 1];
+        f.cs_planejadas = fixas.concat(VR.ordenarMenorCaminho([ult].concat(resto), lista, { inicio: ult }).filter(id => id !== ult));
+      };
       const linhas = () => {
         const q = SN.normal(SN.$('#fCsQ').value);
         SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => (f.cs_mostrar === 'todas' || !travada(cs.id_cs) || f.cs_planejadas.includes(cs.id_cs)) && (!q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q))).map(cs => {
-          const i = f.cs_planejadas.indexOf(cs.id_cs), trava = travada(cs.id_cs) && !f.forcar && i < 0;
-          return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava ? 'disabled title="Marque Forçar despacho para escolher"' : ''}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
+          const i = f.cs_planejadas.indexOf(cs.id_cs), fixa = enviadas.includes(cs.id_cs) && i >= 0;
+          const trava = fixa ? 'disabled title="Já tem vistoria enviada nesta rota"' : i >= 0 ? '' : emOutra(cs.id_cs) ? 'disabled title="Em rota de outra equipe: tire de lá primeiro"' : travada(cs.id_cs) && !f.forcar ? 'disabled title="Marque Forçar para escolher"' : '';
+          return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
             <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs.lat},${cs.lng}">${cs.lat}, ${cs.lng}</a></td></tr>`;
         }).join('') || `<tr><td colspan="6" class="muted">${f.cs_mostrar === 'disp' && lista.length ? 'Nenhuma CS disponível (veja "Mostrar: Todas").' : 'Nenhuma CS.'}</td></tr>`;
         SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1);
@@ -263,11 +298,11 @@
       SN.$('#fCsIni').onchange = e => { f.cs_inicio = e.target.value; reordenar(); linhas(); atualizarContagem(); };
       // "Selecionar todas" pega só as disponíveis (concluídas/em rota só uma a uma, forçando).
       SN.$('#fCsTodas').onclick = () => { const alvo = seq.filter(id => !travada(id) || f.cs_planejadas.includes(id));
-        f.cs_planejadas = f.cs_inicio ? VR.ordenarMenorCaminho(alvo, lista, { inicio: f.cs_inicio }) : alvo; linhas(); atualizarContagem(); };
+        if (enviadas.length) { f.cs_planejadas = alvo; reordenar(); } else f.cs_planejadas = f.cs_inicio ? VR.ordenarMenorCaminho(alvo, lista, { inicio: f.cs_inicio }) : alvo; linhas(); atualizarContagem(); };
       SN.$('#fCsMostrar').value = f.cs_mostrar; SN.$('#fCsMostrar').onchange = e => { f.cs_mostrar = e.target.value; linhas(); };
       if (SN.$('#fForca')) SN.$('#fForca').onchange = e => { f.forcar = e.target.checked; if (f.forcar) f.cs_mostrar = SN.$('#fCsMostrar').value = 'todas'; linhas(); atualizarContagem(); };
       if (SN.$('#fForcaTxt')) SN.$('#fForcaTxt').oninput = e => { f.forcar_motivo = e.target.value; atualizarContagem(); };
-      SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = []; f.cs_inicio = ''; linhas(); atualizarContagem(); };
+      SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = enviadas.filter(id => f.cs_planejadas.includes(id)); f.cs_inicio = ''; linhas(); atualizarContagem(); };
       linhas(); atualizarContagem();
     } catch (e) { el.innerHTML = `<span style="color:var(--erro)">${esc(e.message)}</span>`; }
   };
@@ -289,7 +324,7 @@
       <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> CS em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
         ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
           return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td></tr>`; }).join('')}</tbody></table>
-          <p class="small muted">Concluída = vistoria aprovada na revisão. Concluídas e em rota não entram em rota nova sem "Forçar despacho".</p>` : ''}
+          <p class="small muted">Concluída = vistoria aprovada na revisão. CS em rota não entra em outra rota; concluída só com "Forçar".</p>` : ''}
         <h4 style="margin-top:12px">Importações</h4>${imp.length ? `<table class="tab small"><thead><tr><th>Quando</th><th>Versão</th><th>Arquivo</th><th class="num">CS</th><th>Por</th></tr></thead><tbody>
           ${imp.map(x => `<tr><td class="nowrap">${SN.dt(x.data)}</td><td>${esc(x.versao)}</td><td>${esc(x.arquivo || '')}</td><td class="num">${SN.num(x.qtd)}</td><td>${esc(x.por)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Nenhuma ainda.</p>'}</div></div>`;
     SN.$('#bArq').onchange = async e => {
