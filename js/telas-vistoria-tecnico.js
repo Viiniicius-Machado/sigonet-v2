@@ -78,14 +78,15 @@
 
   SN.rota('/tec/vistoria/:id', async id => {
     if (!SN.vst.disponivel()) return SN.cascaTec('vst', SN.vst.semServidorHtml, 'Preventiva');
-    if (T && T.rota.id_rota === id) { // re-render sem recarregar (não perde o que está sendo digitado)
+    if (T && T.rota.id_rota === id && !T.saiu) { // re-render sem recarregar (não perde o que está sendo digitado)
       SN.VF.ligarGps(); if (!T.desligar) T.desligar = SN.VL.aoMudar(aoMudarFila);
       return pintarRota();
     }
     SN.cascaTec('vst', '<p class="muted">Abrindo rota…</p>');
     let d;
-    try { d = SN.vst.dados && SN.vst.dados.rotas.some(r => r.id_rota === id) ? SN.vst.dados : await SN.vst.carregar(); }
-    catch (e) { return SN.cascaTec('vst', `<div class="aviso erro">${esc(e.message)}</div>`); }
+    // Entrando na rota: lê de novo (o planejamento pode ter tirado/somado CS). Sem sinal, usa o que já tem.
+    try { d = await SN.vst.carregar(); }
+    catch (e) { if (SN.vst.dados && SN.vst.dados.rotas.some(r => r.id_rota === id)) d = SN.vst.dados; else return SN.cascaTec('vst', `<div class="aviso erro">${esc(e.message)}</div>`); }
     const rota = d.rotas.find(r => r.id_rota === id);
     if (!rota) { SN.toast('Rota não encontrada nas suas rotas.', 'erro'); return SN.navegar('#/tec/vistorias'); }
     if (rota.segmento === 'AEREA') return SN.navegar('#/tec/aerea/' + encodeURIComponent(id)); // OS aérea cai aqui pelo botão "Abrir rota"
@@ -109,7 +110,17 @@
 
   // Junta o que está no servidor com os rascunhos do aparelho, por ordem da CS.
   const montarSlots = async () => {
-    const locais = await SN.VL.rascunhos.porIndice('rota', T.rota.id_rota);
+    let locais = await SN.VL.rascunhos.porIndice('rota', T.rota.id_rota);
+    // Abas fantasmas (rota antiga com o mesmo código): rascunho vazio além das CS despachadas sai do aparelho.
+    // e CS tirada da rota pelo planejamento: rascunho e fotos ainda não enviadas saem do aparelho.
+    const fora = locais.filter(l => SN.vst.rascunhoDescartavel(T.rota, l)), tiradas = fora.filter(l => SN.vst.rascunhoRetirado(T.rota, l)).map(l => l.dados.id_cs);
+    for (const l of fora) {
+      await SN.VL.rascunhos.del(l.id_vistoria).catch(() => { });
+      for (const f of (await SN.VL.fotos.todos().catch(() => [])).filter(f => f.id_vistoria === l.id_vistoria && f.status !== 'enviada')) await SN.VL.fotos.del(f.id_foto).catch(() => { });
+    }
+    if (tiradas.length) SN.toast(`O planejamento tirou desta rota: ${tiradas.join(', ')}. Essas abas foram removidas do seu aparelho.`, 'erro');
+    locais = locais.filter(l => !fora.includes(l));
+    if (fora.length) { const n = Math.max((T.rota.cs_planejadas || []).length, ...locais.map(l => Number(l.ordem) || 0)); if ((await SN.vst.qtdAbas(T.rota)) > n) await SN.vst.salvarQtdAbas(T.rota, n); }
     const slots = {};
     T.dados.vistorias.filter(v => v.id_rota === T.rota.id_rota).forEach(v => {
       slots[v.ordem] = { id_vistoria: v.id_vistoria, id_rota: v.id_rota, ordem: v.ordem, status_local: 'enviada', dados: v, servidor: v };
@@ -127,7 +138,7 @@
   };
 
   // Saiu da tela da rota: salva o que falta, desliga GPS e para de ouvir a fila.
-  const sair = () => { if (!T) return; flush(); if (T.desligar) { T.desligar(); T.desligar = null; } SN.VF.desligarGps(); };
+  const sair = () => { if (!T) return; T.saiu = true; flush(); if (T.desligar) { T.desligar(); T.desligar = null; } SN.VF.desligarGps(); };
   window.addEventListener('hashchange', () => { if (T && !rotaAberta()) sair(); });
 
   const aoMudarFila = async () => {
@@ -603,7 +614,14 @@
         const p = await SN.VF.pegarPosicao(10000);
         const pre = b.dataset.gps;
         if (pre) { definir(v, pre + '.lat', p.lat); definir(v, pre + '.lng', p.lng); definir(v, pre + '.precisao', p.precisao); }
-        else { v.lat = p.lat; v.lng = p.lng; v.gps_precisao = p.precisao; v.gps_em = SN.agora(); }
+        else {
+          v.lat = p.lat; v.lng = p.lng; v.gps_precisao = p.precisao; v.gps_em = SN.agora();
+          // Mesma posição da CS anterior = capturou antes de chegar (a distância do cadastro sai errada).
+          const ant = Object.values(T.slots).filter(s => s.dados && s.dados !== v && Number(s.ordem) < Number(v.ordem) && s.dados.lat !== '' && s.dados.lat != null)
+            .sort((a, b) => Number(b.ordem) - Number(a.ordem))[0];
+          const dAnt = ant ? VR.distanciaM(Number(ant.dados.lat), Number(ant.dados.lng), Number(p.lat), Number(p.lng)) : null;
+          if (dAnt != null && dAnt <= 30) SN.toast(`Atenção: esta posição é praticamente a mesma da CS anterior (${Math.round(dAnt)} m). Capture o GPS em cima desta CS.`, 'erro');
+        }
         if (p.precisao > 50) SN.toast(`Precisão baixa (±${p.precisao} m). Se puder, capture de novo em local aberto.`);
         mudou();
       } catch (e) { SN.toast(e.message, 'erro'); b.disabled = false; b.textContent = t; }

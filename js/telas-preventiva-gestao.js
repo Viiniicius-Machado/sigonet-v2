@@ -137,6 +137,7 @@
         ['Distância do cadastro', fl.gps_distancia_m != null ? fl.gps_distancia_m + ' m' + (fl.gps_divergente ? ' (acima da tolerância)' : '') : '—', fl.gps_divergente],
         v.gps_justificativa ? ['Justificativa GPS', v.gps_justificativa] : null,
         ['Técnico', `${v.tecnico} · ${v.prestador}`], ['Horário', `${SN.dt(v.inicio)} → ${SN.dt(v.fim)}`]], [])
+      + (!v.cs_nova && v.id_cs ? '<div id="rGpsDiag" class="small muted" style="margin:-4px 0 10px">Conferindo a posição com o cadastro…</div>' : '')
       + (Number(v.ordem) > 1 && v.trecho ? secao(`Trecho ${v.trecho.cs_origem || ''} → esta CS`, [['Superfície percorrida', sn(v.trecho.superficie_percorrida)],
           ...(v.trecho.anomalias || []).map((a, i) => ['Anomalia ' + (i + 1), `${rot('anomalia_trecho', a.tipo)}${a.texto ? ' — ' + a.texto : ''} · ${a.lat}, ${a.lng}`])], de('anomalia')) : '')
       + secao('Acesso, solo e tampa', [['Conseguiu abrir', sn(v.abriu)], v.abriu === 'nao' ? ['Motivo', `${rot('motivo_nao_abriu', v.motivo_nao_abriu)}${v.motivo_nao_abriu_texto ? ' — ' + v.motivo_nao_abriu_texto : ''}`] : null,
@@ -223,6 +224,40 @@
       } }] });
   };
 
+  // "Distância do cadastro" = GPS que o técnico capturou na CS × ponto da CS no cadastro (KMZ).
+  // Quando dá muito, este quadro mostra os dois pontos e onde as fotos foram tiradas, para o
+  // revisor ver se o GPS foi capturado fora do lugar (ex.: na CS anterior) ou se o KMZ está errado.
+  const baseCluster = {};
+  const diagnosticoGps = async (f, v, r, d) => {
+    const el = SN.$('#rGpsDiag', f); if (!el || !v.id_cs) return;
+    const lista = baseCluster[r.cluster] || (baseCluster[r.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: r.cluster })).cs || []);
+    const cad = lista.find(c => String(c.id_cs) === String(v.id_cs));
+    const num = x => x !== '' && x != null && !isNaN(Number(x));
+    const mapa = (lat, lng) => `<a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" rel="noopener">${lat}, ${lng}</a>`;
+    const dist = (a, b) => a && b && num(a.lat) && num(b.lat) ? Math.round(VR.distanciaM(Number(a.lat), Number(a.lng), Number(b.lat), Number(b.lng))) : null;
+    const campo = num(v.lat) ? { lat: v.lat, lng: v.lng } : null, cadP = cad && num(cad.lat) ? { lat: cad.lat, lng: cad.lng } : null;
+    // Fotos com GPS: mediana das distâncias até cada ponto.
+    const fotos = (v.fotos || []).filter(x => x.tipo_foto !== 'ficha_pdf' && num(x.lat) && num(x.lng));
+    const med = arr => { const s = arr.filter(n => n != null).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+    const fotoCad = med(fotos.map(x => dist(x, cadP))), fotoCampo = med(fotos.map(x => dist(x, campo)));
+    // CS anterior da mesma rota (aba anterior) — GPS igual = capturado antes de chegar.
+    const ant = (d.vistorias || []).filter(x => x.id_rota === v.id_rota && x.id_vistoria !== v.id_vistoria && Number(x.ordem) < Number(v.ordem) && num(x.lat))
+      .sort((a, b) => Number(b.ordem) - Number(a.ordem))[0];
+    const dAnt = ant ? dist(ant, campo) : null;
+    let leitura = '';
+    if (dAnt != null && dAnt <= 50) leitura = `⚠ A posição desta CS está a ${dAnt} m da posição gravada na CS anterior (${esc(ant.id_cs || 'aba ' + ant.ordem)}): o GPS provavelmente foi capturado antes de chegar.`;
+    else if (fotoCad != null && fotoCampo != null && fotoCad <= 150 && fotoCampo > 300) leitura = '⚠ As fotos foram tiradas perto do ponto do cadastro, mas o GPS da CS está longe: o GPS foi capturado fora do lugar. A CS está certa no KMZ.';
+    else if (fotoCad != null && fotoCampo != null && fotoCampo <= 150 && fotoCad > 300) leitura = '⚠ As fotos confirmam a posição do técnico e estão longe do ponto do cadastro: o ponto desta CS no KMZ deve estar errado (ou a CS escolhida não é esta).';
+    el.className = 'aviso ' + (leitura ? 'alerta' : 'info') + ' small'; el.style.margin = '-4px 0 10px';
+    el.innerHTML = `<b>Conferência da posição</b><br>
+      Cadastro (KMZ): ${cadP ? mapa(cadP.lat, cadP.lng) : 'sem coordenada na base'}<br>
+      Campo (técnico): ${campo ? mapa(campo.lat, campo.lng) + (v.gps_precisao ? ' ±' + esc(v.gps_precisao) + ' m' : '') + (v.gps_em ? ' · capturado ' + SN.dt(v.gps_em) : '') : 'sem GPS'}
+      ${cadP && campo ? ` · <a href="https://www.google.com/maps/dir/${cadP.lat},${cadP.lng}/${campo.lat},${campo.lng}" target="_blank" rel="noopener">ver os dois no mapa</a>` : ''}<br>
+      ${fotos.length ? `Fotos (${fotos.length} com GPS): a ~${fotoCad != null ? SN.num(fotoCad) + ' m do cadastro' : '—'} e ~${fotoCampo != null ? SN.num(fotoCampo) + ' m da posição do técnico' : '—'}<br>` : 'Fotos sem GPS.<br>'}
+      ${ant ? `CS anterior (${esc(ant.id_cs || 'aba ' + ant.ordem)}): ${dAnt != null ? SN.num(dAnt) + ' m da posição desta' : '—'}<br>` : ''}
+      ${leitura ? '<b>' + leitura + '</b>' : ''}`;
+  };
+
   const abrirRevisao = (x, d) => {
     const a = x.doc, r = x.rota, ficha = (a.fotos || []).find(f => f.tipo_foto === 'ficha_pdf');
     const emRevisao = a.status_revisao === 'AGUARDANDO_REVISAO';
@@ -268,6 +303,7 @@
         { rot: '✔ Aprovar', cls: 'ok', acao: async f => (await decidir('APROVADA', f)) ? null : false }],
       aoAbrir: async f => {
         SN.$$('[data-mot]', f).forEach(b => b.onclick = () => { const k = b.dataset.mot; motivos.has(k) ? motivos.delete(k) : motivos.add(k); b.classList.toggle('sel'); });
+        if (x.seg !== 'AEREA') diagnosticoGps(f, a, r, d).catch(() => { const el = SN.$('#rGpsDiag', f); if (el) el.textContent = ''; });
         const ids = SN.$$('[data-foto]', f).map(e => e.dataset.foto);
         await buscarFotos(ids);
         SN.$$('[data-foto]', f).forEach(e => { const src = cacheFotos[e.dataset.foto]; e.innerHTML = src ? `<img src="${src}" alt="">` : '<span class="muted small">foto indisponível</span>'; if (src) e.onclick = () => abrirImagem(src); });

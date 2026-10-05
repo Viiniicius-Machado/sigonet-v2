@@ -70,11 +70,10 @@
     const montarCtx = () => {
       const slots = {}, fotosLocais = {}, cfg = VR.normalizarConfig((SN.vst.dados || {}).config || {});
       A.vistorias.forEach(v => { slots[v.ordem] = { id_vistoria: v.id_vistoria, ordem: v.ordem, status_local: 'enviada', dados: v, servidor: v }; });
-      let qtd = 0, quem = {};
+      const quem = {};
       A.vivo.forEach(t => {
-        qtd = Math.max(qtd, t.qtd || 0);
         if (t.aba) quem[t.aba] = (quem[t.aba] || []).concat(t.tecnico);
-        (t.rascunhos || []).filter(r => r.ordem && r.dados).forEach(r => {
+        (t.rascunhos || []).filter(r => r.ordem && r.dados && !SN.vst.rascunhoDescartavel(A.rota, r)).forEach(r => {
           const s = slots[r.ordem];
           if (s && s.status_local === 'enviada' && s.id_vistoria !== r.id && s.servidor.status_revisao !== 'REJEITADA') return;
           if (s && s.status_local !== 'enviada' && String(s.atualizado || '') > String(r.atualizado || '')) return; // dois aparelhos: vale o mais novo
@@ -90,7 +89,8 @@
         else if (!f.drive_id) fotosLocais[f.id_foto] = { status: 'pendente' };
       }));
       const maxOrdem = Math.max(0, ...Object.keys(slots).map(Number));
-      return { rota: A.rota, cfg, cs: A.cs, slots, fotosLocais, qtd: Math.max(1, qtd, maxOrdem, (A.rota.cs_planejadas || []).length), quem };
+      // Abas: as CS despachadas + as que têm algo preenchido. Aba vazia a mais no celular do técnico não aparece aqui.
+      return { rota: A.rota, cfg, cs: A.cs, slots, fotosLocais, qtd: Math.max(1, maxOrdem, (A.rota.cs_planejadas || []).length), quem };
     };
 
     const rotuloSlot = s => {

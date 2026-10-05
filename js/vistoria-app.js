@@ -184,4 +184,17 @@ SN.vst.abrirDireto = chamadosDoTecnico => {
 SN.vst.qtdAbas = async rota => {
   try { const x = await SN.VL.meta.get('qtd|' + rota.id_rota); return x && typeof x === 'object' && x.criada === (rota.criada_em || '') ? Number(x.n) || 0 : 0; } catch (e) { return 0; }
 };
+// Rascunho "vazio" numa aba além das CS despachadas: sem CS escolhida, sem CS nova e sem foto
+// (só o que o app preenche sozinho ao abrir a aba, como hora e GPS). Não é trabalho do técnico.
+SN.vst.rascunhoVazioExtra = (rota, r) => {
+  const d = (r && r.dados) || {};
+  return !!r && r.status_local !== 'enviada' && Number(r.ordem) > (rota.cs_planejadas || []).length && !d.id_cs && !d.cs_nova && !(d.fotos || []).length;
+};
+// CS que o planejamento tirou da rota ("CS da rota") e ainda está em rascunho no celular:
+// o servidor já recusa o envio; o rascunho sai do aparelho e do acompanhamento.
+SN.vst.rascunhoRetirado = (rota, r) => {
+  const d = (r && r.dados) || {};
+  return !!r && r.status_local !== 'enviada' && !!d.id_cs && (rota.cs_retiradas || []).includes(d.id_cs) && !(rota.cs_planejadas || []).includes(d.id_cs);
+};
+SN.vst.rascunhoDescartavel = (rota, r) => SN.vst.rascunhoVazioExtra(rota, r) || SN.vst.rascunhoRetirado(rota, r);
 SN.vst.salvarQtdAbas = (rota, n) => SN.VL.meta.set('qtd|' + rota.id_rota, { n, criada: rota.criada_em || '' });
