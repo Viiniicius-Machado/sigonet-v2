@@ -121,7 +121,7 @@
     T.slots = slots;
     for (const f of await SN.VL.fotos.todos()) if (f.id_rota === T.rota.id_rota) T.fotosLocais[f.id_foto] = f;
     const maxOrdem = Math.max(0, ...Object.keys(slots).map(Number));
-    let qtdSalva = 0; try { qtdSalva = Number(await SN.VL.meta.get('qtd|' + T.rota.id_rota)) || 0; } catch (e) { }
+    const qtdSalva = await SN.vst.qtdAbas(T.rota);
     // Planejamento pode somar CS com a rota já em campo: as abas acompanham.
     T.qtd = Math.max(1, maxOrdem, qtdSalva, (T.rota.cs_planejadas || []).length);
   };
@@ -262,7 +262,7 @@
     if (n < 1) return;
     if (delta < 0 && T.slots[T.qtd] && !T.slots[T.qtd].novo) return SN.toast('A última aba já tem dados. Não dá para diminuir.', 'erro');
     if (delta < 0) delete T.slots[T.qtd];
-    T.qtd = n; await SN.VL.meta.set('qtd|' + T.rota.id_rota, n); SN.vst.publicarVivo(T.rota.id_rota);
+    T.qtd = n; await SN.vst.salvarQtdAbas(T.rota, n); SN.vst.publicarVivo(T.rota.id_rota);
     if (T.aba > n) T.aba = n;
     SN.$('#vQtd').textContent = n; pintarAbas(); pintarCs();
   };

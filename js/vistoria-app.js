@@ -177,3 +177,11 @@ SN.vst.abrirDireto = chamadosDoTecnico => {
   sessionStorage.setItem('sigonet_v2_vst_direto', '1');
   SN.navegar('#/tec/vistorias'); return true;
 };
+
+// Abas a mais que o técnico abriu numa rota ("+"). Guardado com a data de criação da rota:
+// depois da limpeza de 01/10 a numeração recomeçou e um "ROT-00002" antigo deixava abas
+// fantasmas na ROT-00002 nova. Valor antigo (só número) ou de outra rota é ignorado.
+SN.vst.qtdAbas = async rota => {
+  try { const x = await SN.VL.meta.get('qtd|' + rota.id_rota); return x && typeof x === 'object' && x.criada === (rota.criada_em || '') ? Number(x.n) || 0 : 0; } catch (e) { return 0; }
+};
+SN.vst.salvarQtdAbas = (rota, n) => SN.VL.meta.set('qtd|' + rota.id_rota, { n, criada: rota.criada_em || '' });

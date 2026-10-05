@@ -36,7 +36,8 @@
       const aer = (await SN.VL.apontamentos.porIndice('rota', id_rota)).filter(r => r.status_local !== 'enviada')
         .map(r => ({ id: r.id_apontamento, ordem: 0, status_local: r.status_local, atualizado: r.atualizado, dados: r.dados, fotos_aparelho: noAparelho(r.id_apontamento) }));
       let qtd = 0, aba = 0;
-      try { qtd = Number(await SN.VL.meta.get('qtd|' + id_rota)) || 0; } catch (e) { }
+      const rotaLocal = ((SN.vst.dados || {}).rotas || []).find(r => r.id_rota === id_rota);
+      qtd = rotaLocal ? await SN.vst.qtdAbas(rotaLocal) : 0;
       try { aba = Number(sessionStorage.getItem('vst_aba_' + id_rota)) || 1; } catch (e) { }
       const p = SN.VF && SN.VF.posicao;
       f.ultimo = Date.now();
@@ -108,7 +109,8 @@
       let abas = '';
       for (let i = 1; i <= ctx.qtd; i++) {
         const s = ctx.slots[i], v = s && s.dados;
-        const nome = v ? (v.cs_nova ? 'CS nova' : (v.id_cs || '—')) : ((r.cs_planejadas || [])[i - 1] || '—');
+        const extra = !v && i > (r.cs_planejadas || []).length; // aba a mais aberta pelo técnico, sem nada preenchido
+        const nome = v ? (v.cs_nova ? 'CS nova' : (v.id_cs || '—')) : extra ? 'aba extra (vazia)' : ((r.cs_planejadas || [])[i - 1] || '—');
         const falta = s && s.status_local !== 'enviada' ? SN.vst.validarEspelho(ctx, v).erros.length : 0;
         abas += `<button class="vst-aba ${i === A.aba ? 'ativa' : ''}" data-av-aba="${i}"><span class="small">CS ${i}${ctx.quem[i] ? ' · técnico aqui' : ''}</span><b>${esc(nome)}</b>${rotuloSlot(s)}
           ${falta ? `<span class="small muted">faltam ${falta}</span>` : ''}</button>`;
