@@ -209,12 +209,13 @@ SN.vst = SN.vst || {};
         ['Não consta no cadastro', dv.nao_consta], ['Cabos divergentes', dv.cabos_divergentes]]
         .forEach(([k, v]) => doc.linha(k, typeof v === 'number' ? SN.num(v) : v));
       doc.secao('CS da rota');
-      // Distância da CS anterior (GPS do técnico, na ordem do relatório).
-      let ant = null; const dist = {};
-      vs.sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0) || String(a.gps_em || '').localeCompare(String(b.gps_em || ''))).forEach(v => {
-        if (v.lat == null || v.lng == null || v.lat === '' || v.lng === '') return;
-        if (ant) dist[v.id_vistoria] = Math.round(VR.distanciaM(ant.lat, ant.lng, v.lat, v.lng)); ant = v; });
-      tabela(doc, ['Nº', 'CS', 'Da anterior', 'Abriu', 'Conclusão', 'Prioridade', 'Revisão', 'Revisor'],
+      // Distância da CS anterior: GPS do técnico, na sequência contínua da rota (a mesma da medição),
+      // não na ordem das abas. CS sem GPS vão para o fim.
+      const seqCampo = VR.metrosCampoRota(rota, vs, { todas: true }), dist = {}, pos = {};
+      (seqCampo.trechos || []).forEach(t => { dist[t.id_vistoria] = t.metros; });
+      (seqCampo.sequencia || []).forEach((id, i) => { pos[id] = i; });
+      vs.sort((a, b) => (pos[a.id_vistoria] != null ? pos[a.id_vistoria] : 1e9) - (pos[b.id_vistoria] != null ? pos[b.id_vistoria] : 1e9) || (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+      tabela(doc, ['Aba', 'CS', 'Da anterior', 'Abriu', 'Conclusão', 'Prioridade', 'Revisão', 'Revisor'],
         vs.map(v => [v.ordem, v.cs_nova ? 'fora do cadastro' : v.id_cs, dist[v.id_vistoria] != null ? SN.num(dist[v.id_vistoria]) + ' m' : (v.lat == null || v.lat === '' ? 'sem GPS' : '—'),
           v.abriu === 'sim' ? 'Sim' : v.abriu === 'nao' ? 'Não' : '—', rot('conclusao', v.conclusao), rot('prioridade', v.prioridade), stRev(v.status_revisao), v.revisor || '']),
         [10, 32, 20, 12, 34, 22, 28, 32]);

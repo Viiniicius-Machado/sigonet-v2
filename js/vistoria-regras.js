@@ -614,17 +614,32 @@ var VR = (function () {
     var previsto = numero(rota.extensao_km) ? Math.round(Number(rota.extensao_km) * 1000) : 0;
     var nome = function (v) { return v.cs_nova ? 'fora do cadastro' : v.id_cs; };
     var trechos = [], sem = [], ant = null, m = 0;
-    vs.forEach(function (v) {
-      if (!numero(v.lat) || !numero(v.lng)) { sem.push(nome(v)); return; }
-      if (ant) { var d = Math.round(R.distanciaM(ant.lat, ant.lng, v.lat, v.lng)); m += d; trechos.push({ de: nome(ant), para: nome(v), ordem: v.ordem, metros: d }); }
+    // Sequência: caminho contínuo entre os pontos de GPS de campo (sem ir e voltar), começando
+    // pela 1ª CS da rota que foi vistoriada. A ordem das abas do técnico não vale: ele pode
+    // preencher fora da sequência da rua, e isso criava idas e voltas que inflavam os metros.
+    var comPos = vs.filter(function (v) { if (numero(v.lat) && numero(v.lng)) return true; sem.push(nome(v)); return false; });
+    var porId = {}; comPos.forEach(function (v) { porId[v.id_vistoria] = v; });
+    var plan = rota.cs_planejadas || [], ini = null;
+    for (var i = 0; i < plan.length && !ini; i++) comPos.forEach(function (v) { if (!ini && v.id_cs === plan[i]) ini = v.id_vistoria; });
+    var seq = R.ordenarMenorCaminho(comPos.map(function (v) { return v.id_vistoria; }),
+      comPos.map(function (v) { return { id_cs: v.id_vistoria, lat: v.lat, lng: v.lng }; }), { inicio: ini || undefined });
+    if (ini && seq[0] !== ini && seq[seq.length - 1] === ini) seq.reverse(); // menos de 3 pontos: só ajusta o sentido
+    seq.forEach(function (id, k) {
+      var v = porId[id];
+      if (ant) { var d = Math.round(R.distanciaM(ant.lat, ant.lng, v.lat, v.lng)); m += d; trechos.push({ de: nome(ant), para: nome(v), ordem: k + 1, metros: d, id_vistoria: v.id_vistoria }); }
       ant = v;
     });
+    // Trecho muito maior que os outros (GPS fora do lugar ou CS longe da rota): sinaliza para conferir.
+    if (trechos.length >= 3) {
+      var ord = trechos.map(function (t) { return t.metros; }).sort(function (a, b) { return a - b; }), med = ord[Math.floor(ord.length / 2)];
+      trechos.forEach(function (t) { if (t.metros > 1000 && t.metros > 5 * Math.max(med, 50)) t.conferir = true; });
+    }
     var comGps = vs.length - sem.length;
     if (vs.length && !comGps) { // sem GPS nenhum: rateio do previsto pelas CS contadas
       var n = (rota.cs_planejadas || []).length || 1;
       return { metros: Math.round(previsto * vs.length / n), previsto_m: previsto, origem: 'previsto', cs: vs.length, trechos: [], sem_gps: sem };
     }
-    return { metros: m, previsto_m: previsto, origem: 'campo', cs: vs.length, trechos: trechos, sem_gps: sem };
+    return { metros: m, previsto_m: previsto, origem: 'campo', cs: vs.length, trechos: trechos, sem_gps: sem, sequencia: seq };
   };
 
   // Medição por prestador: CS aprovadas e metros de campo (relatório do técnico)
