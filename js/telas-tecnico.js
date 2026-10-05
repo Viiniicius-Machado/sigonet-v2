@@ -60,7 +60,8 @@ SN.rota('/tec', () => {
       <div class="small">${SN.esc(c.tipo || '')}${c.cat2 ? ' · ' + SN.esc(c.cat2) : ''}</div>
       <div class="small muted">📍 ${SN.esc([c.endereco, c.cidade].filter(Boolean).join(' - ') || '—')}</div>
       <div style="margin-top:6px"><span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${papel === 'apoio' ? '<span class="badge">APOIO</span>' : ''}
-        ${SN.pendenciasPos(c).map(x => `<span class="badge alerta">${x}</span>`).join(' ')}</div></div>`;
+        ${SN.pendenciasPos(c).map(x => `<span class="badge alerta">${x}</span>`).join(' ')}
+        ${c.validacao && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) ? `<span class="badge ${SN.VALIDACAO_ST[c.validacao.status].cls}">${SN.VALIDACAO_ST[c.validacao.status].rot}</span>` : ''}</div></div>`;
   };
   const novas = ativas.filter(c => c.status === 'ATRIBUIDO').length;
   SN.cascaTec('fila', `
@@ -103,7 +104,7 @@ SN.rota('/tec/os/:id', id => {
   const libera = SN.faseModulos(c);
   const temFibra = TIPOS_COM_FIBRA.includes(c.tipo);
   const acao = {
-    ATRIBUIDO: ['aceitar', '✅ Aceitar OS'], ACEITO: ['deslocar', '🚗 Iniciar deslocamento'], EM_DESLOCAMENTO: ['chegar', '📍 Cheguei no local']
+    ATRIBUIDO: ['aceitar', '✅ Aceitar OS'], ACEITO: ['deslocar', '🚗 Iniciar deslocamento · ver previsão de chegada'], EM_DESLOCAMENTO: ['chegar', '📍 Cheguei no local']
   }[prev ? '' : c.status];
   SN.cascaTec('fila', `
     <a href="#/tec" class="small">← Minha fila</a>
@@ -127,6 +128,21 @@ SN.rota('/tec/os/:id', id => {
     ${prev ? `<div class="aviso info" style="margin-bottom:10px">🧭 Esta OS é a rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. O trabalho é feito na rota; a OS conclui sozinha quando tudo for aprovado na revisão.
       ${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}
       <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('#/tec/vistoria/${encodeURIComponent(prev.id_rota)}')">Abrir rota ${SN.esc(prev.id_rota)}</button></div>` : ''}
+    ${titular && c.status === 'EM_DESLOCAMENTO' ? (() => { const pi = SN.previsaoInfo(c), nav = SN.appNavegar();
+      return `<div class="card" style="margin-bottom:10px"><h3>🚗 A caminho</h3>
+        ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)</div>`
+          : `<div class="aviso alerta small">${SN.esc(pi ? pi.txt : 'Previsão ainda não calculada.')}</div>`}
+        <div class="grid g2" style="gap:8px;margin-top:10px">
+          <a class="btn ${nav === 'maps' ? 'prim' : ''}" data-nav="maps" href="${SN.esc(SN.linkNavegar(c, 'maps'))}" target="_blank" rel="noopener">🗺 Google Maps</a>
+          <a class="btn ${nav === 'waze' ? 'prim' : ''}" data-nav="waze" href="${SN.esc(SN.linkNavegar(c, 'waze'))}" target="_blank" rel="noopener">🚙 Waze</a></div>
+        <button class="btn bloco sm" id="bRecalc" style="margin-top:8px">↻ Recalcular previsão daqui</button></div>`; })() : ''}
+    ${titular && emCampo && SN.exigeValidacao(c) ? (() => { const v = c.validacao || {}, quem = SN.nomeValidador(c);
+      return `<div class="card" style="margin-bottom:10px;border-left:4px solid ${v.status === 'VALIDADA' ? 'var(--ok)' : v.status === 'FALHA' ? 'var(--erro)' : 'var(--alerta,#d97706)'}"><h3>🛎 Validação ${quem}</h3>
+        ${v.status === 'VALIDADA' ? `<div class="aviso ok small">✔ Validado por ${SN.esc(v.respondidaPor || quem)} às ${SN.hora(v.respondidaEm)}. Termine o relatório e conclua.</div>`
+        : v.status === 'PEDIDA' ? `<div class="aviso info small">Aguardando o ${quem} validar (pedido às ${SN.hora(v.pedidaEm)}). Enquanto isso, preencha o relatório abaixo.</div>`
+        : `${v.status === 'FALHA' ? `<div class="aviso erro small" style="margin-bottom:8px">${quem}: ainda com falha — ${SN.esc(v.motivo || '')}</div>` : '<p class="small muted">Terminou o serviço? Peça a validação: o relógio de tempo em campo para aqui. Você pode preencher o relatório enquanto espera.</p>'}
+          <input class="inp" id="vObs" placeholder="Observação para o ${quem} (opcional)" style="margin-bottom:8px">
+          <button class="btn prim lg bloco" id="bPedirVal">🛎 ${v.status === 'FALHA' ? 'Pedir validação de novo' : 'Pedir validação ao ' + quem}</button>`}</div>`; })() : ''}
     ${titular && acao ? `<button class="btn prim lg bloco" id="bAcao">${acao[1]}</button>` : ''}
     ${titular && emCampo ? `
       <div class="card" style="margin-top:12px"><h3>Diagnóstico e tratamento</h3>
@@ -185,7 +201,13 @@ SN.rota('/tec/os/:id', id => {
   if (bA) bA.onclick = async () => {
     const agora = SN.agora();
     if (c.status === 'ATRIBUIDO') { c.status = 'ACEITO'; c.tempos.aceite = agora; SN.hist(c, 'Aceite', c.tecnico); }
-    else if (c.status === 'ACEITO') { c.status = 'EM_DESLOCAMENTO'; c.tempos.deslocamento = agora; SN.hist(c, 'Deslocamento', ''); }
+    else if (c.status === 'ACEITO') {
+      c.status = 'EM_DESLOCAMENTO'; c.tempos.deslocamento = agora; SN.salvar();
+      bA.disabled = true; bA.textContent = 'Calculando a previsão de chegada…';
+      const d = await SN.calcularPrevisao(c);
+      SN.hist(c, 'Deslocamento', d.previsaoChegada ? `previsão ${SN.hora(d.previsaoChegada)} · ${SN.num(d.distancia_m / 1000, 1)} km` : 'sem previsão: ' + d.erro);
+      if (!d.previsaoChegada) SN.toast('Deslocamento iniciado, mas sem previsão: ' + d.erro + '.', 'erro');
+    }
     else if (c.status === 'EM_DESLOCAMENTO') {
       bA.disabled = true; bA.textContent = 'Obtendo GPS…';
       c.gpsChegada = await new Promise(res => {
@@ -198,6 +220,13 @@ SN.rota('/tec/os/:id', id => {
     }
     SN.log('TECNICO_' + c.status, c.id, ''); SN.salvar(); SN.render();
   };
+  SN.$$('[data-nav]').forEach(a => a.addEventListener('click', () => SN.definirAppNavegar(a.dataset.nav)));
+  const bRc = SN.$('#bRecalc');
+  if (bRc) bRc.onclick = async () => { const d = await SN.calcularPrevisao(c);
+    SN.hist(c, 'Previsão recalculada', d.previsaoChegada ? SN.hora(d.previsaoChegada) : d.erro); SN.salvar(); SN.render(); };
+  const bPv = SN.$('#bPedirVal');
+  if (bPv) bPv.onclick = () => { if (SN.$('#rCausa')) salvarRfo(); SN.pedirValidacao(c, SN.$('#vObs').value.trim()); SN.log('PEDIR_VALIDACAO', c.id, '');
+    SN.salvar(); SN.toast('Pedido enviado ao ' + SN.nomeValidador(c) + '. Preencha o relatório enquanto aguarda.', 'ok'); SN.render(); };
   const salvarRfo = () => {
     const cl = getClass();
     if (cl.sla && (cl.cat2 !== c.cat2 || cl.cat3 !== c.cat3 || cl.cat4 !== c.cat4)) {
@@ -273,6 +302,7 @@ SN.rota('/tec/os/:id', id => {
       if (!c.rfo.ceo) { SN.salvar(); return SN.toast('Responda se trabalhou na CEO.', 'erro'); }
       if (c.rfo.ceo.trabalhou === 'sim' && !c.rfo.ceo.tipo) { SN.salvar(); return SN.toast('Informe o caso da CEO (nova → nova, nova → existente ou existente → existente).', 'erro'); }
       if (!cl.sla) return SN.toast('Complete as categorias.', 'erro');
+      if (SN.exigeValidacao(c) && !SN.validado(c)) { SN.salvar(); return SN.toast(c.validacao && c.validacao.status === 'PEDIDA' ? 'Aguarde o ' + SN.nomeValidador(c) + ' validar para concluir.' : 'Peça a validação ao ' + SN.nomeValidador(c) + ' antes de concluir.', 'erro'); }
       const semFoto = !(c.fotos || []).some(f => f.tipo === 'imagem');
       if (!await SN.confirmar('Concluir atendimento', (semFoto ? '<b>Atenção: nenhuma foto anexada.</b><br>' : '') + 'Confirmar a conclusão técnica? O chamado segue para o fechamento do NOC.', 'Concluir', 'ok')) return;
       c.status = 'CONCLUIDO_TECNICO'; c.tempos.conclusaoTecnica = SN.agora(); c.motivoDevolucao = '';

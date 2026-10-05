@@ -452,7 +452,7 @@ SN.badgeStatus = s => `<span class="badge ${SN.STATUS[s] ? SN.STATUS[s].cls : ''
 // Etapas da jornada operacional (linha do tempo da tela do chamado).
 SN.ETAPAS = [
   ['abertura', 'Abertura'], ['classificacao', 'Classificação'], ['atribuicao', 'Despacho'], ['aceite', 'Aceite'],
-  ['deslocamento', 'Deslocamento'], ['chegada', 'Em campo'], ['diagnostico', 'Diagnóstico'],
+  ['deslocamento', 'Deslocamento'], ['chegada', 'Em campo'], ['validacaoPedida', 'Pediu validação'], ['validacao', 'Validado'], ['diagnostico', 'Diagnóstico'],
   ['conclusaoTecnica', 'Conclusão técnica'], ['fechamento', 'Fechamento']
 ];
 
@@ -460,6 +460,9 @@ SN.ETAPAS = [
 //   MTTD = Abertura → Despacho  (tempo até o chamado ser detectado/triado e ir pra equipe)
 //   MTTA = Despacho → Chegada em campo  (tempo de atendimento)
 //   MTTR = Abertura → Conclusão técnica  (tempo de resolução)
+//   Fim do atendimento = pedido de validação ACEITO (com validação) ou conclusão técnica (sem)
+//   Tempo em campo = Chegada → fim do atendimento (eficiência do técnico no local)
+//   Espera de validação = quanto o NOC/O&M levou para responder (soma dos pedidos)
 //   TMC  = Chegada → Conclusão técnica  (tempo médio em campo)
 //   SLA  = Conclusão técnica ≤ Prazo limite (Abertura + SLA da matriz)
 // Nada administrativo (LPU, materiais, fibra, fechamento pelo NOC) entra nessas contas.
@@ -470,10 +473,16 @@ SN.ehPlanejada = c => !!(c && (c.planejada || (c.preventiva && c.preventiva.id_r
 SN.metricas = c => {
   const t = c.tempos || {}, plan = SN.ehPlanejada(c);
   const mttd = plan ? null : SN.min(t.abertura, t.atribuicao), mtta = plan ? null : SN.min(t.atribuicao, t.chegada);
-  const mttr = plan ? null : SN.min(t.abertura, t.conclusaoTecnica), tmc = SN.min(t.chegada, t.conclusaoTecnica);
+  // Fim do atendimento: hora em que o técnico pediu a validação que foi ACEITA (não a hora em que o
+  // NOC/O&M respondeu). Pedido pendente ou "ainda com falha": o tempo segue correndo (fim = null).
+  // Sem validação (chamados antigos, Preventiva): a conclusão técnica.
+  const v = c.validacao, fim = v ? (v.status === 'VALIDADA' ? t.validacaoPedida : null) : t.conclusaoTecnica;
+  const mttr = plan ? null : SN.min(t.abertura, fim), tmc = SN.min(t.chegada, fim);
   let sla = null;
-  if (c.prazoLimite && t.conclusaoTecnica) sla = new Date(t.conclusaoTecnica) <= new Date(c.prazoLimite);
-  return { mttd, mtta, mttr, tmc, sla };
+  if (c.prazoLimite && fim) sla = new Date(fim) <= new Date(c.prazoLimite);
+  // Espera de validação (tempo ocioso): soma de quanto o NOC/O&M levou para responder cada pedido.
+  const espera = v && v.esperaMin != null ? v.esperaMin : null;
+  return { mttd, mtta, mttr, tmc, sla, espera, fim };
 };
 // IRR (Índice de Recursos Repetitivos): um chamado é reincidente quando o mesmo
 // circuito (etiqueta) teve outro chamado encerrado nos 30 dias anteriores à sua
@@ -525,7 +534,8 @@ SN.htmlHoraHomem = hh => `<div class="faixa small"><b>Hora-homem (automática)</
 
 SN.prazoInfo = c => {
   if (!c.prazoLimite) return { txt: 'Sem SLA (classificar)', cls: '' };
-  const fim = c.tempos && c.tempos.conclusaoTecnica;
+  // Relógio do SLA para no fim do atendimento (pedido de validação aceito; sem validação, a conclusão técnica).
+  const fim = c.tempos && (c.validacao ? (c.validacao.status === 'VALIDADA' ? c.tempos.validacaoPedida : null) : c.tempos.conclusaoTecnica);
   const ref = fim ? new Date(fim) : new Date();
   const diff = Math.round((new Date(c.prazoLimite) - ref) / 60000);
   if (SN.ehPlanejada(c)) {

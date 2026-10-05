@@ -284,8 +284,10 @@ SN.rota('/servicedesk', () => {
   }
   SN.casca('servicedesk', `
     <div class="cab-pagina"><div><h1>Service Desk · administrativo</h1><p>Contabilização, conta contábil, tratativa financeira e pagamento — ciclo independente do chamado.</p></div></div>
+    ${SN.htmlFilaValidacao('OEM', SN.temTela('chamados'))}
     <div class="abas">${[['contabil', 'Contabilização', noSD.length], ['pagamento', 'Tratativa de pagamento', pags.filter(p => p.status !== 'PAGO').length], ['produtividade', 'CLT e contratos fixos', '']].map(([k, r, n]) =>
       `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>${html}`);
+  SN.ligarValidacao();
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaSD = b.dataset.aba; SN.render(); });
   SN.$$('[data-sd]').forEach(tr => tr.onclick = () => SN.contabilizar(tr.dataset.sd));
   SN.$$('[data-lote]').forEach(b => b.onclick = async () => {
@@ -620,12 +622,14 @@ SN.telaFibra = abrirId => {
   ];
   SN.casca('fibra', `
     <div class="cab-pagina"><div><h1>Cadastro de Fibra · evidência técnica</h1><p>Fotografia formal do que foi executado em campo. Fila própria de validação — não interfere no MTTR, SLA ou fechamento do chamado.</p></div></div>
+    ${SN.htmlFilaValidacao('OEM', SN.temTela('chamados'))}
     ${grupos.map(([st, tit, sub]) => { const l = SN.db.fibras.filter(x => x.status === st).sort((a, b) => (b.enviadoEm || '').localeCompare(a.enviadoEm || ''));
       if (st === 'AGUARDANDO_VALIDACAO' && oem) return `<div class="card"><h3>${tit} <span class="badge">${l.length}</span></h3><p class="muted small">Etapa do líder — a sala técnica atua a partir da etapa seguinte.</p></div>`;
       return `<div class="card"><div class="card-tit"><h3>${tit} <span class="badge">${l.length}</span></h3><span class="muted small">${sub}</span></div>
       ${l.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Registro</th><th>Chamado</th><th>Cliente</th><th>Técnico</th><th>CEOs</th><th>Enviado</th></tr></thead><tbody>
         ${l.map(x => `<tr class="clic" data-id="${x.id}"><td class="mono">${x.id}</td><td class="mono">${x.chamadoId}</td><td>${SN.esc(x.cliente)}</td><td>${SN.esc(x.cab.tecnico)}</td>
           <td>${x.ceos.map(e => SN.esc(e.numero)).join(', ')}</td><td class="nowrap">${SN.dt(x.enviadoEm)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Vazio.</p>'}</div>`; }).join('')}`);
+  SN.ligarValidacao();
   SN.$$('tr[data-id]').forEach(tr => tr.onclick = () => SN.detalheFibra(tr.dataset.id));
   if (abrirId) SN.detalheFibra(abrirId);
 };

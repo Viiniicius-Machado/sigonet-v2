@@ -228,9 +228,10 @@ SN.enviarMudancas = async () => {
   // marca como enviado já (se falhar, desfaz e tenta de novo)
   ops.forEach(o => { if (o.excluir) delete SN._snap[o.colecao][o.id]; else SN._snap[o.colecao][o.id] = o._s; });
   try {
-    const r = await SN.api('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o), assinaturas: Object.keys(assin).length ? assin : undefined });
+    // Chamado vai com a base (o que este aparelho tinha do servidor) para o servidor juntar mudanças em partes diferentes.
+    const r = await SN.api('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o.colecao === 'chamados' && _ant && !o.excluir ? { ...o, base: _ant } : o), assinaturas: Object.keys(assin).length ? assin : undefined });
     Object.assign(SN._assinEnviadas, assin); SN.offline = false;
-    let conflitos = 0;
+    let conflitos = 0, mesclados = 0;
     r.resultados.forEach(x => {
       if (SN._semResposta[x.colecao]) delete SN._semResposta[x.colecao][x.id]; // teve resposta
       SN._errosEnvio[x.colecao + '|' + x.id] = x.erro || '';
@@ -251,9 +252,15 @@ SN.enviarMudancas = async () => {
         }
       }
       else if (x.excluido) delete ver[x.id];
+      else if (x.mesclado) { // o servidor juntou com a mudança de outra pessoa: a tela passa a mostrar o resultado
+        const k = SN.CHAVES[x.colecao], lista = SN.db[x.colecao], i = lista.findIndex(d => String(d[k]) === String(x.id));
+        if (i >= 0) lista[i] = x.mesclado; else lista.push(x.mesclado);
+        ver[x.id] = x.v; SN._snap[x.colecao][x.id] = snapDoc(x.colecao, x.mesclado); mesclados++;
+      }
       else ver[x.id] = x.v;
     });
     if (conflitos) { SN.toast(`${conflitos} registro(s) tinham sido alterados por outra pessoa — a tela foi atualizada com a versão mais nova. Refaça sua alteração se precisar.`, 'erro'); SN.aoMudarBase(); }
+    else if (mesclados) SN.aoMudarBase();
   } catch (e) {
     ops.forEach(o => { if (!o.excluir) { delete SN._snap[o.colecao][o.id]; (SN._semResposta[o.colecao] = SN._semResposta[o.colecao] || {})[o.id] = o._s; } }); // volta a ser "pendente"
     pendente = true;

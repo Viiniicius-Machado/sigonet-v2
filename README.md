@@ -14,13 +14,33 @@ Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a p
 
 | Área | O que faz |
 |---|---|
-| **Chamados (NOC)** | Abertura da OS, classificação pela matriz oficial (SLA e conta contábil), despacho, linha do tempo (MTTD, MTTA, MTTR, SLA), RFO, anexos e PDF do atendimento. |
-| **App do técnico** | Fila de OS, aceite, deslocamento, chegada com GPS, fotos com carimbo (estilo Timemark, com a logo oficial Net Turbo) e conclusão técnica. Toque na foto abre em tela cheia, com zoom para ler o carimbo. Tem também a LPU, os materiais e a fibra do atendimento. |
+| **Chamados (NOC)** | Abertura da OS (origem NOC, Delivery, Elleven ou OEM), classificação pela matriz oficial (SLA e conta contábil), despacho, previsão de chegada do técnico, fila de **validação em campo**, linha do tempo (MTTD, MTTA, MTTR, SLA), RFO, anexos e PDF do atendimento. |
+| **App do técnico** | Fila de OS, aceite, deslocamento com **previsão de chegada automática** (abre Google Maps ou Waze), chegada com GPS, **pedido de validação** ao NOC/O&M, fotos com carimbo (estilo Timemark, com a logo oficial Net Turbo) e conclusão técnica. Toque na foto abre em tela cheia, com zoom para ler o carimbo. Tem também a LPU, os materiais e a fibra do atendimento. |
 | **Gestão de LPU** | Conferência e aprovação dos itens que o prestador cobra, por conta contábil e budget. |
 | **Service Desk, Materiais e Cadastro de Fibra** | Gestões ligadas ao chamado, cada uma com seu ciclo; elas não mexem no MTTR/SLA. |
-| **Portal de Gestão** | KPIs do mês nas visões **Global, Rompimento, Massiva e Improdutivas**, com MTTD, MTTA, MTTR, SLA e **IRR** (reincidência por circuito). Exporta para Excel. |
-| **Preventiva** | Rotas de preventiva **aérea** (KMZ, metros percorridos, postes, cordoalha, plaquetas, caixas e sobra técnica; meta mensal) e **subterrânea** (vistoria caixa a caixa, com fotos padronizadas e listas fechadas). Telas: Planejamento, Revisão e Dashboard, mais o app do técnico, que funciona offline. A cobrança sai pelo fluxo normal de chamado e LPU. O manual completo (`docs/PREVENTIVA.md`) fica na pasta de trabalho. |
+| **Portal de Gestão** | KPIs do mês nas visões **Global, Rompimento, Massiva e Improdutivas**, com MTTD, MTTA, MTTR, SLA, **Tempo em campo**, **Espera de validação** e **IRR** (reincidência por circuito). Eficiência por técnico. Exporta para Excel. |
+| **Preventiva** | Rotas de preventiva **aérea** (KMZ, metros percorridos, postes, cordoalha, plaquetas, caixas e sobra técnica; meta mensal) e **subterrânea** (vistoria caixa a caixa, com fotos padronizadas e listas fechadas). Telas: Planejamento, Revisão (com filtros para escolher o que validar primeiro) e Dashboard, mais o app do técnico, que funciona offline. A cobrança sai pelo fluxo normal de chamado e LPU. O manual completo (`docs/PREVENTIVA.md`) fica na pasta de trabalho. |
 | **Cadastros e Acessos, Auditoria** | Empresas, técnicos, liderança e telas liberadas por pessoa; log de tudo o que foi alterado. |
+
+## Jornada em campo do chamado
+
+1. **Aceite** da OS pelo técnico.
+2. **Iniciar deslocamento · ver previsão de chegada:** o app pega o GPS do técnico e calcula a rota de carro até o cliente (pelo link do mapa do chamado ou pelo endereço). O cálculo é do OpenStreetMap e **não considera trânsito**. O técnico navega pelo Google Maps ou pelo Waze, e a gestão vê "chega ~hh:mm" no chamado.
+3. **Cheguei no local** (registra o GPS).
+4. **Pedir validação:** terminado o serviço, o técnico pede a validação e preenche o relatório (RFO) enquanto espera. Quem valida:
+   - origem **OEM** → O&M (cargo OEM, Encarregado, Gestor ou Gerente);
+   - demais origens → NOC (quem tem a tela Chamados).
+   A resposta é **Validado** ou **Ainda com falha** (volta ao técnico com o motivo).
+5. **Concluir atendimento:** só depois de validado.
+
+**Como os tempos são contados**
+- MTTR, SLA e **Tempo em campo** terminam na hora em que o técnico **pediu** a validação que foi aceita, e não na hora da resposta.
+- Se voltar "ainda com falha", o tempo continua correndo até um novo pedido aceito.
+- **Tempo em campo** = chegada no local → pedido de validação aceito (eficiência do técnico).
+- **Espera de validação** = soma do tempo que o NOC/O&M levou para responder (tempo ocioso).
+- Chamados sem validação (antigos e Preventiva) terminam na conclusão técnica.
+
+O técnico e o NOC podem mexer no mesmo chamado ao mesmo tempo (RFO de um lado, validação do outro): o servidor junta as duas alterações. Só o mesmo campo alterado pelos dois vira aviso de conflito.
 
 ## Preventiva: como criar as atividades
 
@@ -29,6 +49,12 @@ Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a p
 2. **A partir de uma OS aberta no NOC:** no chamado do tipo Preventiva, clique em **🧭 Transformar em rota de Preventiva**. A rota fica ligada ao mesmo chamado, sem abrir outro.
 
 Só o que foi **aprovado na Revisão** entra na medição e no pagamento.
+
+**Mesma CS em duas equipes não:** uma CS que está na rota de uma equipe não entra na rota de outra, nem com "Forçar". O "Forçar" serve só para vistoriar de novo uma CS já concluída.
+
+**Mudar uma rota já despachada:** em Planejamento → Rotas, o botão **CS da rota** tira, soma ou troca CS sem retirar o despacho. CS com vistoria já enviada não sai. CS tirada fica livre para outra equipe, e o técnico não consegue mais enviá-la.
+
+**Revisão:** o selo **Refeita após rejeição** só aparece quando a CS foi rejeitada e o técnico mandou de novo. Reenvio automático por falha de sinal não conta e não tira a CS do lugar na fila.
 
 **Prazo da atividade planejada:** o chamado da Preventiva não segue o SLA em horas da matriz. O prazo é o fim do dia da data-limite da rota, e o SLA é "concluída até a data". Por ser planejada, a Preventiva fica fora das médias de MTTD, MTTA e MTTR do Portal (que medem a corretiva); conta o tempo em campo.
 
@@ -51,6 +77,7 @@ index.html        tela única (roteamento por #hash)
 css/sigonet.css   tema
 js/nucleo.js      base comum (SN): rotas, modais, banco local, sessão
 js/servidor.js    sincronização com o Apps Script
+js/campo.js       jornada em campo: previsão de chegada, validação NOC/O&M
 js/telas-*.js     telas de cada módulo
 js/vistoria-*.js  Preventiva: listas, regras (compartilhadas com o servidor), fila offline, câmera, PDF
 js/catalogos.js   matriz de classificação e catálogo de LPU

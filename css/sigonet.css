@@ -318,7 +318,7 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 .vst-col-val{position:absolute;top:-18px;left:-10px;right:-10px;text-align:center;font-size:.72rem;font-weight:700;color:var(--texto)}
 @media (max-width:820px){ .vst-rev-sec{grid-template-columns:1fr} .vst-rev-fotos figure,.vst-rev-fotos .img{width:130px} .vst-rev-fotos .img{height:98px} }
 /* Portal: 7 indicadores (Volume, MTTD, MTTA, MTTR, SLA, Eficiência, IRR) numa linha em tela larga */
-.kpis7{display:grid;gap:12px;grid-template-columns:repeat(7,minmax(0,1fr))}
+.kpis7{display:grid;gap:12px;grid-template-columns:repeat(9,minmax(0,1fr))}
 .kpis7 .kpi{padding:12px}
 .kpis7 .kpi .val{font-size:1.4rem}
 @media (max-width:1150px){ .kpis7{grid-template-columns:repeat(4,minmax(0,1fr))} }

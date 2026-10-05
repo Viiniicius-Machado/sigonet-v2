@@ -47,14 +47,17 @@ SN.rota('/portal', () => {
   const concl = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.conclusaoTecnica) === f.mes);
   const ms = concl.map(c => ({ c, m: SN.metricas(c) }));
   const dentro = ms.filter(x => x.m.sla === true).length, fora = ms.filter(x => x.m.sla === false).length;
+  // Tempo em campo (eficiência): chegada → pedido de validação; só chamados que passaram pela validação.
+  const comVal = ms.filter(x => x.c.validacao && x.m.tmc != null), tCampo = SN.media(comVal.map(x => x.m.tmc));
+  const comEsp = ms.filter(x => x.m.espera != null), tEspera = SN.media(comEsp.map(x => x.m.espera));
   const sla = concl.length ? dentro / concl.length : null;
   // Eficiência: sobre o TOTAL do mês — dos chamados abertos no mês, quantos já foram resolvidos no prazo.
   const noPrazo = abertos.filter(c => SN.metricas(c).sla === true).length;
   const ef = abertos.length ? noPrazo / abertos.length : null;
   // Eficiência por técnico
   const porTec = {};
-  ms.forEach(({ c, m }) => { const k = c.tecnico; const o = porTec[k] = porTec[k] || { emp: c.empresa, n: 0, d: 0, f: 0, mttr: [], mtta: [], hh: 0 };
-    o.n++; if (m.sla === true) o.d++; if (m.sla === false) o.f++; o.mttr.push(m.mttr); o.mtta.push(m.mtta);
+  ms.forEach(({ c, m }) => { const k = c.tecnico; const o = porTec[k] = porTec[k] || { emp: c.empresa, n: 0, d: 0, f: 0, mttr: [], mtta: [], campo: [], hh: 0 };
+    o.n++; if (m.sla === true) o.d++; if (m.sla === false) o.f++; o.mttr.push(m.mttr); o.mtta.push(m.mtta); if (c.validacao && m.tmc != null) o.campo.push(m.tmc);
     if (SN.empresa(c.empresa).vinculo === 'CLT') o.hh += SN.horaHomem(c, 'titular').horas; });
   const hhTotal = Object.values(porTec).reduce((s, o) => s + o.hh, 0);
   const tecs = Object.entries(porTec).sort((a, b) => b[1].n - a[1].n);
@@ -98,7 +101,9 @@ SN.rota('/portal', () => {
       <div class="kpi destaque"><div class="rot">Volume</div><div class="val">${abertos.length}</div><div class="sub">chamados abertos no mês</div></div>
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho</div></div>
       <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo</div></div>
-      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → conclusão</div></div>
+      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → fim do atendimento</div></div>
+      <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(tCampo)}</div><div class="sub">chegada → pedido de validação aceito · ${comVal.length} chamado(s)</div></div>
+      <div class="kpi"><div class="rot">Espera de validação</div><div class="val">${SN.dur(tEspera)}</div><div class="sub">tempo ocioso até o NOC/O&amp;M responder · ${comEsp.length} chamado(s)</div></div>
       <div class="kpi"><div class="rot">SLA</div><div class="val">${sla == null ? '—' : SN.num(sla * 100) + '%'}</div><div class="sub">${dentro} dentro · ${fora} fora (${concl.length} concluídos)</div></div>
       <div class="kpi"><div class="rot">Eficiência</div><div class="val">${ef == null ? '—' : SN.num(ef * 100) + '%'}</div><div class="sub">${noPrazo} de ${abertos.length} chamados do mês resolvidos no prazo</div></div>
       <a class="kpi" href="javascript:void 0" id="kIrr" title="Ver o detalhe do IRR" style="color:inherit;text-decoration:none"><div class="rot">IRR ↓</div>
@@ -113,11 +118,11 @@ SN.rota('/portal', () => {
         <td class="num" style="color:${corIrr(r.irr)}" title="${r.rep} reincidentes de ${r.base}">${pctTxt(r.irr)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="grid g2" style="margin-top:14px;grid-template-columns:minmax(0,3fr) minmax(0,2fr)">
       <div class="card"><div class="card-tit"><h3>Eficiência por técnico</h3><span class="muted small">concluídos no mês</span></div>
-        <div class="tabela-wrap" style="max-height:420px"><table class="tab"><thead><tr><th>Técnico</th><th>Empresa</th><th class="num">Chamados</th><th class="num">Dentro</th><th class="num">Fora</th><th class="num">SLA</th><th class="num">MTTR</th><th class="num" title="Hora-homem automática (CLT/NETTURBO)">h·h</th></tr></thead><tbody>
+        <div class="tabela-wrap" style="max-height:420px"><table class="tab"><thead><tr><th>Técnico</th><th>Empresa</th><th class="num">Chamados</th><th class="num">Dentro</th><th class="num">Fora</th><th class="num">SLA</th><th class="num">MTTR</th><th class="num" title="Chegada → pedido de validação (média)">Tempo em campo</th><th class="num" title="Hora-homem automática (CLT/NETTURBO)">h·h</th></tr></thead><tbody>
         ${tecs.map(([t, o]) => `<tr><td>${SN.esc(SN.nomeExibicao(t))}</td><td>${SN.esc(o.emp)}</td><td class="num">${o.n}</td><td class="num">${o.d}</td><td class="num">${o.f}</td>
-          <td class="num"><span class="badge ${o.d / o.n >= .9 ? 'ok' : o.d / o.n >= .7 ? 'alerta' : 'erro'}">${SN.num(o.d / o.n * 100)}%</span></td><td class="num">${SN.dur(SN.media(o.mttr))}</td>
-          <td class="num">${SN.empresa(o.emp).vinculo === 'CLT' ? SN.num(o.hh, 1) : '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Sem chamados concluídos.</td></tr>'}
-        ${hhTotal ? `<tr><td colspan="7"><b>Total hora-homem NETTURBO (automática)</b></td><td class="num"><b>${SN.num(hhTotal, 1)}</b></td></tr>` : ''}
+          <td class="num"><span class="badge ${o.d / o.n >= .9 ? 'ok' : o.d / o.n >= .7 ? 'alerta' : 'erro'}">${SN.num(o.d / o.n * 100)}%</span></td><td class="num">${SN.dur(SN.media(o.mttr))}</td><td class="num">${SN.dur(SN.media(o.campo))}</td>
+          <td class="num">${SN.empresa(o.emp).vinculo === 'CLT' ? SN.num(o.hh, 1) : '—'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted center">Sem chamados concluídos.</td></tr>'}
+        ${hhTotal ? `<tr><td colspan="8"><b>Total hora-homem NETTURBO (automática)</b></td><td class="num"><b>${SN.num(hhTotal, 1)}</b></td></tr>` : ''}
         </tbody></table></div></div>
       <div class="card"><h3>Chamados por técnico</h3>${SN.barras(tecs.slice(0, 15).map(([t, o]) => [SN.nomeExibicao(t), o.n, o.emp]))}</div>
     </div>
@@ -174,6 +179,9 @@ SN.rota('/portal', () => {
         <ul class="small" style="padding-left:18px;margin:0">
           <li><b>MTTD</b>: abertura → despacho. <b>MTTA</b>: despacho → chegada em campo.</li>
           <li><b>MTTR</b>: abertura → conclusão técnica. <b>SLA</b>: conclusão técnica até o prazo limite (abertura + SLA da matriz, fixado na 1ª classificação), sobre os concluídos no mês.</li>
+          <li><b>Fim do atendimento</b>: hora em que o técnico pediu a validação que foi <b>aceita</b> pelo NOC/O&amp;M (não a hora da resposta). Se voltou "ainda com falha", o tempo continua até o novo pedido aceito. Vale para MTTR, SLA e Tempo em campo. Sem validação (chamados antigos, Preventiva): a conclusão técnica.</li>
+          <li><b>Tempo em campo</b>: chegada no local → fim do atendimento (eficiência do técnico no local). Só entram chamados com validação.</li>
+          <li><b>Espera de validação</b>: soma do tempo que o NOC/O&amp;M levou para responder cada pedido (tempo ocioso do técnico).</li>
           <li><b>Eficiência</b>: % do total de chamados abertos no mês que já foram resolvidos dentro do prazo (os ainda abertos contam como não resolvidos).</li>
           <li><b>IRR</b>: % dos chamados ${SN.IRR.tipos.join('/')} abertos no mês cujo circuito (etiqueta) teve outro chamado encerrado nos ${SN.IRR.dias} dias anteriores.</li>
           <li>Aprovação de LPU, baixa de materiais, cadastro de fibra e fechamento pelo NOC <b>não</b> entram no tempo operacional.</li>
@@ -189,11 +197,12 @@ SN.rota('/portal', () => {
       Tipo: c.tipo, Cat1: c.cat1, Cat2: c.cat2, Cat3: c.cat3, Cat4: c.cat4, SLAh: c.slaHoras, Conta: c.conta, Empresa: c.empresa, Tecnico: c.tecnico,
       Apoio: c.apoio ? c.apoio.tecnico : '', Status: SN.STATUS[c.status].rot, Abertura: SN.dt(c.tempos.abertura), Despacho: SN.dt(c.tempos.atribuicao),
       Chegada: SN.dt(c.tempos.chegada), ConclusaoTecnica: SN.dt(c.tempos.conclusaoTecnica), Fechamento: SN.dt(c.tempos.fechamento), PrazoLimite: SN.dt(c.prazoLimite),
-      MTTD_min: m.mttd, MTTA_min: m.mtta, MTTR_min: m.mttr, EmCampo_min: m.tmc, SLA: m.sla == null ? '' : m.sla ? 'Dentro' : 'Fora',
+      MTTD_min: m.mttd, MTTA_min: m.mtta, MTTR_min: m.mttr, TempoEmCampo_min: m.tmc, PrevisaoChegada: c.deslocamento && c.deslocamento.previsaoChegada ? SN.dt(c.deslocamento.previsaoChegada) : '',
+      PedidoValidacao: c.tempos.validacaoPedida ? SN.dt(c.tempos.validacaoPedida) : '', Validado: c.tempos.validacao ? SN.dt(c.tempos.validacao) : '', ValidadoPor: c.validacao ? c.validacao.respondidaPor || '' : '', FalhasValidacao: c.validacao ? c.validacao.falhas || 0 : '', EsperaValidacao_min: m.espera == null ? '' : m.espera, SLA: m.sla == null ? '' : m.sla ? 'Dentro' : 'Fora',
       Reincidente: SN.entraNoIrr(c) ? (ant ? 'Sim' : 'Não') : '', ChamadoAnterior: ant ? ant.id : '',
       Causa: c.rfo.causa || '', Acao: c.rfo.acao || '', TrabalhouCEO: SN.ceoTxt(c.rfo), Solucao: c.rfo.solucao || '', Fotos: (c.fotos || []).filter(x => x.tipo === 'imagem').length }; }));
   SN.$('#bRelTec').onclick = () => SN.exportar('eficiencia_' + f.mes, tecs.map(([t, o]) => ({ Tecnico: t, Empresa: o.emp, Chamados: o.n, DentroSLA: o.d, ForaSLA: o.f,
-    SLA_pct: Math.round(o.d / o.n * 100), MTTR_min: Math.round(SN.media(o.mttr) || 0), MTTA_min: Math.round(SN.media(o.mtta) || 0),
+    SLA_pct: Math.round(o.d / o.n * 100), MTTR_min: Math.round(SN.media(o.mttr) || 0), MTTA_min: Math.round(SN.media(o.mtta) || 0), TempoEmCampo_min: o.campo.length ? Math.round(SN.media(o.campo)) : '',
     HoraHomem: SN.empresa(o.emp).vinculo === 'CLT' ? +o.hh.toFixed(2) : '' })));
   SN.$('#bRelLpu').onclick = () => SN.exportar('lpu_' + f.mes, lpusMes.map(l => ({ LPU: l.id, Chamado: l.chamadoId, Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj,
     Tecnico: l.cab.tecnico, Conta: l.cab.conta, Vinculo: l.vinculo, Valor: SN.valorLpu(l), HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot })));

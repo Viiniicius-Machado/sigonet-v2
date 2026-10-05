@@ -103,6 +103,7 @@ SN.rota('/inicio', () => {
   SN.casca('inicio', `
     <div class="cab-pagina"><div><h1>Olá, ${SN.esc(SN.usuario().nome)}</h1>
       <p>Acesso rápido às telas do Sistema Integrado de Gestão Operacional da Netturbo.</p></div></div>
+    ${SN.htmlFilaValidacao('NOC', SN.temTela('chamados'))}${SN.htmlFilaValidacao('OEM', SN.temTela('chamados'))}
     <div class="grid g4" style="margin-bottom:16px">
       <div class="kpi destaque"><div class="rot">Chamados em aberto</div><div class="val">${abertos.length}</div><div class="sub">${cont.chamados} aguardando atribuição</div></div>
       <div class="kpi"><div class="rot">Estourados agora</div><div class="val" style="color:${estourados ? 'var(--erro)' : 'inherit'}">${estourados}</div><div class="sub">passaram do prazo limite</div></div>
@@ -117,6 +118,7 @@ SN.rota('/inicio', () => {
     </div>
     <div class="hub">${cards.map(([k, h, ico, t, desc, rot]) => `<a class="hub-card" href="${h}">
       ${cont[k] != null && rot ? `<span class="num" title="${rot}">${cont[k]}</span>` : ''}<span class="ico">${ico}</span><h3>${t}</h3><p>${desc}</p></a>`).join('')}</div>`);
+  SN.ligarValidacao();
 });
 
 // ═══════════════════════════ Classificação (cascata da matriz) ═══════════════════════════
@@ -183,7 +185,9 @@ SN.rota('/chamados', () => {
       <div class="l3">${c.tecnico ? `👷 ${SN.esc(SN.nomeExibicao(c.tecnico))}` : '<span class="muted">sem técnico</span>'}
         ${c.protocoloOem || c.protocoloNoc ? `<span class="muted">#${SN.esc(c.protocoloOem || c.protocoloNoc)}</span>` : ''}</div>
       <div class="l3" style="margin-top:4px"><span class="badge ${p.cls}">${SN.esc(p.txt)}</span>
-        ${u ? `<span class="muted">${u.n} ${SN.hora(u.ts)}</span>` : ''}</div></div>`;
+        ${u ? `<span class="muted">${u.n} ${SN.hora(u.ts)}</span>` : ''}</div>
+      ${c.status === 'EM_DESLOCAMENTO' && SN.previsaoInfo(c) ? (pi => `<div class="l3" style="margin-top:4px"><span class="badge ${pi.cls}">🚗 ${SN.esc(pi.txt)}${pi.atrasado ? ' · atrasado' : ''}</span>${pi.km ? ` <span class="muted">${pi.km}</span>` : ''}</div>`)(SN.previsaoInfo(c)) : ''}
+      ${c.validacao && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) ? `<div class="l3" style="margin-top:4px"><span class="badge ${SN.VALIDACAO_ST[c.validacao.status].cls}">🛎 ${SN.VALIDACAO_ST[c.validacao.status].rot}${c.validacao.status === 'PEDIDA' ? ' · ' + SN.esc(SN.nomeValidador(c)) : ''}</span></div>` : ''}</div>`;
   };
   const cont = t => SN.db.chamados.filter(c => SN.STATUS[c.status].aberto && (t === 'Todos' || c.tipo === t)).length;
   const despachaveis = SN.tecnicosDespacho();
@@ -192,6 +196,7 @@ SN.rota('/chamados', () => {
       <p>O chamado conta a história do atendimento. Fecha quando a parte técnica termina — LPU, materiais e fibra seguem seus próprios fluxos.</p></div>
       <div class="acoes"><button class="btn" id="btnElleven" title="Simula uma OS recebida do ERP Elleven via webhook">⤓ Receber OS do Elleven</button>
         <button class="btn prim" id="btnNova">+ Nova OS</button></div></div>
+    ${SN.htmlFilaValidacao('NOC', true)}${SN.htmlFilaValidacao('OEM', true)}
     <div class="abas">${tipos.map(t => `<button class="aba ${t === SN.filtroTipoChamados ? 'ativa' : ''}" data-t="${t}">${t}<span class="n">${cont(t)}</span></button>`).join('')}</div>
     <div class="kanban">${cols.map(([nome, f]) => { const itens = lista.filter(f).sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
       return `<div class="coluna"><h4>${nome}<span class="badge">${itens.length}</span></h4>${itens.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>
@@ -203,6 +208,7 @@ SN.rota('/chamados', () => {
           <td>${ind ? `<span class="badge erro">${MOTIVOS_DISPONIBILIDADE[ind.motivo]}</span>` : emCampo ? '<span class="badge verde">Em atividade</span>' : '<span class="badge">Disponível</span>'}</td>
           <td class="num">${carga}</td></tr>`; }).join('')}
       </tbody></table></div></div>`);
+  SN.ligarValidacao();
   SN.$$('.aba[data-t]').forEach(b => b.onclick = () => { SN.filtroTipoChamados = b.dataset.t; SN.render(); });
   SN.$$('.os').forEach(o => o.onclick = () => SN.navegar('#/chamado/' + o.dataset.id));
   SN.$('#btnNova').onclick = () => SN.novaOS();
@@ -217,7 +223,7 @@ SN.novaOS = (pre) => {
     <div class="campo"><label>Colar máscara do NOC / Delivery (opcional — preenche os campos abaixo)</label>
       <textarea class="inp" id="nMasc" placeholder="MOTIVO: ...&#10;CLIENTE: ...&#10;ENDEREÇO: ...&#10;PROTOCOLO O&M: ..."></textarea></div>
     <div class="linha-form">
-      <div class="campo"><label>Origem</label><select class="inp" id="nOrig">${['NOC', 'Delivery', 'Elleven'].map(o => `<option ${o === (pre.origem || 'NOC') ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
+      <div class="campo"><label>Origem</label><select class="inp" id="nOrig">${['NOC', 'Delivery', 'Elleven', 'OEM'].map(o => `<option ${o === (pre.origem || 'NOC') ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
       <div class="campo"><label>Protocolo NOC</label><input class="inp" id="nPNoc" value="${SN.esc(pre.protocoloNoc || '')}"></div>
       <div class="campo"><label>Protocolo O&amp;M</label><input class="inp" id="nPOem" value="${SN.esc(pre.protocoloOem || '')}"></div>
       <div class="campo"><label>Etiqueta / ID</label><input class="inp" id="nEt" value="${SN.esc(pre.etiqueta || '')}"></div>
@@ -367,13 +373,19 @@ SN.rota('/chamado/:id', id => {
       const dias = Math.round((new Date(c.tempos.abertura) - new Date(ant.tempos.conclusaoTecnica || ant.tempos.fechamento)) / 864e5);
       return `<div class="aviso alerta" style="margin-bottom:12px">⚠ <b>Reincidente (IRR)</b>: a etiqueta ${SN.esc(SN.etiquetaIrr(c))} teve o chamado
         <a href="#/chamado/${ant.id}">${ant.id}</a> encerrado ${dias} dia(s) antes desta abertura${ant.tecnico ? ` · atendido por ${SN.esc(SN.nomeExibicao(ant.tecnico))}` : ''}${ant.rfo && ant.rfo.causa ? ` · causa: ${SN.esc(ant.rfo.causa)}` : ''}.</div>`; })()}
+    ${c.validacao ? (() => { const v = c.validacao, st = SN.VALIDACAO_ST[v.status];
+      return `<div class="aviso ${v.status === 'VALIDADA' ? 'ok' : v.status === 'FALHA' ? 'erro' : 'alerta'}" style="margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">🛎 <b>Validação ${SN.esc(SN.nomeValidador(c))}: ${st.rot}</b> · pedida ${SN.dt(v.pedidaEm)}${v.pedidos > 1 ? ' (' + v.pedidos + 'º pedido)' : ''}${v.obs ? ' · ' + SN.esc(v.obs) : ''}
+          ${v.respondidaEm ? `<br>${v.status === 'VALIDADA' ? 'Validado' : 'Respondido'} por ${SN.esc(v.respondidaPor)} ${SN.dt(v.respondidaEm)}${v.motivo ? ' — ' + SN.esc(v.motivo) : ''}` : ''}</div>
+        ${SN.aguardandoValidacao(c) && SN.podeValidar(c) ? `<button class="btn ok" data-val-ok="${SN.esc(c.id)}">✔ Validado</button><button class="btn perigo" data-val-falha="${SN.esc(c.id)}">Ainda com falha</button>` : ''}</div>`; })() : ''}
     <div class="card"><div class="timeline">${etapas}</div></div>
     <div class="grid g6" style="margin-top:14px">
       ${SN.ehPlanejada(c) ? `<div class="kpi" style="grid-column:span 3"><div class="rot">Atividade planejada</div><div class="val" style="font-size:1.2rem">Prazo até ${SN.dt(c.prazoLimite)}</div><div class="sub">MTTD/MTTA/MTTR não se aplicam: conta o tempo em campo e se concluiu até a data-limite da rota</div></div>` : `
       <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(m.mttd)}</div><div class="sub">abertura → despacho</div></div>
       <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(m.mtta)}</div><div class="sub">despacho → em campo</div></div>
-      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(m.mttr)}</div><div class="sub">abertura → conclusão técnica</div></div>`}
-      <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(m.tmc)}</div><div class="sub">chegada → conclusão</div></div>
+      <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(m.mttr)}</div><div class="sub">${c.validacao ? 'abertura → pedido de validação aceito' : 'abertura → conclusão técnica'}</div></div>`}
+      <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(m.tmc)}</div><div class="sub">${c.validacao ? (SN.validado(c) ? 'chegada → pedido de validação aceito' : 'correndo: aguardando validação') : 'chegada → conclusão'}</div></div>
+      ${c.validacao ? `<div class="kpi"><div class="rot">Espera de validação</div><div class="val">${SN.dur(m.espera)}</div><div class="sub">tempo até o ${SN.esc(SN.nomeValidador(c))} responder${c.validacao.pedidos > 1 ? ' · ' + c.validacao.pedidos + ' pedidos' : ''}</div></div>` : ''}
       <div class="kpi"><div class="rot">SLA</div><div class="val" style="color:${m.sla === false ? 'var(--erro)' : m.sla ? 'var(--ok)' : 'inherit'}">${m.sla == null ? '—' : m.sla ? 'Dentro' : 'Fora'}</div><div class="sub">prazo ${SN.dt(c.prazoLimite)}</div></div>
       ${(() => { if (SN.empresa(c.empresa).vinculo !== 'CLT') return `<div class="kpi"><div class="rot">Origem</div><div class="val" style="font-size:1.2rem">${SN.esc(c.origem)}</div><div class="sub">aberto ${SN.dt(c.tempos.abertura)}</div></div>`;
         const hh = SN.horaHomem(c, 'titular');
@@ -393,6 +405,7 @@ SN.rota('/chamado/:id', id => {
         <tr><td class="muted">Conta contábil</td><td>${SN.esc(SN.contaTxt(c.conta))}</td></tr>
         <tr><td class="muted">Técnico</td><td>${SN.esc(c.tecnico ? SN.nomeExibicao(c.tecnico) + ' · ' + c.empresa : '—')}</td></tr>
         <tr><td class="muted">Apoio</td><td>${SN.esc(c.apoio ? c.apoio.tecnico + ' · ' + c.apoio.empresa : '—')}</td></tr>
+        ${c.deslocamento ? (pi => `<tr><td class="muted">Previsão de chegada</td><td>${pi.semPrevisao ? SN.esc(pi.txt) : `${SN.esc(pi.txt)}${pi.km ? ' · ' + pi.km : ''}${c.deslocamento.duracao_s ? ' · ' + SN.dur(Math.round(c.deslocamento.duracao_s / 60)) + ' de carro' : ''}<div class="small muted">calculada ${SN.dt(c.deslocamento.calculadoEm)} · OpenStreetMap, sem trânsito · destino pelo ${SN.esc((c.deslocamento.destino || {}).fonte || '')}</div>`}</td></tr>`)(SN.previsaoInfo(c)) : ''}
         <tr><td class="muted">GPS chegada</td><td>${c.gpsChegada ? `<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${c.gpsChegada}">${SN.esc(c.gpsChegada)}</a>` : '—'}</td></tr></tbody></table></div>
     </div>
     <div class="grid g2" style="margin-top:14px">
@@ -416,6 +429,7 @@ SN.rota('/chamado/:id', id => {
       ${(c.historico || []).slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe)}</td></tr>`).join('')}
     </tbody></table></div></div>`);
   SN.pintarFotos(SN.$('#fotosCh'), c.fotos || []);
+  SN.ligarValidacao();
   const b = id => SN.$('#' + id);
   b('bClass') && (b('bClass').onclick = () => SN.classificar(c));
   b('bVstRota') && (b('bVstRota').onclick = () => SN.vst.transformarChamado(c));
@@ -451,7 +465,7 @@ SN.pdfChamado = async (c, abrir, conversa) => {
   doc.secao('Linha do tempo');
   SN.ETAPAS.forEach(([k, n]) => doc.linha(n, SN.dt(c.tempos[k])));
   doc.secao('Indicadores');
-  doc.linha('MTTD / MTTA', `${SN.dur(m.mttd)} / ${SN.dur(m.mtta)}`); doc.linha('MTTR / Em campo', `${SN.dur(m.mttr)} / ${SN.dur(m.tmc)}`);
+  doc.linha('MTTD / MTTA', `${SN.dur(m.mttd)} / ${SN.dur(m.mtta)}`); doc.linha('MTTR / Tempo em campo', `${SN.dur(m.mttr)} / ${SN.dur(m.tmc)}`);
   doc.linha('SLA', m.sla == null ? '—' : m.sla ? 'Dentro do prazo' : 'Fora do prazo');
   doc.secao('RFO');
   doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); if (c.rfo.ceo) doc.linha('Trabalhou na CEO', SN.ceoTxt(c.rfo)); doc.linha('Solução', c.rfo.solucao);
