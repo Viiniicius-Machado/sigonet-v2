@@ -28,6 +28,10 @@
 
   // ═══════════════════════════ REVISÃO ═══════════════════════════
   let filtroSeg = 'TODOS', buscaRev = '';
+  // Filtros da fila "Aguardando revisão" (o revisor escolhe o que validar primeiro).
+  const fr = { q: '', prest: '', rota: '', alerta: '', ordem: 'antigas' };
+  // Vezes que foi refeita depois de rejeitada (dados antigos: pelo histórico).
+  const refeitas = a => a.refeitas != null ? Number(a.refeitas) || 0 : (a.historico || []).filter(h => h.acao === 'MOTIVO_ANTERIOR').length;
   SN.rota('/vst/revisao', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_revisao', SN.vst.semServidorHtml);
     SN.casca('vst_revisao', SN.carregando('Carregando fila de revisão…'));
@@ -43,12 +47,27 @@
     ].sort((a, b) => String(b.doc.data_revisao).localeCompare(String(a.doc.data_revisao)))
       .filter(x => !buscaRev || [x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.doc.prestador, x.rota.cluster].some(t => String(t || '').toLowerCase().includes(buscaRev.toLowerCase())))
       .slice(0, buscaRev ? 100 : 15);
-    const vis = itens.filter(x => filtroSeg === 'TODOS' || x.seg === filtroSeg);
+    const temAlerta = (x, k) => { const a = x.doc, fl = a.flags || {};
+      return k === 'suspeita' ? (a.fotos || []).some(f => f.flag_suspeita) : k === 'criterio' ? !!fl.fora_criterio : k === 'gps' ? !!fl.gps_divergente
+        : k === 'refeita' ? refeitas(a) > 0 : k === 'sem' ? !(a.fotos || []).some(f => f.flag_suspeita) && !fl.fora_criterio && !fl.gps_divergente && !refeitas(a) : true; };
+    const doSeg = itens.filter(x => filtroSeg === 'TODOS' || x.seg === filtroSeg);
+    const prests = [...new Set(doSeg.map(x => x.rota.prestador || x.doc.prestador).filter(Boolean))].sort();
+    const rotasF = [...new Set(doSeg.filter(x => !fr.prest || (x.rota.prestador || x.doc.prestador) === fr.prest).map(x => x.doc.id_rota))].sort();
+    if (fr.prest && !prests.includes(fr.prest)) fr.prest = '';
+    if (fr.rota && !rotasF.includes(fr.rota)) fr.rota = '';
+    const qn = SN.normal(fr.q);
+    const vis = doSeg.filter(x => (!fr.prest || (x.rota.prestador || x.doc.prestador) === fr.prest) && (!fr.rota || x.doc.id_rota === fr.rota) && (!fr.alerta || temAlerta(x, fr.alerta))
+      && (!qn || SN.normal([x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.rota.prestador, x.rota.cluster, x.rota.cidade, x.rota.motivo].join(' ')).includes(qn)));
+    const ordens = { antigas: (a, b) => String(a.doc.enviado_em).localeCompare(String(b.doc.enviado_em)), recentes: (a, b) => String(b.doc.enviado_em).localeCompare(String(a.doc.enviado_em)),
+      rota: (a, b) => String(a.doc.id_rota).localeCompare(String(b.doc.id_rota)) || (Number(a.doc.ordem) || 0) - (Number(b.doc.ordem) || 0),
+      alertas: (a, b) => ['suspeita', 'criterio', 'gps', 'refeita'].filter(k => temAlerta(b, k)).length - ['suspeita', 'criterio', 'gps', 'refeita'].filter(k => temAlerta(a, k)).length || ordens.antigas(a, b) };
+    vis.sort(ordens[fr.ordem] || ordens.antigas);
+    const filtrando = fr.q || fr.prest || fr.rota || fr.alerta;
     const n = s => itens.filter(x => x.seg === s).length;
     const linha = x => {
       const a = x.doc, r = x.rota, sus = (a.fotos || []).filter(f => f.flag_suspeita).length, fl = a.flags || {};
       const alertas = [sus ? `<span class="badge alerta">⚠ ${sus} foto(s) suspeita(s)</span>` : '', fl.fora_criterio ? '<span class="badge erro">Fora do critério</span>' : '',
-        fl.gps_divergente ? '<span class="badge alerta">GPS divergente</span>' : '', (a.envios || 1) > 1 ? `<span class="badge info">Reenvio nº ${a.envios}</span>` : ''].join(' ');
+        fl.gps_divergente ? '<span class="badge alerta">GPS divergente</span>' : '', refeitas(a) ? `<span class="badge info" title="Foi rejeitada e o técnico mandou de novo">Refeita após rejeição${refeitas(a) > 1 ? ' (' + refeitas(a) + 'ª vez)' : ''}</span>` : ''].join(' ');
       const oque = x.seg === 'AEREA'
         ? `${a.tipo === 'final' ? '<b>Finalizado</b>' : 'Parcial'} · ${SN.num(a.metros)} m · ${SN.num(a.postes)} postes · ${SN.num(a.plaquetas)} plaquetas`
         : `CS <b>${esc(a.cs_nova ? 'fora do cadastro' : a.id_cs)}</b> · ${rot('conclusao', a.conclusao)}${a.abriu === 'nao' ? ' · não abriu' : ''}`;
@@ -65,9 +84,16 @@
       <div class="abas">
         ${[['TODOS', 'Todos', itens.length], ['SUBTERRANEA', '🕳️ Subterrânea', n('SUBTERRANEA')], ['AEREA', '🗼 Aérea', n('AEREA')]].map(([k, r, q]) =>
           `<button class="aba ${filtroSeg === k ? 'ativa' : ''}" data-f="${k}">${r}<span class="n">${q}</span></button>`).join('')}</div>
-      <div class="card"><div class="card-tit"><h3>Aguardando revisão (${vis.length})</h3><span class="small muted">mais antigas primeiro</span></div>
+      <div class="card"><div class="card-tit"><h3>Aguardando revisão (${vis.length}${filtrando ? ' de ' + doSeg.length : ''})</h3></div>
+        ${doSeg.length ? `<div class="filtros" style="margin-bottom:10px">
+          <input class="inp busca" id="frQ" placeholder="Buscar rota, CS, técnico, cluster…" value="${esc(fr.q)}">
+          <select class="inp" id="frPrest"><option value="">Todos os prestadores</option>${prests.map(p => `<option ${p === fr.prest ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+          <select class="inp" id="frRota"><option value="">Todas as rotas</option>${rotasF.map(r => `<option ${r === fr.rota ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>
+          <select class="inp" id="frAlerta">${[['', 'Todos os itens'], ['suspeita', '⚠ Foto suspeita'], ['criterio', 'Fora do critério'], ['gps', 'GPS divergente'], ['refeita', 'Refeita após rejeição'], ['sem', 'Sem alerta']].map(([k, r]) => `<option value="${k}" ${fr.alerta === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
+          <select class="inp" id="frOrdem">${[['antigas', 'Mais antigas primeiro'], ['recentes', 'Mais recentes primeiro'], ['rota', 'Por rota (ordem das CS)'], ['alertas', 'Com mais alertas primeiro']].map(([k, r]) => `<option value="${k}" ${fr.ordem === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
+          ${filtrando ? '<button class="btn sm" id="frLimpar">Limpar filtros</button>' : ''}</div>` : ''}
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Segmento</th><th>Rota</th><th>O que revisar</th><th>Prestador / técnico</th><th>Enviado</th></tr></thead>
-          <tbody>${vis.map(linha).join('')}</tbody></table></div>` : '<p class="muted">Nada aguardando revisão. 🎉</p>'}</div>
+          <tbody>${vis.map(linha).join('')}</tbody></table></div>` : doSeg.length ? '<p class="muted">Nenhum item com esses filtros.</p>' : '<p class="muted">Nada aguardando revisão. 🎉</p>'}</div>
       <div class="card"><div class="card-tit"><h3>Revisadas ${buscaRev ? '' : 'recentemente'}</h3>
           <input class="inp" id="rBusca" style="max-width:260px" placeholder="Buscar rota, CS, técnico…" value="${esc(buscaRev)}"></div>
         <p class="small muted" style="margin:-4px 0 8px">Toque numa linha para ver ou <b>reabrir</b> (volta para "aguardando revisão" e libera a correção).</p>
@@ -81,6 +107,9 @@
       SN.render();
     };
     SN.$$('[data-f]').forEach(b => b.onclick = () => { filtroSeg = b.dataset.f; SN.render(); });
+    [['#frPrest', 'prest'], ['#frRota', 'rota'], ['#frAlerta', 'alerta'], ['#frOrdem', 'ordem']].forEach(([id, k]) => { const el = SN.$(id); if (el) el.onchange = () => { fr[k] = el.value; SN.render(); }; });
+    const frQ = SN.$('#frQ'); if (frQ) frQ.oninput = SN.debounce(() => { fr.q = frQ.value.trim(); SN.render(); setTimeout(() => { const b = SN.$('#frQ'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }); }, 300);
+    if (SN.$('#frLimpar')) SN.$('#frLimpar').onclick = () => { Object.assign(fr, { q: '', prest: '', rota: '', alerta: '' }); SN.render(); };
     SN.$$('[data-rev]').forEach(tr => tr.onclick = () => { const x = itens.find(i => i.id === tr.dataset.rev); if (x) abrirRevisao(x, d); });
     SN.$$('[data-revisada]').forEach(tr => tr.onclick = () => { const x = recentes.find(i => (i.doc.id_vistoria || i.doc.id_apontamento) === tr.dataset.revisada); if (x) abrirRevisao({ ...x, id: tr.dataset.revisada }, d); });
     const busca = SN.$('#rBusca'); let tBusca;
