@@ -54,6 +54,8 @@ Só o que foi **aprovado na Revisão** entra na medição e no pagamento.
 
 **Mudar uma rota já despachada:** em Planejamento → Rotas, o botão **CS da rota** tira, soma ou troca CS sem retirar o despacho. CS com vistoria já enviada não sai. CS tirada fica livre para outra equipe, e o técnico não consegue mais enviá-la.
 
+**Fechar a rota:** todas as CS que estão na rota precisam estar aprovadas na Revisão, e a rota precisa estar concluída. CS que não será feita: tire pelo **CS da rota**. CS que o técnico não conseguiu abrir: ele envia com "Conseguiu abrir: Não" e o motivo. Se o técnico enviou tudo e não tocou em "Concluir rota", a gestão usa **Concluir pela gestão** (com motivo, fica no histórico). Com tudo aprovado, o chamado conclui sozinho e a LPU libera.
+
 **Revisão:** o selo **Refeita após rejeição** só aparece quando a CS foi rejeitada e o técnico mandou de novo. Reenvio automático por falha de sinal não conta e não tira a CS do lugar na fila.
 
 **Prazo da atividade planejada:** o chamado da Preventiva não segue o SLA em horas da matriz. O prazo é o fim do dia da data-limite da rota, e o SLA é "concluída até a data". Por ser planejada, a Preventiva fica fora das médias de MTTD, MTTA e MTTR do Portal (que medem a corretiva); conta o tempo em campo.

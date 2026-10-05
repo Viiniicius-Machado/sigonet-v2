@@ -75,7 +75,7 @@
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ""}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está preenchendo e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.segmento !== 'AEREA' && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm" data-edcs="${esc(r.id_rota)}" title="Tirar, somar ou trocar CS desta rota já despachada">CS da rota</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.segmento !== 'AEREA' && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm" data-edcs="${esc(r.id_rota)}" title="Tirar, somar ou trocar CS desta rota já despachada">CS da rota</button>` : ''}${r.segmento !== 'AEREA' && r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="O técnico enviou todas as CS mas não tocou em Concluir rota">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : (todas.length && (iv || filtro.seg || filtro.status || filtro.q) ? '<p class="muted">Nenhuma rota neste período/filtro. Troque o período (ou "Tudo") para ver as outras.</p>' : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>')}</div>`;
     SN.ligarPeriodo(pintarRotas, periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { periodo.per = 'tudo'; filtro.status = andamentoFora.every(r => r.status === 'EM_CAMPO') ? 'EM_CAMPO' : ''; pintarRotas(); };
@@ -87,6 +87,22 @@
     acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' }); SN.toast('Rota despachada: o chamado Preventiva foi criado e está na fila do técnico.', 'ok'); await recarregar(); });
     acao('[data-ret]', async b => { if (!await SN.confirmar('Retirar despacho', 'A rota volta a PLANEJADA e o chamado Preventiva dela é cancelado.', 'Retirar', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); await recarregar(); });
+    acao('[data-concl]', async b => {
+      const r = d.rotas.find(x => x.id_rota === b.dataset.concl);
+      const pc = VR.podeConcluirRota(r, d.vistorias);
+      if (!pc.ok) { b.disabled = false; return SN.modal({ titulo: 'Ainda não dá para concluir ' + r.id_rota, corpo: `<p>${pc.erros.map(esc).join('<br>')}</p>
+        <p class="small muted">CS que não serão feitas: tire pelo botão <b>CS da rota</b>. CS rejeitada: o técnico precisa refazer e enviar de novo.</p>` }); }
+      const aguardando = d.vistorias.filter(v => v.id_rota === r.id_rota && v.status_revisao === 'AGUARDANDO_REVISAO').length;
+      const mot = await SN.modal({ titulo: 'Concluir ' + r.id_rota + ' pela gestão',
+        corpo: `<p>Todas as ${(r.cs_planejadas || []).length} CS da rota foram enviadas. A rota fica <b>Concluída</b> como se o técnico tivesse tocado em "Concluir rota".</p>
+          <p class="small">${aguardando ? `<b>${aguardando} CS ainda aguardam revisão:</b> o chamado conclui (e a LPU libera) quando forem aprovadas.` : 'Todas as CS já estão aprovadas: o chamado conclui agora e a LPU libera.'}</p>
+          <div class="campo"><label>Motivo *</label><textarea class="inp" id="mTxt" placeholder="ex.: técnico sem o celular; enviou tudo e não concluiu"></textarea></div>`,
+        botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Concluir pela gestão', cls: 'ok', acao: m => { const v = SN.$('#mTxt', m).value.trim(); if (!v) { SN.toast('Informe o motivo.', 'erro'); return false; } return v; } }],
+        aoAbrir: m => SN.$('#mTxt', m).focus() });
+      if (!mot) { b.disabled = false; return; }
+      const res = await SN.vst.exec('VST_ROTA_CONCLUIR_GESTAO', { id_rota: r.id_rota, motivo: mot });
+      SN.toast(res.chamado_concluido ? `Rota ${r.id_rota} concluída: o chamado concluiu e a LPU liberou.` : `Rota ${r.id_rota} concluída. O chamado conclui quando todas as CS forem aprovadas na Revisão.`, 'ok');
+      if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-canc]', async b => {
       const r = d.rotas.find(x => x.id_rota === b.dataset.canc);
       const mot = await SN.modal({ titulo: 'Cancelar atividade ' + b.dataset.canc,
