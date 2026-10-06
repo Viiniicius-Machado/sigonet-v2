@@ -112,7 +112,8 @@ SN.vst = SN.vst || {};
       if (Number(rota.metros_previstos)) doc.linha('% da rota', Math.round(1000 * (Number(acumulado.metros) || 0) / Number(rota.metros_previstos)) / 10 + '%');
     }
     // Fotos separadas por item da produção; as genéricas antigas ("producao") vão por último.
-    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), legenda = f => `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
+    const legenda = f => f.origem === 'galeria' ? `Da galeria · tirada em ${f.data_hora_arquivo ? SN.dt(f.data_hora_arquivo) : '—'}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
     for (const x of VR.validarFotosApontamento(a).itens) {
       const doItem = fotos.filter(f => f.tipo_foto === x.foto);
       if (!doItem.length && !x.exigidas) continue;

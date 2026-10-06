@@ -122,7 +122,7 @@
     <div class="vst-rev-fotos">${fotos.length ? fotos.map(f => {
       const i = L.foto(f.tipo_foto) || {};
       return `<figure class="${f.flag_suspeita ? 'suspeita' : ''}"><div class="img" data-foto="${esc(f.id_foto)}"><span class="muted small">carregando…</span></div>
-        <figcaption>${i.n ? i.n + '. ' : ''}${esc(i.rot || f.tipo_foto)}${f.flag_suspeita ? `<br><b style="color:var(--alerta)">⚠ SUSPEITA: data do arquivo difere ${esc(f.diferenca_min)} min da captura</b>` : ''}</figcaption></figure>`;
+        <figcaption>${i.n ? i.n + '. ' : ''}${esc(i.rot || f.tipo_foto)}${f.origem === 'galeria' ? `<br><b style="color:var(--info,#1f5fd1)">Da galeria${f.data_hora_arquivo ? ' · tirada em ' + esc(SN.dt(f.data_hora_arquivo)) : ' · sem data original'}</b>` : ''}${f.flag_suspeita ? `<br><b style="color:var(--alerta)">⚠ SUSPEITA: data do arquivo difere ${esc(f.diferenca_min)} min da captura</b>` : ''}</figcaption></figure>`;
     }).join('') : '<span class="muted small">Sem fotos nesta parte.</span>'}</div></div>`;
 
   const htmlCs = (v, r) => {

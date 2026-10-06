@@ -167,6 +167,16 @@ SN.VF = (() => {
     return { ...img, agora, pos, endereco, dataArquivo: dataArq ? dataArq.toISOString() : '', fonteData: exif ? 'exif' : 'lastModified' };
   };
 
+  // Foto anexada da galeria (aérea): o carimbo leva a data ORIGINAL da foto (EXIF ou data do
+  // arquivo) e a indicação "da galeria"; não leva o GPS/endereço de agora, que não é o lugar da foto.
+  VF.fotoGaleria = async (file, contexto) => {
+    const agora = SN.agora(), exif = await VF.dataExif(file);
+    const dataArq = exif || (file.lastModified ? new Date(file.lastModified) : null);
+    const quando = dataArq ? dataArq.toISOString() : agora;
+    const img = await VF.processar(file, { agora: quando, pos: null, endereco: 'Foto anexada da galeria' + (dataArq ? '' : ' (sem data original)'), contexto: (contexto ? contexto + ' · ' : '') + 'da galeria' });
+    return { ...img, agora, pos: null, endereco: '', dataArquivo: dataArq ? dataArq.toISOString() : '', fonteData: exif ? 'exif' : 'lastModified', origem: 'galeria' };
+  };
+
   // ─────────── GPS ───────────
   // Enquanto a tela da rota está aberta o GPS fica ligado (watchPosition); a
   // foto usa a última posição fresca, sem esperar.

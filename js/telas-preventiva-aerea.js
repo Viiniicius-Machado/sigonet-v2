@@ -185,26 +185,31 @@
     L.producao_aerea.forEach(c => {
       const el = SN.$(`[data-fotos="${c.k}"]`); if (!el) return;
       el.innerHTML = (A.form.fotos || []).filter(f => f.tipo_foto === c.foto).map(thumb).join('')
-        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}" hidden><span>＋<br>Tirar foto</span></label>`;
+        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}" hidden><span>＋<br>Tirar foto</span></label>`
+        + `<label class="vst-cap" title="Escolher uma ou várias fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.foto}" data-galeria="1" hidden><span>＋<br>Galeria</span></label>`;
     });
     // Fotos genéricas de um envio anterior (tipo "producao"): continuam no apontamento, mas não contam para nenhum item.
     const outras = (A.form.fotos || []).filter(f => !tiposItem.includes(f.tipo_foto));
     SN.$('#aOutras').style.display = outras.length ? '' : 'none';
     SN.$('[data-fotos="_outras"]').innerHTML = outras.map(thumb).join('');
     SN.$$('#aForm [data-del]').forEach(b => b.onclick = () => { A.form.fotos = A.form.fotos.filter(f => f.id_foto !== b.dataset.del); salvarRascunho(); pintarThumbs(); validarNaTela(); });
+    // Câmera (uma foto, carimbo com GPS e endereço de agora) ou galeria (várias; carimbo com a data original e "da galeria").
     SN.$$('#aForm [data-cam]').forEach(inp => inp.onchange = async ev => {
-      const file = ev.target.files && ev.target.files[0], tipo = inp.dataset.cam; if (!file) return;
+      const files = [...(ev.target.files || [])], tipo = inp.dataset.cam, galeria = !!inp.dataset.galeria; if (!files.length) return;
       const form = A.form, info = L.foto(tipo) || {}; fotosProcessando++;
-      SN.toast('Processando foto (GPS e endereço)…');
+      SN.toast(galeria ? `Processando ${files.length} foto(s) da galeria…` : 'Processando foto (GPS e endereço)…');
       try {
-        const r = A.rota, img = await SN.VF.fotoCarimbada(file, `${r.id_rota} · ${r.cidade} · ${info.rot || ''} · Preventiva aérea`);
-        if (A.form !== form || form._enviado) { SN.toast('O apontamento já foi enviado; a foto não entrou nele.', 'erro'); return; }
-        const id_foto = 'F' + SN.uid() + SN.uid();
-        const meta = { id_foto, id_apontamento: A.form.id_apontamento, id_rota: r.id_rota, tipo_foto: tipo, ref: '', lat: img.pos ? img.pos.lat : '', lng: img.pos ? img.pos.lng : '',
-          data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '' };
-        A.form.fotos.push({ id_foto, tipo_foto: tipo, data_hora_captura: img.agora, endereco: img.endereco || '' });
-        const reg = { id_foto, id_vistoria: '', id_rota: r.id_rota, meta, dataUrl: img.dataUrl, thumb: img.thumb, criadaEm: img.agora, status: 'pendente' };
-        A.fotosLocais[id_foto] = reg; salvarRascunho(); await SN.VL.guardarFoto(reg); pintarThumbs(); validarNaTela();
+        for (const file of files) {
+          const r = A.rota, ctx = `${r.id_rota} · ${r.cidade} · ${info.rot || ''} · Preventiva aérea`;
+          const img = galeria ? await SN.VF.fotoGaleria(file, ctx) : await SN.VF.fotoCarimbada(file, ctx);
+          if (A.form !== form || form._enviado) { SN.toast('O apontamento já foi enviado; a foto não entrou nele.', 'erro'); return; }
+          const id_foto = 'F' + SN.uid() + SN.uid(), origem = img.origem || 'camera';
+          const meta = { id_foto, id_apontamento: A.form.id_apontamento, id_rota: r.id_rota, tipo_foto: tipo, ref: '', lat: img.pos ? img.pos.lat : '', lng: img.pos ? img.pos.lng : '',
+            data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem };
+          A.form.fotos.push({ id_foto, tipo_foto: tipo, data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem });
+          const reg = { id_foto, id_vistoria: '', id_rota: r.id_rota, meta, dataUrl: img.dataUrl, thumb: img.thumb, criadaEm: img.agora, status: 'pendente' };
+          A.fotosLocais[id_foto] = reg; salvarRascunho(); await SN.VL.guardarFoto(reg); pintarThumbs(); validarNaTela();
+        }
       } catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
       finally { fotosProcessando--; }
     });
