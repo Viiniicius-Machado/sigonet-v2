@@ -177,6 +177,7 @@ SN.vst = SN.vst || {};
       doc.linha('Motivo / solicitante', `${rota.motivo || '—'} · ${rota.solicitante || '—'}`);
       if (rota.notificacao) doc.linha('Notificação / Protocolo', rota.notificacao);
       doc.linha('Metros previstos', SN.num(rota.metros_previstos) + ' m');
+      if ((rota.pontos_base || []).length) doc.linha('CEO e pontos no caminho', rota.pontos_base.map(p => `${p.tipo_ponto} ${p.id_cs} (${p.dist_m} m)`).join('; '));
     }
     doc.linha('Prestador / técnico', `${rota.prestador || '—'} · ${rota.tecnico || 'qualquer técnico do prestador'}`);
     doc.linha('Data planejada', SN.vst.dia(rota.data_planejada));

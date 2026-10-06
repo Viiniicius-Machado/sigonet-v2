@@ -1040,7 +1040,8 @@ var VR = (function () {
       lat: achaCol(ex, imp.col_lat, ['lat', 'latitude']),
       lng: achaCol(ex, imp.col_lng, ['lng', 'lon', 'long', 'longitude']),
       endereco: achaCol(ex, imp.col_endereco, ['endereco', 'logradouro', 'address', 'descricao', 'description']),
-      tipo: imp.col_tipo ? achaCol(ex, imp.col_tipo, []) : null, descricao: imp.col_descricao ? achaCol(ex, imp.col_descricao, []) : null
+      tipo: imp.col_tipo ? achaCol(ex, imp.col_tipo, []) : null, descricao: imp.col_descricao ? achaCol(ex, imp.col_descricao, []) : null,
+      tipoPonto: imp.col_tipo_ponto ? achaCol(ex, imp.col_tipo_ponto, []) : null
     };
     ['id', 'cluster', 'lat', 'lng'].forEach(function (k) { if (!col[k]) erros.push({ linha: 0, msg: 'Coluna de ' + k + ' não encontrada. Ajuste o mapeamento em Configurações.' }); });
     if (!col.cidade && vazio(cidadePadrao)) erros.push({ linha: 0, msg: 'O arquivo não tem coluna de cidade: informe a cidade da base.' });
@@ -1059,6 +1060,8 @@ var VR = (function () {
       var c = validas[validas.length - 1];
       if (col.tipo && l[col.tipo]) c.tipo_caixa = String(l[col.tipo]).trim();
       if (col.descricao && l[col.descricao]) c.descricao = String(l[col.descricao]).trim().slice(0, 1000);
+      var tpp = col.tipoPonto && l[col.tipoPonto] ? String(l[col.tipoPonto]).toUpperCase() : '';
+      if (['CEO', 'SL', 'OUTRO'].indexOf(tpp) >= 0) c.tipo_ponto = tpp; // CS fica sem o campo (padrão)
     });
     return { validas: validas, erros: erros, colunas: col };
   };
@@ -1117,23 +1120,54 @@ var VR = (function () {
       if (m[1]) continue;
       var fim = t.indexOf('</Placemark>', re.lastIndex); if (fim < 0) break;
       var pm = t.slice(re.lastIndex, fim); re.lastIndex = fim + 12;
-      var reL = /<LineString\b[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/gi, l, metros = 0, achou = false, assinatura = [];
+      var reL = /<LineString\b[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/gi, l, metros = 0, achou = false, assinatura = [], trajeto = [];
       while ((l = reL.exec(pm))) {
         achou = true;
         var pts = desXml(l[1]).split(/\s+/).filter(Boolean).map(function (p) { var x = p.split(','); return { lng: Number(x[0]), lat: Number(x[1]) }; })
           .filter(function (p) { return isFinite(p.lat) && isFinite(p.lng); });
         for (var i = 1; i < pts.length; i++) metros += R.distanciaM(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng);
+        trajeto.push(pts.map(function (p) { return [Math.round(p.lat * 1e6) / 1e6, Math.round(p.lng * 1e6) / 1e6]; }));
         if (pts.length) assinatura.push([pts[0].lat.toFixed(4) + ',' + pts[0].lng.toFixed(4), pts[pts.length - 1].lat.toFixed(4) + ',' + pts[pts.length - 1].lng.toFixed(4)].sort().join('>')); // nos dois sentidos
       }
       if (!achou) continue;
       var nome = tag(pm.replace(/<ExtendedData[\s\S]*?<\/ExtendedData>/i, ''), 'name'), pasta = pastas.filter(Boolean).join(' / ');
       var chave = assinatura.sort().join('|') + '|' + Math.round(metros / 5);
-      linhas.push({ nome: nome, pasta: pasta, metros: Math.round(metros), rota: /(^|[^a-z])rota([^a-z]|$)/i.test(nome + ' ' + (pastas[pastas.length - 1] || '')), repetida: !!vistos[chave] });
+      linhas.push({ nome: nome, pasta: pasta, metros: Math.round(metros), pts: trajeto, rota: /(^|[^a-z])rota([^a-z]|$)/i.test(nome + ' ' + (pastas[pastas.length - 1] || '')), repetida: !!vistos[chave] });
       vistos[chave] = true;
     }
     var temRota = linhas.some(function (x) { return x.rota; });
     linhas.forEach(function (x) { x.conta = !x.repetida && (!temRota || x.rota) && x.metros > 0; });
     return { metros: R.somaLinhasKml(linhas), linhas: linhas, so_rota: temRota };
+  };
+  // Distância (m) de um ponto até uma polilinha [[lat,lng],...] — projeção plana local, boa para dezenas de metros.
+  R.distPontoLinhaM = function (lat, lng, pts) {
+    var kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540, melhor = Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      var ax = (pts[i][1] - lng) * kx, ay = (pts[i][0] - lat) * ky;
+      melhor = Math.min(melhor, Math.sqrt(ax * ax + ay * ay));
+      if (!i) continue;
+      var bx = (pts[i - 1][1] - lng) * kx, by = (pts[i - 1][0] - lat) * ky, dx = ax - bx, dy = ay - by, L2 = dx * dx + dy * dy;
+      var t = L2 ? Math.max(0, Math.min(1, -(bx * dx + by * dy) / L2)) : 0, px = bx + t * dx, py = by + t * dy;
+      melhor = Math.min(melhor, Math.sqrt(px * px + py * py));
+    }
+    return melhor;
+  };
+  // Pontos da Base KML a até "raio" metros das linhas que contam (rota aérea): CEO primeiro, depois do mais perto ao mais longe.
+  R.RAIO_BASE_AEREA = 30;
+  R.pontosNoTracado = function (base, linhas, raio) {
+    raio = raio || R.RAIO_BASE_AEREA;
+    var tr = []; (linhas || []).forEach(function (l) { if (l.conta) (l.pts || []).forEach(function (p) { if (p.length) tr.push(p); }); });
+    if (!tr.length) return [];
+    var minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+    tr.forEach(function (p) { p.forEach(function (q) { minLa = Math.min(minLa, q[0]); maxLa = Math.max(maxLa, q[0]); minLo = Math.min(minLo, q[1]); maxLo = Math.max(maxLo, q[1]); }); });
+    var mg = raio / 100000 * 1.5, out = [];
+    (base || []).forEach(function (c) {
+      var lat = Number(c.lat), lng = Number(c.lng);
+      if (!isFinite(lat) || !isFinite(lng) || lat < minLa - mg || lat > maxLa + mg || lng < minLo - mg || lng > maxLo + mg) return;
+      var d = Infinity; tr.forEach(function (p) { d = Math.min(d, R.distPontoLinhaM(lat, lng, p)); });
+      if (d <= raio) out.push({ id_cs: c.id_cs, tipo_ponto: R.tipoPonto(c), cluster: c.cluster || '', lat: lat, lng: lng, endereco: c.endereco || '', descricao: String(c.descricao || '').slice(0, 300), dist_m: Math.round(d) });
+    });
+    return out.sort(function (a, b) { return (a.tipo_ponto === 'CEO' ? 0 : 1) - (b.tipo_ponto === 'CEO' ? 0 : 1) || a.dist_m - b.dist_m; });
   };
   R.somaLinhasKml = function (linhas) { return (linhas || []).reduce(function (s, x) { return s + (x.conta ? x.metros : 0); }, 0); };
 
@@ -1148,6 +1182,14 @@ var VR = (function () {
   var GENERICO = /^(r\s?\d|cs|sl|ceo|\+|marcador sem t[ií]tulo|subida lateral|caixa)$/i;
   R.chavePasta = function (l) { return (l.pastas || []).join(' / ') || '(raiz)'; };
   R.pastaEhCs = function (chave) { var u = String(chave).split(' / ').pop(); return /^cs\b/i.test(String(u).trim()); };
+  // Tipo do ponto na Base KML, pela pasta do KMZ: CS (vistoria subterrânea), CEO (pode estar na aérea),
+  // SL (subida lateral) ou OUTRO. Pontos sem tipo (bases antigas) contam como CS.
+  R.tipoDaPasta = function (chave) {
+    var u = String(String(chave).split(' / ').pop() || '').trim();
+    return /^cs\b/i.test(u) ? 'CS' : /\bceo\b/i.test(u) ? 'CEO' : /^(sl|subida)\b/i.test(u) ? 'SL' : 'OUTRO';
+  };
+  R.tipoPonto = function (c) { return (c && c.tipo_ponto) || 'CS'; };
+  R.pastaPadrao = function (chave) { var t = R.tipoDaPasta(chave); return t === 'CS' || t === 'CEO'; };
   R.clusterDaPasta = function (pastas) {
     var p = (pastas || []).slice(); while (p.length && /^(cs|acessos?)\b/i.test(String(p[p.length - 1]).trim())) p.pop();
     return p.length ? String(p[p.length - 1]).trim() : '';
@@ -1158,20 +1200,28 @@ var VR = (function () {
     var usados = {}, saida = [], semId = {}, mesmoPonto = {}, duplicados = 0;
     (linhas || []).forEach(function (l) {
       var chave = R.chavePasta(l);
-      if (marcadas ? marcadas.indexOf(chave) < 0 : !R.pastaEhCs(chave)) return;
+      if (marcadas ? marcadas.indexOf(chave) < 0 : !R.pastaPadrao(chave)) return;
+      var tipo = R.tipoDaPasta(chave);
       var cluster = origem === 'pasta' ? (R.clusterDaPasta(l.pastas) || clArq) : clArq;
       // KMZ com a mesma pasta copiada duas vezes: o mesmo ponto (até ~1 m) no mesmo cluster entra uma vez só.
-      var kp = cluster + '|' + Number(l.lat).toFixed(5) + '|' + Number(l.lng).toFixed(5);
+      var kp = cluster + '|' + tipo + '|' + Number(l.lat).toFixed(5) + '|' + Number(l.lng).toFixed(5);
       if (mesmoPonto[kp]) { duplicados++; return; } mesmoPonto[kp] = true;
       var desc = String(l.descricao || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
       var linha1 = desc.split('\n')[0].trim(), nome = String(l.nome || '').trim();
-      var num = /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(nome) || /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(linha1);
-      var rot = num ? 'CS ' + num[1].toUpperCase() : (nome && !GENERICO.test(nome) ? nome : '');
-      var tp = /(^|[^A-Z0-9])R\s?([1-9])(?![0-9])/i.exec(nome + '\n' + desc);
-      saida.push({ cluster: cluster, rot: rot, tipo_caixa: tp ? 'R' + tp[2] : '', descricao: desc.slice(0, 1000), lat: l.lat, lng: l.lng,
+      var rot = '';
+      if (tipo === 'CEO') { // "CEO 25143", "CEO FIST (PATRIMÔNIO 76: 13420)"…
+        var ce = /^\s*CEO\b[\s:-]*([^\n]*)/i.exec(nome) || /^\s*CEO\b[\s:-]*([^\n]*)/i.exec(linha1);
+        rot = ce ? ('CEO ' + ce[1].trim()).trim().slice(0, 60) : (nome && !GENERICO.test(nome) ? nome : '');
+        if (rot === 'CEO') rot = '';
+      } else {
+        var num = /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(nome) || /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(linha1);
+        rot = num ? 'CS ' + num[1].toUpperCase() : (nome && !GENERICO.test(nome) ? nome : '');
+      }
+      var tp = tipo === 'CS' ? /(^|[^A-Z0-9])R\s?([1-9])(?![0-9])/i.exec(nome + '\n' + desc) : null;
+      saida.push({ cluster: cluster, rot: rot, tipo_ponto: tipo, tipo_caixa: tp ? 'R' + tp[2] : '', descricao: desc.slice(0, 1000), lat: l.lat, lng: l.lng,
         endereco: l.endereco || '', pasta: chave, id_no_kmz: !!rot });
     });
-    saida.forEach(function (c) { if (!c.rot) { semId[c.cluster] = (semId[c.cluster] || 0) + 1; c.rot = 'CS s/n ' + ('0' + semId[c.cluster]).slice(-2); } });
+    saida.forEach(function (c) { if (!c.rot) { var k = c.cluster + '|' + c.tipo_ponto; semId[k] = (semId[k] || 0) + 1; c.rot = (c.tipo_ponto === 'OUTRO' ? 'Ponto' : c.tipo_ponto) + ' s/n ' + ('0' + semId[k]).slice(-2); } });
     saida.forEach(function (c) {
       var base = (c.cluster ? c.cluster + ' - ' : '') + c.rot, id = base, n = 1;
       while (usados[id]) id = base + ' (' + (++n) + ')';

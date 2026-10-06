@@ -76,7 +76,8 @@
         <table class="tab" style="margin-top:6px"><tbody>
           <tr><td class="muted">Data</td><td>${SN.vst.dia(r.data_planejada)}</td></tr>
           <tr><td class="muted">Região</td><td>${esc(r.regiao || '—')}</td></tr>
-          <tr><td class="muted">Solicitante</td><td>${esc(r.solicitante || '—')}${r.notificacao ? '<br>' + esc(r.notificacao) : ''}</td></tr>
+          <tr><td class="muted">Solicitante</td><td>${esc(r.solicitante || '—')}</td></tr>
+          ${r.notificacao ? `<tr><td class="muted">Notificação / Protocolo</td><td>${esc(r.notificacao)}</td></tr>` : ''}
           <tr><td class="muted">Prestador</td><td>${esc(r.prestador)}${r.tecnico ? ' · ' + esc(r.tecnico) : ''}</td></tr>
           <tr><td class="muted">Previsto</td><td>${SN.num(r.metros_previstos)} m</td></tr>
           ${r.observacao ? `<tr><td class="muted">Obs.</td><td>${esc(r.observacao)}</td></tr>` : ''}
@@ -84,6 +85,11 @@
         ${r.kmz_url ? `<a class="btn prim bloco" style="margin-top:10px" href="${esc(r.kmz_url)}" target="_blank" rel="noopener">🗺️ Abrir rota (KMZ)</a>`
           : '<div class="aviso alerta small" style="margin-top:10px">Esta rota não tem KMZ. Peça o link ao planejamento.</div>'}
       </div>
+      ${(r.pontos_base || []).length ? `<div class="card" style="margin-bottom:10px"><details ${r.pontos_base.length <= 15 ? 'open' : ''}><summary><b>CEO e pontos no caminho (${r.pontos_base.length})</b></summary>
+        <div class="small muted" style="margin:4px 0 6px">Pontos da base a até 30 m da rota. Confira cada um ao passar.</div>
+        ${r.pontos_base.map(p => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d"><span class="badge ${p.tipo_ponto === 'CEO' ? 'info' : ''}">${esc(p.tipo_ponto)}</span> ${esc(p.id_cs)}</div>
+          <div class="c">${esc(p.endereco || '')}${p.descricao ? `<div class="muted" style="white-space:pre-line">${esc(p.descricao.slice(0, 200))}</div>` : ''}</div></div>
+          <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p.lat},${p.lng}">Mapa</a></div>`).join('')}</details></div>` : ''}
       ${A.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: trabalhando com os dados salvos no aparelho. O apontamento fica guardado e sobe quando a conexão voltar.</div>' : ''}
       <div id="aProg"></div>
       ${SN.vst.cartaoOs ? SN.vst.cartaoOs(r, {}) : ''}

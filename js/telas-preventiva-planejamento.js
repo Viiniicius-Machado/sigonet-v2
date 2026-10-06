@@ -40,7 +40,7 @@
     SN.$$('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; if (aba === 'NOVA' && !form) form = novaRota('AEREA'); pintar(); });
     ({ ROTAS: pintarRotas, NOVA: pintarForm, BASE: pintarBase, HIST: pintarHist, CFG: pintarCfg })[aba]();
   };
-  const recarregar = async () => { d = await SN.vst.carregar(); pintar(); };
+  const recarregar = async () => { delete csCache._toda; d = await SN.vst.carregar(); pintar(); };
 
   // ═══════════════════════════ Rotas ═══════════════════════════
   const progresso = r => {
@@ -128,14 +128,33 @@
 
   // ═══════════════════════════ Nova / editar rota ═══════════════════════════
   // Linhas do KMZ da rota aérea: o planejador vê cada uma e marca o que o técnico vai percorrer.
-  const aplicarMedicao = (f, m) => { if (!m || !(m.linhas || []).length) return; f.kmz_medicao = { metros: m.metros, linhas: m.linhas }; f.metros_previstos = m.metros; };
+  const aplicarMedicao = async (f, m) => { if (!m || !(m.linhas || []).length) return; f.kmz_medicao = { metros: m.metros, linhas: m.linhas }; f.metros_previstos = m.metros; await atualizarPontos(f); };
+  // Pontos da Base KML (CEO, CS…) a até 30 m das linhas que contam: vão para a rota e aparecem para o técnico.
+  // Só recalcula com o traçado em mãos (KMZ recém-medido); rota já salva mantém a lista que tinha.
+  const atualizarPontos = async f => {
+    const ls = (f.kmz_medicao || {}).linhas || []; if (!ls.some(l => l.pts)) return;
+    try { const base = csCache._toda || (csCache._toda = (await SN.vst.exec('VST_CS_BASE', {})).cs || []);
+      // Escolha anterior do planejador vale; sem escolha, CS (caixa subterrânea) começa desmarcada e o resto (CEO…) marcado.
+      const antes = {}; (f.pontos_base || []).forEach(p => { antes[p.id_cs] = p.incluir !== false; });
+      f.pontos_base = VR.pontosNoTracado(base, ls).map(p => ({ ...p, incluir: p.id_cs in antes ? antes[p.id_cs] : p.tipo_ponto !== 'CS' }));
+    } catch (e) { SN.toast('Não deu para buscar os pontos da Base KML: ' + e.message, 'erro'); }
+  };
+  const htmlPontosBase = f => {
+    const ps = f.pontos_base || []; if (!ps.length) return f.kmz_medicao ? '<div class="small muted" style="margin-top:6px">Nenhum ponto da Base KML (CEO/CS) a até 30 m do traçado.</div>' : '';
+    const n = t => ps.filter(p => p.tipo_ponto === t && p.incluir !== false).length;
+    return `<details open style="margin-top:6px"><summary class="small"><b>Pontos da Base KML no caminho</b>: ${n('CEO')} CEO · ${ps.filter(p => p.tipo_ponto !== 'CEO' && p.incluir !== false).length} outro(s) — o técnico vê esta lista na rota</summary>
+      <table class="tab small"><tbody>${ps.map((p, i) => `<tr><td style="width:28px"><input type="checkbox" data-pb="${i}" ${p.incluir !== false ? 'checked' : ''}></td>
+        <td><span class="badge ${p.tipo_ponto === 'CEO' ? 'info' : ''}">${esc(p.tipo_ponto)}</span> ${esc(p.id_cs)}<div class="muted">${esc(p.endereco || '')}${p.descricao ? ' · ' + esc(p.descricao.slice(0, 90)) : ''}</div></td>
+        <td class="num nowrap">${SN.num(p.dist_m)} m da linha</td><td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p.lat},${p.lng}">mapa</a></td></tr>`).join('')}</tbody></table></details>`;
+  };
   const htmlLinhasKmz = f => {
     const m = f.kmz_medicao; if (!m || !m.linhas.length) return '';
     const soRota = m.linhas.some(l => l.rota);
     return `<details ${m.linhas.length <= 12 ? 'open' : ''} style="margin-top:6px"><summary class="small"><b>Linhas do KMZ</b>: ${SN.num(m.metros)} m em ${m.linhas.filter(l => l.conta).length} de ${m.linhas.length} linha(s)</summary>
       <div class="small muted" style="margin:4px 0">${soRota ? 'O KMZ tem linha "Rota": só ela conta (os cabos desenhados por cima do mesmo caminho ficam de fora).' : 'Todas as linhas contam; linha repetida (mesmo traçado) conta uma vez.'} Marque o que o técnico vai percorrer.</div>
       <table class="tab small"><tbody>${m.linhas.map((l, i) => `<tr><td style="width:28px"><input type="checkbox" data-kl="${i}" ${l.conta ? 'checked' : ''}></td>
-        <td>${esc(l.nome || '(sem nome)')}${l.repetida ? ' <span class="badge">repetida</span>' : ''}<div class="muted">${esc(l.pasta || '')}</div></td><td class="num nowrap">${SN.num(l.metros)} m</td></tr>`).join('')}</tbody></table></details>`;
+        <td>${esc(l.nome || '(sem nome)')}${l.repetida ? ' <span class="badge">repetida</span>' : ''}<div class="muted">${esc(l.pasta || '')}</div></td><td class="num nowrap">${SN.num(l.metros)} m</td></tr>`).join('')}</tbody></table></details>
+      ${htmlPontosBase(f)}`;
   };
   const novaRota = seg => ({ segmento: seg, cidade: '', prestador: '', tecnico: '', data_planejada: hoje(), data_limite: '', observacao: '',
     motivo: '', solicitante: '', notificacao: '', kmz_url: '', metros_previstos: '', cluster: '', cs_planejadas: [], extensao_km: '', cenario_esperado: { dono_duto: '', operadoras: [] } });
@@ -210,20 +229,21 @@
       if (!f.cidade) return SN.toast('Informe a cidade antes de enviar o KMZ (ele é guardado na pasta da cidade).', 'erro');
       SN.toast('Enviando KMZ para o Drive…');
       try { const r = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: f.cidade, dataUrl: await lerArquivo(file, true) }); f.kmz_url = r.url; f.kmz_drive_id = r.drive_id;
-        aplicarMedicao(f, r.medicao); SN.toast(r.medicao && r.medicao.linhas.length ? `KMZ enviado: ${SN.num(f.metros_previstos)} m de rota.` : 'KMZ enviado (sem linhas para medir: informe os metros).', 'ok'); pintarForm(); }
+        await aplicarMedicao(f, r.medicao); SN.toast(r.medicao && r.medicao.linhas.length ? `KMZ enviado: ${SN.num(f.metros_previstos)} m de rota.` : 'KMZ enviado (sem linhas para medir: informe os metros).', 'ok'); pintarForm(); }
       catch (e) { SN.toast(e.message, 'erro'); }
     };
     // Link colado (Drive): mede pelo servidor quando o link muda ou no "calcular".
-    const medirLink = async () => { try { const r = await SN.vst.exec('VST_KMZ_MEDIR', { url: f.kmz_url, drive_id: f.kmz_drive_id }); aplicarMedicao(f, r.medicao); SN.toast(`${SN.num(f.metros_previstos)} m de rota pelo KMZ.`, 'ok'); pintarForm(); } catch (e) { SN.toast(e.message, 'erro'); } };
+    const medirLink = async () => { try { const r = await SN.vst.exec('VST_KMZ_MEDIR', { url: f.kmz_url, drive_id: f.kmz_drive_id }); await aplicarMedicao(f, r.medicao); SN.toast(`${SN.num(f.metros_previstos)} m de rota pelo KMZ.`, 'ok'); pintarForm(); } catch (e) { SN.toast(e.message, 'erro'); } };
     if (SN.$('#fKmzMedir')) SN.$('#fKmzMedir').onclick = ev => { ev.preventDefault(); medirLink(); };
-    SN.$$('[data-kl]').forEach(cb => cb.onchange = () => { const l = f.kmz_medicao.linhas[+cb.dataset.kl]; l.conta = cb.checked;
-      f.kmz_medicao.metros = VR.somaLinhasKml(f.kmz_medicao.linhas); f.metros_previstos = f.kmz_medicao.metros; pintarForm(); });
+    SN.$$('[data-kl]').forEach(cb => cb.onchange = async () => { const l = f.kmz_medicao.linhas[+cb.dataset.kl]; l.conta = cb.checked;
+      f.kmz_medicao.metros = VR.somaLinhasKml(f.kmz_medicao.linhas); f.metros_previstos = f.kmz_medicao.metros; await atualizarPontos(f); pintarForm(); });
+    SN.$$('[data-pb]').forEach(cb => cb.onchange = () => { f.pontos_base[+cb.dataset.pb].incluir = cb.checked; pintarForm(); });
     if (!aerea && f.cluster) carregarCs(f);
     const salvar = async despachar => {
       const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
       try {
         if (!f.id_rota && !f.chave_cliente) f.chave_cliente = SN.vst.uid ? SN.vst.uid() : Date.now().toString(36) + Math.random().toString(36).slice(2); // reenvio não duplica a rota
-        const r = await SN.vst.exec('VST_ROTA_SALVAR', { rota: f });
+        const r = await SN.vst.exec('VST_ROTA_SALVAR', { rota: f.segmento === 'AEREA' ? { ...f, pontos_base: (f.pontos_base || []).filter(p => p.incluir !== false) } : f });
         if (despachar) await SN.vst.exec('VST_ROTA_STATUS', { id_rota: r.rota.id_rota, para: 'DESPACHADA' });
         SN.toast(despachar ? `Rota ${r.rota.id_rota} despachada: o chamado Preventiva está na fila do técnico.` : `Rota ${r.rota.id_rota} salva (planejada).`, 'ok');
         form = null; aba = 'ROTAS'; await recarregar();
@@ -271,7 +291,7 @@
   const carregarCs = async f => {
     const el = SN.$('#fCs'); if (!el) return;
     try {
-      const lista = csCache[f.cluster] || (csCache[f.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: f.cluster })).cs);
+      const lista = csCache[f.cluster] || (csCache[f.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: f.cluster })).cs.filter(c => VR.tipoPonto(c) === 'CS')); // CEO/SL ficam fora da subterrânea
       if (form !== f || !SN.$('#fCs')) return;
       // Sequência do cluster inteiro (uma vez por cluster): a lista já aparece em ordem de continuidade.
       const seq = lista._seq || (lista._seq = VR.ordenarMenorCaminho(lista.map(c => c.id_cs), lista));
@@ -411,9 +431,10 @@
           <div class="campo"><label>Cidade (se o arquivo não tiver)</label><input class="inp" id="bCid" list="lCid2"><datalist id="lCid2">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div>
         <label class="btn">📂 Escolher arquivo (CSV, XLSX, KMZ, KML)<input type="file" id="bArq" accept=".csv,.xlsx,.xls,.kmz,.kml" hidden></label>
         <div id="bPrevia" style="margin-top:10px"></div></div>
-      <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> CS em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
-        ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th><th>Editar / Excluir</th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
-          return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td>
+      <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> ponto(s) em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
+        ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">CEO / outros</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th><th>Editar / Excluir</th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, tot]) => { const x = prog[k] || { c: 0, r: 0 };
+          const tp = (b.tipos || {})[k] || { CS: tot }, n = tp.CS || 0, outros = Object.entries(tp).filter(([t]) => t !== 'CS');
+          return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num small">${outros.map(([t, q]) => esc(t === 'OUTRO' ? 'outros' : t) + ' ' + SN.num(q)).join(' · ') || '—'}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td>
             <td class="nowrap">${k === '(sem cluster)' ? '' : `<button class="btn sm" data-rencl="${esc(k)}" title="Renomear o cluster em todo o sistema">Editar</button> `}<button class="btn sm perigo" data-excl="${esc(k)}" title="Excluir as CS deste cluster da base">Excluir</button></td></tr>`; }).join('')}</tbody></table>
           <p class="small muted">Concluída = vistoria aprovada na revisão. CS em rota não entra em outra rota; concluída só com "Forçar".</p>` : ''}
         <h4 style="margin-top:12px">Importações</h4>${imp.length ? `<table class="tab small"><thead><tr><th>Quando</th><th>Versão</th><th>Arquivo</th><th class="num">CS</th><th>Por</th></tr></thead><tbody>
@@ -453,7 +474,7 @@
     const nomeArq = arquivo.replace(/\.(kmz|kml)$/i, '').trim();
     const pontos = {}; r.linhas.forEach(l => { const k = VR.chavePasta(l); pontos[k] = (pontos[k] || 0) + 1; });
     kmz = { arquivo, linhas: r.linhas, outros: r.outros || {}, pontos, cluster: nomeArq, origem: 'arquivo',
-      pastas: Object.keys(pontos).filter(VR.pastaEhCs), buscar: true, token: {} };
+      pastas: Object.keys(pontos).filter(VR.pastaPadrao), buscar: true, token: {} };
     if (!SN.$('#bVer').value.trim()) SN.$('#bVer').value = nomeArq + ' (' + SN.vst.dia(hoje()) + ')';
     pintarKmz(); buscarEnderecos();
   };
@@ -486,13 +507,13 @@
     const el = SN.$('#bPrevia'); if (!el || !kmz) return;
     const cs = csKmz(), cidadeCampo = SN.$('#bCid').value.trim();
     const comEnd = cs.filter(c => c.endereco).length, pend = faltaEndereco(cs).length;
-    const porCl = {}; cs.forEach(c => { const x = porCl[c.cluster || '(sem cluster)'] = porCl[c.cluster || '(sem cluster)'] || { n: 0, semid: 0, R: {} };
-      x.n++; if (!c.id_no_kmz) x.semid++; if (c.tipo_caixa) x.R[c.tipo_caixa] = (x.R[c.tipo_caixa] || 0) + 1; });
+    const porCl = {}; cs.forEach(c => { const x = porCl[c.cluster || '(sem cluster)'] = porCl[c.cluster || '(sem cluster)'] || { n: 0, semid: 0, R: {}, T: {} };
+      x.n++; x.T[c.tipo_ponto] = (x.T[c.tipo_ponto] || 0) + 1; if (!c.id_no_kmz) x.semid++; if (c.tipo_caixa) x.R[c.tipo_caixa] = (x.R[c.tipo_caixa] || 0) + 1; });
     const existentes = Object.keys((d.base || {}).clusters || {});
     const status = pend ? `<span class="muted">Buscando os endereços pelo mapa… faltam ${pend} (≈${Math.max(1, Math.ceil(pend * 1.1 / 60))} min)</span> <button class="btn sm" id="kPara">Parar a busca</button>`
       : `<b>${comEnd}</b> de ${cs.length} CS com endereço${kmz.buscar ? '' : ' (busca parada)'}${comEnd < cs.length && !kmz.buscar ? ' <button class="btn sm" id="kBusca">Buscar o resto</button>' : ''}`;
     const tabelaCs = `<div class="tabela-wrap" style="max-height:340px;margin-top:6px"><table class="tab small"><thead><tr><th>ID na base</th><th>Tipo</th><th>Endereço (pelo mapa)</th><th>Lat, Lng</th><th>Informação do KMZ</th></tr></thead><tbody>
-      ${cs.map(c => `<tr><td class="mono nowrap">${esc(c.id_cs)}${c.id_no_kmz ? '' : ' <span class="badge alerta" title="O ponto não tem número de CS no KMZ">sem nº</span>'}</td><td>${esc(c.tipo_caixa || '—')}</td>
+      ${cs.map(c => `<tr><td class="mono nowrap">${esc(c.id_cs)}${c.id_no_kmz ? '' : ' <span class="badge alerta" title="O ponto não tem número de CS no KMZ">sem nº</span>'}</td><td>${esc(c.tipo_ponto)}${c.tipo_caixa ? ' ' + esc(c.tipo_caixa) : ''}</td>
         <td>${c.endereco ? esc(c.endereco) + (c.cidade_geo ? `<div class="muted">${esc(c.cidade_geo)}</div>` : '') : `<span class="muted">${chaveGeo(c) in geoCache ? 'não achado' : '…'}</span>`}</td>
         <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${c.lat},${c.lng}">${Number(c.lat).toFixed(6)}, ${Number(c.lng).toFixed(6)}</a></td>
         <td class="muted" style="white-space:pre-line;min-width:220px">${esc(c.descricao.slice(0, 160))}${c.descricao.length > 160 ? '…' : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nenhuma CS nas pastas marcadas.</td></tr>'}</tbody></table></div>`;
@@ -502,11 +523,11 @@
         <div class="campo"><label>O cluster vem de</label><select class="inp" id="kOri"><option value="arquivo" ${kmz.origem === 'arquivo' ? 'selected' : ''}>nome do arquivo (um cluster)</option><option value="pasta" ${kmz.origem === 'pasta' ? 'selected' : ''}>pastas do KMZ (vários clusters)</option></select></div></div>
       <h4 style="margin:10px 0 4px">O que tem no arquivo</h4>
       <div class="tabela-wrap" style="max-height:220px"><table class="tab small"><thead><tr><th>Entra na base</th><th>Pasta do KMZ</th><th class="num">Itens</th></tr></thead><tbody>
-        ${Object.entries(kmz.pontos).map(([k, n]) => `<tr><td><input type="checkbox" data-kp="${esc(k)}" ${kmz.pastas.includes(k) ? 'checked' : ''}></td><td>${esc(k)}</td><td class="num">${SN.num(n)} ponto(s)</td></tr>`).join('')}
+        ${Object.entries(kmz.pontos).map(([k, n]) => `<tr><td><input type="checkbox" data-kp="${esc(k)}" ${kmz.pastas.includes(k) ? 'checked' : ''}></td><td>${esc(k)} <span class="badge">${esc(VR.tipoDaPasta(k) === 'OUTRO' ? 'outro' : VR.tipoDaPasta(k))}</span></td><td class="num">${SN.num(n)} ponto(s)</td></tr>`).join('')}
         ${Object.entries(kmz.outros).map(([k, n]) => `<tr class="muted"><td>—</td><td>${esc(k)} <span class="small">(cabo, duto ou rota: não é CS)</span></td><td class="num">${SN.num(n)} linha(s)</td></tr>`).join('')}</tbody></table></div>
       <h4 style="margin:10px 0 4px">Vai para a base</h4>
-      <table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th>Tipos</th><th class="num">Sem nº no KMZ</th><th></th></tr></thead><tbody>
-        ${Object.entries(porCl).map(([k, x]) => `<tr><td><b>${esc(k)}</b></td><td class="num"><b>${SN.num(x.n)}</b></td><td>${Object.entries(x.R).sort().map(([t, n]) => esc(t) + ': ' + n).join(' · ') || '—'}</td><td class="num">${x.semid || ''}</td>
+      <table class="tab small"><thead><tr><th>Cluster</th><th class="num">Pontos</th><th>Tipos</th><th class="num">Sem nº no KMZ</th><th></th></tr></thead><tbody>
+        ${Object.entries(porCl).map(([k, x]) => `<tr><td><b>${esc(k)}</b></td><td class="num"><b>${SN.num(x.n)}</b></td><td>${Object.entries(x.T).map(([t, n]) => esc(t === 'OUTRO' ? 'outros' : t) + ' ' + n).join(' · ')}${Object.keys(x.R).length ? ' <span class="muted">(' + Object.entries(x.R).sort().map(([t, n]) => esc(t) + ': ' + n).join(' · ') + ')</span>' : ''}</td><td class="num">${x.semid || ''}</td>
           <td class="small">${existentes.includes(k) ? '<span style="color:var(--erro)">já existe na base: CS com o mesmo ID são atualizadas</span>' : '<span class="muted">cluster novo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nenhuma pasta marcada.</td></tr>'}</tbody></table>
       ${cs.duplicados ? `<p class="small muted">${cs.duplicados} ponto(s) repetido(s) no arquivo (mesma posição) entram uma vez só.</p>` : ''}
       <p class="small muted" style="margin:6px 0 0">ID na base = cluster + número da CS no KMZ (cada KMZ recomeça do CS 1). Ponto sem número recebe "CS s/n". A informação do KMZ (cabos, CEO, lote) fica guardada na CS.</p>
@@ -533,7 +554,7 @@
     const pend = faltaEndereco(cs).length;
     if (pend && !await SN.confirmar('Endereços ainda em busca', `Faltam ${pend} endereço(s). Importar agora deixa essas CS sem endereço.`, 'Importar assim')) return;
     kmz.buscar = false; kmz.token = {};
-    const linhas = cs.map(c => ({ id_cs: c.id_cs, cluster: c.cluster, cidade: cidade || c.cidade_geo, lat: c.lat, lng: c.lng, endereco: c.endereco, tipo_caixa: c.tipo_caixa, descricao: c.descricao }));
+    const linhas = cs.map(c => ({ id_cs: c.id_cs, cluster: c.cluster, cidade: cidade || c.cidade_geo, lat: c.lat, lng: c.lng, endereco: c.endereco, tipo_caixa: c.tipo_caixa, tipo_ponto: c.tipo_ponto, descricao: c.descricao }));
     const clusters = [...new Set(cs.map(c => c.cluster))];
     bt.disabled = true; const lotes = []; for (let i = 0; i < linhas.length; i += 300) lotes.push(linhas.slice(i, i + 300));
     try {
