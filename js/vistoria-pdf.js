@@ -111,10 +111,18 @@ SN.vst = SN.vst || {};
       L.producao_aerea.forEach(c => doc.linha(c.rot, SN.num(Number(acumulado[c.k]) || 0, c.k === 'cordoalha' ? 1 : 0)));
       if (Number(rota.metros_previstos)) doc.linha('% da rota', Math.round(1000 * (Number(acumulado.metros) || 0) / Number(rota.metros_previstos)) / 10 + '%');
     }
-    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    if (fotos.length) {
-      doc.secao(`Fotos (${fotos.length})`);
-      await gradeFotos(doc, fotos.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), f => `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`);
+    // Fotos separadas por item da produção; as genéricas antigas ("producao") vão por último.
+    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), legenda = f => `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    for (const x of VR.validarFotosApontamento(a).itens) {
+      const doItem = fotos.filter(f => f.tipo_foto === x.foto);
+      if (!doItem.length && !x.exigidas) continue;
+      doc.secao(`Fotos · ${x.rot.replace(/ \(m\)$/, '')} (${doItem.length} de ${x.exigidas} exigida(s))`);
+      if (doItem.length) await gradeFotos(doc, doItem.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
+    }
+    const semItem = fotos.filter(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto));
+    if (semItem.length) {
+      doc.secao(`Fotos sem item (${semItem.length})`);
+      await gradeFotos(doc, semItem.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
     }
     rodape(doc, `Ficha gerada no aparelho em ${SN.dt(SN.agora())} · apontamento ${a.id_apontamento}`);
     return SN.pdfDataUrl(doc);

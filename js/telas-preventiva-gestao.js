@@ -162,7 +162,11 @@
     return secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação', r.notificacao] : null,
         ['Prestador / técnico', `${r.prestador} · ${a.tecnico || ''}`], ['Previsto', SN.num(r.metros_previstos) + ' m'], ['KMZ', r.kmz_url || '—']], [])
       + secao(`Apontamento ${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'} · ${SN.vst.dia(a.data)}`, [
-        ...L.producao_aerea.map(c => [c.rot, SN.num(Number(a[c.k]) || 0)]), a.observacao ? ['Observação', a.observacao] : null], fotos)
+        ...L.producao_aerea.map(c => [c.rot, SN.num(Number(a[c.k]) || 0)]), a.observacao ? ['Observação', a.observacao] : null], [])
+      // Fotos de cada item, ao lado do número (a quantidade exigida segue VR.fotosExigidasAerea).
+      + VR.validarFotosApontamento(a).itens.filter(x => x.exigidas || x.tem).map(x => secao(x.rot.replace(/ \(m\)$/, ''),
+        [[x.rot, SN.num(Number(a[x.k]) || 0)], ['Fotos', `${x.tem} de ${x.exigidas} exigida(s)`, x.tem < x.exigidas]], fotos.filter(f => f.tipo_foto === x.foto))).join('')
+      + (fotos.some(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto)) ? secao('Fotos sem item (envio anterior à regra)', [], fotos.filter(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto))) : '')
       + secao('Acumulado da rota (não rejeitados)', [...L.producao_aerea.map(c => [c.rot, SN.num(p.totais[c.k])]),
         ['% do previsto', p.pct != null ? p.pct + '%' : '—', p.pct != null && (p.pct < 80 || p.pct > 120)], ['Apontamentos', p.apontamentos]], []);
   };

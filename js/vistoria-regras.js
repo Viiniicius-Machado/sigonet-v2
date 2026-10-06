@@ -890,6 +890,23 @@ var VR = (function () {
     return { ok: !erros.length, erros: erros };
   };
   var n0 = function (v) { return numero(v) ? Number(v) : 0; };
+  // Fotos obrigatórias do apontamento aéreo, por item (regra do usuário, 06/10/2026):
+  // rota percorrida ≥ 5; postes, caixas/CEO e sobra = a quantidade informada;
+  // cordoalha = 1 se houver; plaquetas = metade da quantidade (arredonda para cima).
+  R.fotosExigidasAerea = function (a) {
+    a = a || {}; var q = function (k) { var x = n0(a[k]); return x > 0 ? x : 0; };
+    return { metros: q('metros') > 0 ? 5 : 0, postes: Math.ceil(q('postes')), cordoalha: q('cordoalha') > 0 ? 1 : 0,
+      plaquetas: Math.ceil(q('plaquetas') / 2), caixas: Math.ceil(q('caixas')), sobra: Math.ceil(q('sobra')) };
+  };
+  R.validarFotosApontamento = function (a) {
+    var ex = R.fotosExigidasAerea(a), erros = [], itens = [];
+    L.producao_aerea.forEach(function (c) {
+      var tem = ((a && a.fotos) || []).filter(function (f) { return f.tipo_foto === c.foto; }).length;
+      itens.push({ k: c.k, rot: c.rot, foto: c.foto, exigidas: ex[c.k], tem: tem });
+      if (tem < ex[c.k]) erros.push(c.rot.replace(/ \(m\)$/, '') + ': faltam ' + (ex[c.k] - tem) + ' foto(s) (' + tem + ' de ' + ex[c.k] + ').');
+    });
+    return { ok: !erros.length, erros: erros, itens: itens };
+  };
   // Soma da produção da rota. opcoes.soAprovados: só o que a revisão aprovou.
   R.producaoRota = function (rota, apontamentos, opcoes) {
     var so = opcoes && opcoes.soAprovados;

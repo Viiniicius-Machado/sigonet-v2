@@ -73,8 +73,15 @@ var VR_LISTAS = (function () {
     { tipo: 'anomalia_solo',  n: 9,  rot: 'Anomalia do solo no entorno' },
     { tipo: 'anomalia',       n: 9,  rot: 'Anomalia do trecho (uma por anomalia)', multipla: true },
     { tipo: 'tampa_final',    n: 10, rot: 'Tampa fechada ao final' },
-    // Aérea: foto opcional do apontamento de produção (postes, cordoalha, plaquetas…).
+    // Aérea: "producao" é a foto genérica antiga (apontamentos enviados até 06/10/2026);
+    // as novas são por item da produção, com a quantidade de VR.fotosExigidasAerea.
     { tipo: 'producao',       n: 11, rot: 'Foto da produção (aérea)', multipla: true },
+    { tipo: 'aerea_metros',   n: 0,  rot: 'Rota percorrida', multipla: true },
+    { tipo: 'aerea_postes',   n: 0,  rot: 'Postes equipados', multipla: true },
+    { tipo: 'aerea_cordoalha', n: 0, rot: 'Cordoalha', multipla: true },
+    { tipo: 'aerea_plaquetas', n: 0, rot: 'Plaquetas', multipla: true },
+    { tipo: 'aerea_caixas',   n: 0,  rot: 'Caixas/CEO regularizadas', multipla: true },
+    { tipo: 'aerea_sobra',    n: 0,  rot: 'Sobra técnica', multipla: true },
     // PDF de controle (ficha da CS / do apontamento): vai pela mesma fila das fotos, não aparece como campo.
     { tipo: 'ficha_pdf',      n: 0,  rot: 'Ficha PDF de controle', pdf: true }
   ];
@@ -85,12 +92,12 @@ var VR_LISTAS = (function () {
   L.tipo_apontamento = [['parcial', 'Parcial'], ['final', 'Finalizado']];
   // Campos de produção da aérea (os mesmos da planilha de KPIs + caixas/CEO).
   L.producao_aerea = [
-    { k: 'metros', rot: 'Rota percorrida (m)', un: 'm' },
-    { k: 'postes', rot: 'Postes equipados', un: '' },
-    { k: 'cordoalha', rot: 'Cordoalha (m)', un: 'm' },
-    { k: 'plaquetas', rot: 'Plaquetas', un: '' },
-    { k: 'caixas', rot: 'Caixas/CEO regularizadas', un: '' },
-    { k: 'sobra', rot: 'Sobra técnica', un: '' }
+    { k: 'metros', rot: 'Rota percorrida (m)', un: 'm', foto: 'aerea_metros', regra: 'mínimo 5 fotos' },
+    { k: 'postes', rot: 'Postes equipados', un: '', foto: 'aerea_postes', regra: '1 foto por poste' },
+    { k: 'cordoalha', rot: 'Cordoalha (m)', un: 'm', foto: 'aerea_cordoalha', regra: '1 foto' },
+    { k: 'plaquetas', rot: 'Plaquetas', un: '', foto: 'aerea_plaquetas', regra: 'fotos de metade das plaquetas' },
+    { k: 'caixas', rot: 'Caixas/CEO regularizadas', un: '', foto: 'aerea_caixas', regra: '1 foto por caixa/CEO' },
+    { k: 'sobra', rot: 'Sobra técnica', un: '', foto: 'aerea_sobra', regra: '1 foto por sobra' }
   ];
 
   // ─────────── Revisão ───────────

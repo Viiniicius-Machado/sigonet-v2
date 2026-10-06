@@ -147,54 +147,75 @@
       return;
     }
     const f = A.form || (A.form = novoForm());
-    const num = (k, rot) => `<div class="campo"><label>${rot}</label><input class="inp" type="number" inputmode="decimal" min="0" step="any" data-a="${k}" value="${esc(f[k] ?? '')}"></div>`;
+    // Cada item da produção tem o seu quadro de fotos; a quantidade exigida acompanha o número digitado.
+    const item = c => `<div class="vst-foto" data-item="${c.k}"><div class="campo" style="margin-bottom:6px"><label>${c.rot}${c.k === 'metros' ? ' *' : ''}</label>
+        <input class="inp" type="number" inputmode="decimal" min="0" step="any" data-a="${c.k}" value="${esc(f[c.k] ?? '')}"></div>
+      <div class="rot"><span data-cont="${c.k}"></span> <span class="muted">· ${esc(c.regra)}</span></div>
+      <div class="vst-thumbs" data-fotos="${c.k}"></div></div>`;
     el.innerHTML = `<div class="card vst-bloco"><h3>${f.refazendo ? '✏️ Refazer apontamento' : '➕ Apontar produção'}</h3>
       <div class="campo"><label>Tipo *</label><div class="chips">${L.tipo_apontamento.map(([v, r]) => `<button type="button" class="chip ${f.tipo === v ? 'sel' : ''}" data-tipo="${v}">${r}</button>`).join('')}</div>
         <div class="small muted">"Finalizado" conclui a rota. Use "Parcial" quando a equipe volta outro dia.</div></div>
       <div class="campo"><label>Data *</label><input class="inp" type="date" data-a="data" value="${esc(String(f.data || '').slice(0, 10))}"></div>
-      <div class="grid g2" style="gap:0 10px">${L.producao_aerea.map(c => num(c.k, c.rot + (c.k === 'metros' ? ' *' : ''))).join('')}</div>
+      <div class="small muted" style="margin-bottom:6px">📷 Fotos obrigatórias em cada item com quantidade (saem com data, hora, endereço e logo).</div>
+      ${L.producao_aerea.map(item).join('')}
+      <div class="vst-foto" id="aOutras" style="display:none"><div class="rot">Fotos do envio anterior (sem item)</div><div class="vst-thumbs" data-fotos="_outras"></div></div>
       <div class="campo"><label>Observação</label><textarea class="inp" data-a="observacao">${esc(f.observacao || '')}</textarea></div>
-      <div class="vst-foto"><div class="rot">📷 Fotos da produção (opcional) — saem com data, hora, endereço e logo</div>
-        <div class="vst-thumbs" id="aThumbs"></div></div>
       <div id="aErros"></div>
       <button class="btn prim lg bloco" id="aEnviar" style="margin-top:8px">📤 Enviar apontamento</button>
       ${f.refazendo ? '<button class="btn bloco" id="aCancelar" style="margin-top:6px">Cancelar</button>' : ''}</div>`;
     pintarThumbs(); validarNaTela();
     SN.$$('[data-tipo]', el).forEach(b => b.onclick = () => { f.tipo = f.tipo === b.dataset.tipo ? '' : b.dataset.tipo; salvarRascunho(); pintarForm(); });
-    SN.$$('[data-a]', el).forEach(i => { i.oninput = () => { const k = i.dataset.a; f[k] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); }; });
+    SN.$$('[data-a]', el).forEach(i => { i.oninput = () => { const k = i.dataset.a; f[k] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); contarFotos(); }; });
     SN.$('#aEnviar').onclick = enviar;
     if (SN.$('#aCancelar')) SN.$('#aCancelar').onclick = () => { A.form = null; pintarForm(); };
   };
+  const thumb = f => {
+    const l = A.fotosLocais[f.id_foto], src = l && l.thumb ? l.thumb : (f.drive_id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240` : '');
+    return `<div class="vst-thumb st-${l ? l.status : 'enviada'}">${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}<button type="button" class="del" data-del="${esc(f.id_foto)}">×</button></div>`;
+  };
+  // Contagem "2 de 5 fotos" de cada item (muda junto com o número digitado).
+  const contarFotos = () => {
+    const vf = VR.validarFotosApontamento(A.form);
+    vf.itens.forEach(x => { const el = SN.$(`[data-cont="${x.k}"]`); if (!el) return;
+      el.innerHTML = x.exigidas ? `<b style="color:${x.tem >= x.exigidas ? 'var(--ok)' : 'var(--erro)'}">📷 ${x.tem} de ${x.exigidas} foto(s)</b>` : `📷 ${x.tem} foto(s) <span class="muted">(sem quantidade, não exige)</span>`; });
+  };
   const pintarThumbs = () => {
-    const el = SN.$('#aThumbs'); if (!el) return;
-    el.innerHTML = (A.form.fotos || []).map(f => {
-      const l = A.fotosLocais[f.id_foto], src = l && l.thumb ? l.thumb : (f.drive_id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240` : '');
-      return `<div class="vst-thumb st-${l ? l.status : 'enviada'}">${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}<button type="button" class="del" data-del="${esc(f.id_foto)}">×</button></div>`;
-    }).join('') + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" id="aCam" hidden><span>＋<br>Tirar foto</span></label>`;
-    SN.$$('[data-del]', el).forEach(b => b.onclick = () => { A.form.fotos = A.form.fotos.filter(f => f.id_foto !== b.dataset.del); salvarRascunho(); pintarThumbs(); });
-    SN.$('#aCam').onchange = async ev => {
-      const file = ev.target.files && ev.target.files[0]; if (!file) return;
-      const form = A.form; fotosProcessando++;
+    if (!SN.$('[data-fotos]')) return;
+    const tiposItem = L.producao_aerea.map(c => c.foto);
+    L.producao_aerea.forEach(c => {
+      const el = SN.$(`[data-fotos="${c.k}"]`); if (!el) return;
+      el.innerHTML = (A.form.fotos || []).filter(f => f.tipo_foto === c.foto).map(thumb).join('')
+        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}" hidden><span>＋<br>Tirar foto</span></label>`;
+    });
+    // Fotos genéricas de um envio anterior (tipo "producao"): continuam no apontamento, mas não contam para nenhum item.
+    const outras = (A.form.fotos || []).filter(f => !tiposItem.includes(f.tipo_foto));
+    SN.$('#aOutras').style.display = outras.length ? '' : 'none';
+    SN.$('[data-fotos="_outras"]').innerHTML = outras.map(thumb).join('');
+    SN.$$('#aForm [data-del]').forEach(b => b.onclick = () => { A.form.fotos = A.form.fotos.filter(f => f.id_foto !== b.dataset.del); salvarRascunho(); pintarThumbs(); validarNaTela(); });
+    SN.$$('#aForm [data-cam]').forEach(inp => inp.onchange = async ev => {
+      const file = ev.target.files && ev.target.files[0], tipo = inp.dataset.cam; if (!file) return;
+      const form = A.form, info = L.foto(tipo) || {}; fotosProcessando++;
       SN.toast('Processando foto (GPS e endereço)…');
       try {
-        const r = A.rota, img = await SN.VF.fotoCarimbada(file, `${r.id_rota} · ${r.cidade} · ${r.motivo} · Preventiva aérea`);
+        const r = A.rota, img = await SN.VF.fotoCarimbada(file, `${r.id_rota} · ${r.cidade} · ${info.rot || ''} · Preventiva aérea`);
         if (A.form !== form || form._enviado) { SN.toast('O apontamento já foi enviado; a foto não entrou nele.', 'erro'); return; }
         const id_foto = 'F' + SN.uid() + SN.uid();
-        const meta = { id_foto, id_apontamento: A.form.id_apontamento, id_rota: r.id_rota, tipo_foto: 'producao', ref: '', lat: img.pos ? img.pos.lat : '', lng: img.pos ? img.pos.lng : '',
+        const meta = { id_foto, id_apontamento: A.form.id_apontamento, id_rota: r.id_rota, tipo_foto: tipo, ref: '', lat: img.pos ? img.pos.lat : '', lng: img.pos ? img.pos.lng : '',
           data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '' };
-        A.form.fotos.push({ id_foto, tipo_foto: 'producao', data_hora_captura: img.agora, endereco: img.endereco || '' });
+        A.form.fotos.push({ id_foto, tipo_foto: tipo, data_hora_captura: img.agora, endereco: img.endereco || '' });
         const reg = { id_foto, id_vistoria: '', id_rota: r.id_rota, meta, dataUrl: img.dataUrl, thumb: img.thumb, criadaEm: img.agora, status: 'pendente' };
-        A.fotosLocais[id_foto] = reg; salvarRascunho(); await SN.VL.guardarFoto(reg); pintarThumbs();
+        A.fotosLocais[id_foto] = reg; salvarRascunho(); await SN.VL.guardarFoto(reg); pintarThumbs(); validarNaTela();
       } catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
       finally { fotosProcessando--; }
-    };
+    });
+    contarFotos();
   };
   const validarNaTela = () => {
     const el = SN.$('#aErros'); if (!el) return { ok: false };
-    const r = VR.validarApontamento(A.form);
-    el.innerHTML = r.ok ? '' : `<div class="aviso alerta small">${r.erros.map(esc).join('<br>')}</div>`;
-    SN.$('#aEnviar').disabled = !r.ok;
-    return r;
+    const r = VR.validarApontamento(A.form), vf = VR.validarFotosApontamento(A.form), erros = r.erros.concat(vf.erros);
+    el.innerHTML = erros.length ? `<div class="aviso alerta small">${erros.map(esc).join('<br>')}</div>` : '';
+    SN.$('#aEnviar').disabled = !!erros.length;
+    return { ok: !erros.length, erros };
   };
 
   const enviar = async () => {
