@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#3d4f11">
 <title>SigoNet V2 · Field Desk</title>
+<!-- Aplicativo instalável (PWA): ícone na tela inicial, abre em tela cheia. iPhone: Safari → Compartilhar → "Adicionar à Tela de Início". -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icones/fav.png">
+<link rel="apple-touch-icon" href="icones/apple.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SigoNet">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/sigonet.css">
@@ -45,6 +53,7 @@
 <script src="js/telas-preventiva-planejamento.js"></script>
 <script src="js/vistoria-vivo.js"></script>
 <script src="js/tema.js"></script>
+<script src="js/instalar.js"></script>
 <script>
   SN.iniciar();
   // Guarda o app no aparelho para abrir sem sinal (sw.js: rede primeiro, cópia só sem rede).

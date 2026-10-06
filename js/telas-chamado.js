@@ -44,9 +44,11 @@ SN.rota('/login', () => {
         <button class="btn prim lg bloco" type="submit">Entrar</button>
         <p class="muted small" style="margin-top:12px">Esqueceu o complemento? Peça à gestão para resetar em Cadastros e Acessos.</p>
       </form>
+      <div data-instalar></div>
     </div>
   </div></div>`;
   let tipo = 'lideranca', primeiro = false;
+  if (SN.pintarInstalar) SN.pintarInstalar();
   SN.$$('#abasLogin .aba').forEach(b => b.onclick = () => {
     SN.$$('#abasLogin .aba').forEach(x => x.classList.toggle('ativa', x === b)); tipo = b.dataset.t; primeiro = false;
     SN.$('#blocoLid').classList.toggle('oculto', tipo !== 'lideranca'); SN.$('#blocoTec').classList.toggle('oculto', tipo !== 'tecnico');
