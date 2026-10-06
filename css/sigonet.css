@@ -86,6 +86,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .btn.sm{padding:5px 10px;font-size:.8rem;border-radius:7px}
 .btn.lg{padding:13px 18px;font-size:1rem;border-radius:11px}
 .btn.bloco{width:100%}
+/* botões lado a lado (com ou sem ícone) ficam na mesma linha: sem isso o botão com ícone sobe */
+.btn{vertical-align:middle} .btn svg{flex-shrink:0}
 .btn.fantasma{border-color:transparent;background:transparent}
 
 /* ── Forms ── */
