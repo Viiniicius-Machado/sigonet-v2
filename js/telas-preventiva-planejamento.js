@@ -340,10 +340,11 @@
       <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> CS em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
         ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th><th></th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
           return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td>
-            <td>${k === '(sem cluster)' ? '' : `<button class="btn sm" data-rencl="${esc(k)}" title="Renomear o cluster em todo o sistema">✏️</button>`}</td></tr>`; }).join('')}</tbody></table>
+            <td class="nowrap">${k === '(sem cluster)' ? '' : `<button class="btn sm" data-rencl="${esc(k)}" title="Renomear o cluster em todo o sistema">✏️</button> `}<button class="btn sm" data-excl="${esc(k)}" title="Excluir as CS deste cluster da base">🗑️</button></td></tr>`; }).join('')}</tbody></table>
           <p class="small muted">Concluída = vistoria aprovada na revisão. CS em rota não entra em outra rota; concluída só com "Forçar".</p>` : ''}
         <h4 style="margin-top:12px">Importações</h4>${imp.length ? `<table class="tab small"><thead><tr><th>Quando</th><th>Versão</th><th>Arquivo</th><th class="num">CS</th><th>Por</th></tr></thead><tbody>
           ${imp.map(x => `<tr><td class="nowrap">${SN.dt(x.data)}</td><td>${esc(x.versao)}</td><td>${esc(x.arquivo || '')}</td><td class="num">${SN.num(x.qtd)}</td><td>${esc(x.por)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Nenhuma ainda.</p>'}</div></div>`;
+    SN.$$('[data-excl]').forEach(b => b.onclick = () => excluirCluster(b.dataset.excl, b.closest('tr').children[1].textContent));
     SN.$$('[data-rencl]').forEach(b => b.onclick = () => renomearCluster(b.dataset.rencl, Object.keys(d.base.clusters)));
     SN.$('#bArq').onchange = async e => {
       const file = e.target.files && e.target.files[0]; if (!file) return;
@@ -387,6 +388,26 @@
       delete csCache[de]; delete csCache[novo];
       if (form && form.cluster === de) form.cluster = novo;
       if (SN.sincronizar) SN.sincronizar().catch(() => { });
+      await recarregar();
+    } catch (e) { SN.toast(e.message, 'erro'); }
+  };
+  // Excluir as CS de um cluster da base (base errada). O servidor recusa se houver rota em aberto.
+  const excluirCluster = async (cl, qtd) => {
+    const abertas = d.rotas.filter(r => r.cluster === cl && ['PLANEJADA', 'DESPACHADA', 'EM_CAMPO'].includes(r.status));
+    if (abertas.length) return SN.modal({ titulo: 'Ainda não dá para excluir ' + cl,
+      corpo: `<p>O cluster tem rota em aberto: <b>${abertas.map(r => esc(r.id_rota) + ' (' + esc(r.status) + ')').join(', ')}</b>.</p><p class="small muted">Exclua a rota planejada ou cancele a despachada/em campo na aba Rotas, depois volte aqui.</p>` });
+    const ok = await SN.modal({ titulo: 'Excluir cluster ' + cl + ' da base',
+      corpo: `<p>As <b>${esc(qtd)} CS</b> do cluster <b>${esc(cl)}</b> saem da base e ninguém consegue mais montar rota com elas.</p>
+        <p class="small muted">Rotas já concluídas, vistorias, chamados e LPU continuam como estão. Para ter as CS de volta, importe a base de novo.</p>
+        <div class="campo"><label>Para confirmar, digite o nome do cluster: <b>${esc(cl)}</b></label><input class="inp" id="mNome" autocomplete="off"></div>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Excluir da base', cls: 'perigo', acao: m => {
+        if (SN.$('#mNome', m).value.trim() !== cl) { SN.toast('O nome digitado não confere.', 'erro'); return false; } return true; } }],
+      aoAbrir: m => SN.$('#mNome', m).focus() });
+    if (!ok) return;
+    try {
+      const r = await SN.vst.exec('VST_EXCLUIR_CLUSTER', { cluster: cl });
+      SN.toast(`Cluster ${cl}: ${SN.num(r.excluidas)} CS excluídas da base.`, 'ok');
+      delete csCache[cl]; if (form && form.cluster === cl && !form.id_rota) form.cluster = '';
       await recarregar();
     } catch (e) { SN.toast(e.message, 'erro'); }
   };
