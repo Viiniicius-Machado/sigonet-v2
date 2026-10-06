@@ -417,6 +417,11 @@
   const pintarSub = (d, cfg) => {
     const rotas = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias;
     const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs), mtr = VR.metragemRotas(rotas, vs);
+    // Data do relatório: dia(s) em que o técnico fez as CS em campo (início da vistoria; sem ele, o envio).
+    const diaLocal = iso => { const t = new Date(iso); return isNaN(t) ? '' : new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+    const diasCampo = id => { const ds = vs.filter(v => v.id_rota === id).map(v => diaLocal(v.inicio || v.enviado_em)).filter(Boolean).sort(); return ds.length ? [ds[0], ds[ds.length - 1]] : null; };
+    const dataTxt = x => { const p = diasCampo(x.id_rota); if (!p) return `<span class="muted" title="Data planejada">${SN.vst.dia(x.data_planejada)}</span>`;
+      return p[0] === p[1] ? SN.vst.dia(p[0]) : `${SN.vst.dia(p[0]).slice(0, 5)} a ${SN.vst.dia(p[1])}`; };
     const difTxt = x => { if (x.diferenca_m == null || !x.previsto_m) return '—'; if (x.cs_enviadas < x.cs_planejadas) return '<span class="muted">parcial</span>'; const p = Math.round(100 * x.diferenca_m / x.previsto_m);
       return `<span class="${Math.abs(p) >= 20 ? 'badge alerta' : ''}">${x.diferenca_m > 0 ? '+' : ''}${SN.num(x.diferenca_m)} m (${p > 0 ? '+' : ''}${p}%)</span>`; };
     const pend = VR.pendenciasConfig(cfg);
@@ -448,14 +453,14 @@
           <tr><td><b>Total</b></td><td class="num"><b>${med.total_cs}</b></td><td class="num muted">${SN.num(med.total_previsto_m)}</td><td class="num"><b>${SN.num(med.total_metros)} m</b></td></tr></tbody></table></div>
       </div>
       <div class="card"><div class="card-tit"><h3>Metragem por rota · relatório do técnico</h3><span class="small muted">previsto = base/KMZ · campo = GPS de CS a CS</span></div>
-        ${mtr.length ? `<div class="tabela-wrap"><table class="tab small"><thead><tr><th>Rota</th><th>Cluster</th><th>Prestador / técnico</th><th class="num">CS enviadas</th><th class="num">Previsto (m)</th><th class="num">Campo (m)</th><th class="num">Diferença</th><th class="num">Aprovado (m)</th></tr></thead>
-          <tbody>${mtr.map(x => `<tr><td>${esc(x.id_rota)}</td><td>${esc(x.cluster || '')}</td><td>${esc(x.prestador || '')}${x.tecnico ? ' · ' + esc(x.tecnico) : ''}</td>
+        ${mtr.length ? `<div class="tabela-wrap"><table class="tab small"><thead><tr><th>Rota</th><th>Data</th><th>Cluster</th><th>Prestador / técnico</th><th class="num">CS enviadas</th><th class="num">Previsto (m)</th><th class="num">Campo (m)</th><th class="num">Diferença</th><th class="num">Aprovado (m)</th></tr></thead>
+          <tbody>${mtr.map(x => `<tr><td>${esc(x.id_rota)}</td><td class="nowrap">${dataTxt(x)}</td><td>${esc(x.cluster || '')}</td><td>${esc(x.prestador || '')}${x.tecnico ? ' · ' + esc(x.tecnico) : ''}</td>
             <td class="num">${x.cs_enviadas}/${x.cs_planejadas}</td><td class="num muted">${SN.num(x.previsto_m)}</td>
             <td class="num"><b>${SN.num(x.metros)}</b>${x.origem === 'previsto' ? ' <span class="badge" title="Nenhuma CS com GPS: rateio do previsto">sem GPS</span>' : x.sem_gps.length ? ` <span class="badge alerta" title="Sem GPS: ${esc(x.sem_gps.join(', '))}">${x.sem_gps.length} sem GPS</span>` : ''}</td>
             <td class="num">${difTxt(x)}</td><td class="num">${SN.num(x.metros_aprovados)}</td></tr>
-            ${x.trechos.length ? `<tr><td colspan="8" style="padding-top:0"><details><summary class="small muted">Trechos (${x.trechos.length})</summary>
+            ${x.trechos.length ? `<tr><td colspan="9" style="padding-top:0"><details><summary class="small muted">Trechos (${x.trechos.length})</summary>
               <div class="small">${x.trechos.map(t => `${esc(t.de)} → ${esc(t.para)}: <b>${SN.num(t.metros)} m</b>${t.conferir ? ' <span class="badge alerta" title="Bem maior que os outros trechos: confira o GPS desta CS na revisão">conferir GPS</span>' : ''}`).join(' · ')}<div class="muted" style="margin-top:4px">Sequência: caminho contínuo entre os GPS de campo, a partir da 1ª CS da rota (não a ordem das abas do técnico).</div></div></details></td></tr>` : ''}`).join('')}
-          <tr><td colspan="4"><b>Total</b></td><td class="num muted">${SN.num(mtr.reduce((s, x) => s + x.previsto_m, 0))}</td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros, 0))} m</b></td><td></td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros_aprovados, 0))} m</b></td></tr></tbody></table></div>`
+          <tr><td colspan="5"><b>Total</b></td><td class="num muted">${SN.num(mtr.reduce((s, x) => s + x.previsto_m, 0))}</td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros, 0))} m</b></td><td></td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros_aprovados, 0))} m</b></td></tr></tbody></table></div>`
           : '<p class="muted small">Nenhuma CS enviada ainda.</p>'}</div>`;
     SN.$('#dExportar').onclick = () => SN.exportar('Preventiva subterrânea', vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
       Prestador: v.prestador, Técnico: v.tecnico, Status: v.status_revisao, Conclusão: rot('conclusao', v.conclusao), Prioridade: rot('prioridade', v.prioridade), Abriu: sn(v.abriu),
