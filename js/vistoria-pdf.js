@@ -113,7 +113,7 @@ SN.vst = SN.vst || {};
     }
     // Fotos separadas por item da produção; as genéricas antigas ("producao") vão por último.
     const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    const legenda = f => f.origem === 'galeria' ? `Da galeria · tirada em ${f.data_hora_arquivo ? SN.dt(f.data_hora_arquivo) : '—'}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
     for (const x of VR.validarFotosApontamento(a).itens) {
       const doItem = fotos.filter(f => f.tipo_foto === x.foto);
       if (!doItem.length && !x.exigidas) continue;

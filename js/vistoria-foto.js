@@ -167,14 +167,21 @@ SN.VF = (() => {
     return { ...img, agora, pos, endereco, dataArquivo: dataArq ? dataArq.toISOString() : '', fonteData: exif ? 'exif' : 'lastModified' };
   };
 
-  // Foto anexada da galeria (aérea): o carimbo leva a data ORIGINAL da foto (EXIF ou data do
-  // arquivo) e a indicação "da galeria"; não leva o GPS/endereço de agora, que não é o lugar da foto.
-  VF.fotoGaleria = async (file, contexto) => {
+  // Foto anexada da galeria (aérea): entra como está, SEM marca do SigoNet — em geral ela já vem
+  // carimbada pelo app de campo (data, endereço, coordenadas) e a nossa marca tampava a original.
+  // Só reduz o tamanho para subir rápido. A origem "galeria" fica registrada (Revisão e PDF).
+  VF.fotoGaleria = async file => {
     const agora = SN.agora(), exif = await VF.dataExif(file);
     const dataArq = exif || (file.lastModified ? new Date(file.lastModified) : null);
-    const quando = dataArq ? dataArq.toISOString() : agora;
-    const img = await VF.processar(file, { agora: quando, pos: null, endereco: 'Foto anexada da galeria' + (dataArq ? '' : ' (sem data original)'), contexto: (contexto ? contexto + ' · ' : '') + 'da galeria' });
-    return { ...img, agora, pos: null, endereco: '', dataArquivo: dataArq ? dataArq.toISOString() : '', fonteData: exif ? 'exif' : 'lastModified', origem: 'galeria' };
+    const img = await carregar(file);
+    const k = Math.min(1, VF.LADO_MAX / Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    if (img.close) img.close();
+    const kt = 480 / Math.max(c.width, c.height), t = document.createElement('canvas');
+    t.width = Math.round(c.width * kt); t.height = Math.round(c.height * kt); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+    return { dataUrl: c.toDataURL('image/jpeg', VF.QUALIDADE), thumb: t.toDataURL('image/jpeg', 0.6), largura: c.width, altura: c.height,
+      agora, pos: null, endereco: '', dataArquivo: dataArq ? dataArq.toISOString() : '', fonteData: exif ? 'exif' : 'lastModified', origem: 'galeria' };
   };
 
   // ─────────── GPS ───────────

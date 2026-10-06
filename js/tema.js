@@ -34,7 +34,7 @@ const ICO = {
 };
 SN.iconeSvg = nome => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICO[nome] || ICO.ponto}"/></svg>`;
 const ICO_POR_HREF = { '#/inicio': 'inicio', '#/chamados': 'chamados', '#/lpu': 'lpu', '#/servicedesk': 'servicedesk', '#/materiais': 'materiais', '#/fibra': 'fibra',
-  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard',
+  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard', '#/vst/mapa': 'planejamento',
   '#/tec': 'fila', '#/tec/vistorias': 'preventiva', '#/tec/resumo': 'dashboard', '#/tec/financeiro': 'financeiro', '#/estoque': 'materiais', '#/tec/estoque': 'materiais' };
 // Botões de módulo da OS (técnico): pelo destino do toque ou, sem destino (bloqueado), pelo nome.
 const icoModulo = el => { const m = el.closest('.modulo'); if (!m) return null;
