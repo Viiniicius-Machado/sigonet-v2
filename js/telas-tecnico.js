@@ -15,6 +15,7 @@ SN.cascaTec = (ativo, html, titulo) => {
     <nav class="tabbar">
       <a href="#/tec" class="${ativo === 'fila' ? 'ativo' : ''}"><span class="ico">📋</span>Minha fila</a>
       ${SN.vst ? SN.vst.abaTec(ativo) : ''}
+      <a href="#/tec/estoque" class="${ativo === 'estoque' ? 'ativo' : ''}"><span class="ico">📦</span>Meu estoque</a>
       <a href="#/tec/resumo" class="${ativo === 'resumo' ? 'ativo' : ''}"><span class="ico">📈</span>Meu resumo</a>
       ${fin ? `<a href="#/tec/financeiro" class="${ativo === 'fin' ? 'ativo' : ''}"><span class="ico">💰</span>Financeiro</a>` : ''}
     </nav></div>`;
@@ -460,6 +461,13 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   let itens = reg ? JSON.parse(JSON.stringify(reg.itens)) : [];
   let semMat = !!reg && reg.status === 'SEM_MATERIAL' || !!(reg && reg.semMaterial && reg.status === 'DIVERGENTE');
   let tipo = 'INS';
+  // Saldo do estoque de quem apontou (sem contar este registro, que está sendo editado agora).
+  const est = SN.estoqueDoTecnico ? SN.estoqueDoTecnico(h.empresa, h.tecnico) : null;
+  const dispEst = {}; if (est) SN.ER.disponivel(est, SN.db.materiais, reg && reg.id).forEach(x => { dispEst[x.cod] = x; });
+  const dispTxt = (cod, noForm) => { if (!est) return ''; const x = dispEst[cod], disp = (x ? x.disp : 0) - (noForm || 0), un = x && x.un ? ' ' + String(x.un).toLowerCase().replace('unid', 'un') : '';
+    const n = SN.num(disp, Number.isInteger(disp) ? 0 : 2);
+    return disp < 0 ? `<div class="small" style="color:var(--erro)">Seu estoque: ${n}${un} — acima do saldo, avise a gestão de materiais</div>`
+      : `<div class="small muted">Seu estoque${noForm ? ' depois deste apontamento' : ''}: <b>${n}${un}</b></div>`; };
   SN.cascaTec('fila', `
     <a href="#/tec/os/${c.id}" class="small">← Voltar à OS</a><h2 style="margin-top:6px">Materiais utilizados</h2>
     ${SN.htmlCabecalho(h)}
@@ -474,7 +482,7 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
       <div class="chips" id="chTipo"><button class="chip sel" data-t="INS">INS · insumo</button><button class="chip" data-t="ATN">ATN · patrimônio (serial)</button></div>
       <input class="inp" id="matBusca" placeholder="Buscar por código ou descrição" style="margin-top:8px">
       <div id="matRes" style="margin-top:6px;max-height:320px;overflow:auto"></div>
-      <p class="small muted">Aqui você só aponta o que usou no chamado. O saldo e a baixa oficiais ficam no Elleven: este apontamento não reserva nem baixa material.</p></div>` : ''}
+      <p class="small muted">${est ? `O que você apontar sai do seu saldo no SigoNet (estoque ${SN.esc(est.nome)}; veja em "Meu estoque"). A baixa oficial continua sendo feita no Elleven.` : 'Seu estoque ainda não foi vinculado pela gestão; o apontamento fica registrado normalmente. A baixa oficial é feita no Elleven.'}</p></div>` : ''}
     </div>
     ${editavel ? `<div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="matObs">${SN.esc(reg ? reg.obs : '')}</textarea></div>
     <button class="btn prim lg bloco" id="bSalvarMat">Salvar materiais</button>` : ''}`);
@@ -482,11 +490,11 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
     SN.$('#nIt').textContent = itens.length;
     SN.$('#matItens').innerHTML = itens.map((it, i) => `<div class="item-lpu tem" style="grid-template-columns:1fr auto"><div>
       <div class="d">${SN.esc(it.desc)}</div><div class="c">${it.tipo} · ${it.cod}</div>
-      ${it.tipo === 'INS' ? `<input class="inp" type="number" min="1" step="any" data-qi="${i}" value="${it.qtd}" style="width:110px;margin-top:4px" ${editavel ? '' : 'disabled'}>`
+      ${it.tipo === 'INS' ? `<input class="inp" type="number" min="1" step="any" data-qi="${i}" value="${it.qtd}" style="width:110px;margin-top:4px" ${editavel ? '' : 'disabled'}><div data-disp="${i}">${editavel ? dispTxt(it.cod, it.qtd) : ''}</div>`
         : it.seriais.map((s, k) => `<input class="inp" data-s="${i}|${k}" value="${SN.esc(s)}" placeholder="Nº de série ${k + 1}" style="margin-top:4px" ${editavel ? '' : 'disabled'}>`).join('')}
       </div>${editavel ? `<button class="btn sm perigo" data-rm="${i}">✕</button>` : ''}</div>`).join('')
       || `<p class="muted">${reg && reg.status === 'SEM_MATERIAL' ? 'Informado: nenhum material utilizado.' : 'Nenhum material apontado.'}</p>`;
-    SN.$$('[data-qi]').forEach(x => x.oninput = () => { itens[+x.dataset.qi].qtd = parseFloat(x.value) || 0; });
+    SN.$$('[data-qi]').forEach(x => x.oninput = () => { const it = itens[+x.dataset.qi]; it.qtd = parseFloat(x.value) || 0; const el = SN.$(`[data-disp="${x.dataset.qi}"]`); if (el) el.innerHTML = dispTxt(it.cod, it.qtd); });
     SN.$$('[data-s]').forEach(x => x.oninput = () => { const [i, k] = x.dataset.s.split('|'); itens[+i].seriais[+k] = x.value.trim(); });
     SN.$$('[data-rm]').forEach(x => x.onclick = () => { itens.splice(+x.dataset.rm, 1); pintarItens(); });
   };
@@ -502,7 +510,7 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
     const q = SN.normal(SN.$('#matBusca').value);
     const res = q.length < 2 ? [] : CATALOGO_MATERIAIS.filter(m => m.t === tipo && SN.normal(m.c + ' ' + m.d).includes(q)).slice(0, 40);
     SN.$('#matRes').innerHTML = res.map(m => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d">${SN.esc(m.d)}</div>
-      <div class="c">${m.c}</div></div><button class="btn sm" data-add="${m.c}">+ Adicionar</button></div>`).join('')
+      <div class="c">${m.c}</div>${dispTxt(m.c, (itens.find(i => i.cod === m.c) || {}).qtd || 0)}</div><button class="btn sm" data-add="${m.c}">+ Adicionar</button></div>`).join('')
       || `<p class="muted small">${q.length < 2 ? 'Digite ao menos 2 letras.' : 'Nada encontrado.'}</p>`;
     SN.$$('[data-add]').forEach(b => b.onclick = async () => {
       const m = SN.material(b.dataset.add);

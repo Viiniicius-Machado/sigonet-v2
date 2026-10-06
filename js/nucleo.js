@@ -99,7 +99,7 @@ SN.baseVazia = () => ({
     id: SN.uid(), empresa, nome, equipe, titular, frente, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   lideranca: SEED_LIDERANCA.map(l => ({ id: SN.uid(), nomeCompleto: '', ...l, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   contas: SEED_CONTAS.map(c => ({ ...c })),
-  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [],
+  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], estoques: [],
   assinaturas: {}, log: [], integracoes: []
 });
 
@@ -107,6 +107,7 @@ SN.db = null;
 SN.carregar = () => {
   try { SN.db = JSON.parse(localStorage.getItem(CHAVE_DB)); } catch (e) { SN.db = null; }
   if (!SN.db || SN.db.versao !== VERSAO_DB) { SN.db = SN.baseVazia(); SN.salvar(); }
+  if (!SN.db.estoques) SN.db.estoques = []; // coleção nova (06/10/2026): bases locais antigas não tinham
   return SN.db;
 };
 SN.salvar = () => {
@@ -840,6 +841,7 @@ SN.MENU = [
   { tela: 'lpu', rot: 'Gestão de LPU', ico: '📄', href: '#/lpu' },
   { tela: 'servicedesk', rot: 'Service Desk', ico: '🎧', href: '#/servicedesk' },
   { tela: 'materiais', rot: 'Controle de Materiais', ico: '📦', href: '#/materiais' },
+  { id: 'estoque', tela: 'materiais', rot: 'Estoque dos técnicos', ico: '📦', href: '#/estoque' },
   { tela: 'fibra', rot: 'Cadastro de Fibra', ico: '🧵', href: '#/fibra' },
   { grupo: 'Gestão' },
   { tela: 'base', rot: 'Base OEM', ico: '🗂️', href: '#/base' },
@@ -852,7 +854,7 @@ SN.casca = (ativo, html) => {
   const itens = SN.MENU.filter(m => m.grupo || m.tela === 'inicio' || SN.temTela(m.tela));
   const menu = itens.map((m, i) => m.grupo
     ? (itens[i + 1] && !itens[i + 1].grupo ? `<div class="grupo">${m.grupo}</div>` : '')
-    : `<a href="${m.href}" class="${m.tela === ativo ? 'ativo' : ''}"><span class="ico">${m.ico}</span>${m.rot}</a>`).join('');
+    : `<a href="${m.href}" class="${(m.id || m.tela) === ativo ? 'ativo' : ''}"><span class="ico">${m.ico}</span>${m.rot}</a>`).join('');
   document.getElementById('app').innerHTML = `
     <header class="topbar">
       <button class="btn-menu" id="btnMenu">☰</button>

@@ -11,7 +11,7 @@
 SN.remoto = typeof SIGONET_SERVIDOR === 'string' && /^https?:\/\//.test(SIGONET_SERVIDOR);
 // Chave de cada coleção (igual à do servidor).
 SN.CHAVES = { chamados: 'id', lpus: 'id', materiais: 'id', fibras: 'id', pagamentos: 'id', fechamentos: 'mes', disponibilidade: 'id',
-  empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id' };
+  empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id', estoques: 'id' };
 
 // Ações só de leitura podem ser repetidas com segurança quando o Google falha.
 // Pedidos que podem ser repetidos sem efeito colateral (PROX_ID pode pular um número;
