@@ -408,7 +408,24 @@ SN.itensDaConta = cod => {
   return LPU_CATALOGO.filter(i => { const n = parseInt(i.cod.replace(/\D/g, ''), 10); return c.faixas.some(([a, b]) => n >= a && n <= b); });
 };
 SN.itemLpu = cod => LPU_CATALOGO.find(i => i.cod === cod);
-SN.material = cod => CATALOGO_MATERIAIS.find(m => m.c === cod);
+// Catálogo = o fixo (catalogos.js) + os códigos que vieram nos relatórios do Elleven (Estoque dos
+// técnicos) e não existem nele: descrição e valor do Elleven; com serial (ativo) ou ATN/SMI = patrimônio.
+// Recalcula quando a lista de estoques muda (carga/sincronização troca o array; importação zera SN._catExtra).
+SN._catFixo = null; SN._catExtra = null; SN._catExtraDe = null;
+SN.catalogoExtra = () => {
+  const ests = (SN.db && SN.db.estoques) || [];
+  if (SN._catExtra && SN._catExtraDe === ests && SN._catExtraN === ests.length) return SN._catExtra;
+  if (!SN._catFixo) { SN._catFixo = {}; CATALOGO_MATERIAIS.forEach(m => { SN._catFixo[m.c] = true; }); }
+  const ex = {};
+  ests.forEach(e => {
+    (e.ativos || []).forEach(a => { if (!SN._catFixo[a.cod] && !ex[a.cod]) ex[a.cod] = { t: 'ATN', c: a.cod, d: a.d || a.cod, p: 0, elleven: true }; });
+    Object.entries(e.itens || {}).forEach(([c, it]) => { if (SN._catFixo[c]) return; const x = ex[c] || (ex[c] = { t: /^(ATN|SMI)/i.test(c) ? 'ATN' : 'INS', c, d: it.d || c, p: 0, elleven: true }); if (!x.p && it.valor) x.p = Number(it.valor) || 0; });
+  });
+  SN._catExtra = Object.values(ex); SN._catExtraDe = ests; SN._catExtraN = ests.length;
+  return SN._catExtra;
+};
+SN.todosMateriais = () => CATALOGO_MATERIAIS.concat(SN.catalogoExtra());
+SN.material = cod => CATALOGO_MATERIAIS.find(m => m.c === cod) || SN.catalogoExtra().find(m => m.c === cod);
 // Preço válido no dia (data local) em que o material foi apontado; sem data = hoje.
 SN.precoMaterial = (cod, quando) => {
   const m = SN.material(cod); let p = m ? m.p : 0;

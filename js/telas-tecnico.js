@@ -464,6 +464,8 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   // Saldo do estoque de quem apontou (sem contar este registro, que está sendo editado agora).
   const est = SN.estoqueDoTecnico ? SN.estoqueDoTecnico(h.empresa, h.tecnico) : null;
   const dispEst = {}; if (est) SN.ER.disponivel(est, SN.db.materiais, reg && reg.id).forEach(x => { dispEst[x.cod] = x; });
+  // Seriais deste equipamento que estão com o técnico (relatório de ativos do Elleven) e ainda não foram apontados.
+  const serEst = cod => est ? SN.ER.ativosDe(est, SN.db.materiais).filter(a => a.cod === cod && (!a.usado || a.usado.reg === (reg && reg.id))) : [];
   const dispTxt = (cod, noForm) => { if (!est) return ''; const x = dispEst[cod], disp = (x ? x.disp : 0) - (noForm || 0), un = x && x.un ? ' ' + String(x.un).toLowerCase().replace('unid', 'un') : '';
     const n = SN.num(disp, Number.isInteger(disp) ? 0 : 2);
     return disp < 0 ? `<div class="small" style="color:var(--erro)">Seu estoque: ${n}${un} — acima do saldo, avise a gestão de materiais</div>`
@@ -491,7 +493,8 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
     SN.$('#matItens').innerHTML = itens.map((it, i) => `<div class="item-lpu tem" style="grid-template-columns:1fr auto"><div>
       <div class="d">${SN.esc(it.desc)}</div><div class="c">${it.tipo} · ${it.cod}</div>
       ${it.tipo === 'INS' ? `<input class="inp" type="number" min="1" step="any" data-qi="${i}" value="${it.qtd}" style="width:110px;margin-top:4px" ${editavel ? '' : 'disabled'}><div data-disp="${i}">${editavel ? dispTxt(it.cod, it.qtd) : ''}</div>`
-        : it.seriais.map((s, k) => `<input class="inp" data-s="${i}|${k}" value="${SN.esc(s)}" placeholder="Nº de série ${k + 1}" style="margin-top:4px" ${editavel ? '' : 'disabled'}>`).join('')}
+        : it.seriais.map((s, k) => `<input class="inp" data-s="${i}|${k}" value="${SN.esc(s)}" placeholder="Nº de série ${k + 1}" style="margin-top:4px" ${editavel ? '' : 'disabled'} ${serEst(it.cod).length ? `list="dlSer${i}"` : ''}>`).join('')
+          + (serEst(it.cod).length ? `<datalist id="dlSer${i}">${serEst(it.cod).map(a => `<option value="${SN.esc(a.s)}">`).join('')}</datalist><div class="small muted">${serEst(it.cod).length} serial(is) deste equipamento com você — toque no campo para escolher.</div>` : '')}
       </div>${editavel ? `<button class="btn sm perigo" data-rm="${i}">✕</button>` : ''}</div>`).join('')
       || `<p class="muted">${reg && reg.status === 'SEM_MATERIAL' ? 'Informado: nenhum material utilizado.' : 'Nenhum material apontado.'}</p>`;
     SN.$$('[data-qi]').forEach(x => x.oninput = () => { const it = itens[+x.dataset.qi]; it.qtd = parseFloat(x.value) || 0; const el = SN.$(`[data-disp="${x.dataset.qi}"]`); if (el) el.innerHTML = dispTxt(it.cod, it.qtd); });
@@ -508,7 +511,7 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   };
   const buscar = () => {
     const q = SN.normal(SN.$('#matBusca').value);
-    const res = q.length < 2 ? [] : CATALOGO_MATERIAIS.filter(m => m.t === tipo && SN.normal(m.c + ' ' + m.d).includes(q)).slice(0, 40);
+    const res = q.length < 2 ? [] : SN.todosMateriais().filter(m => m.t === tipo && SN.normal(m.c + ' ' + m.d).includes(q)).slice(0, 40); // inclui os códigos vindos do Elleven
     SN.$('#matRes').innerHTML = res.map(m => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d">${SN.esc(m.d)}</div>
       <div class="c">${m.c}</div>${dispTxt(m.c, (itens.find(i => i.cod === m.c) || {}).qtd || 0)}</div><button class="btn sm" data-add="${m.c}">+ Adicionar</button></div>`).join('')
       || `<p class="muted small">${q.length < 2 ? 'Digite ao menos 2 letras.' : 'Nada encontrado.'}</p>`;

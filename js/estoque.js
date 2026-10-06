@@ -30,6 +30,17 @@
       <td>${m.itens.map(i => `${esc(i.desc)} × ${SN.num(i.qtd, 2)}`).join('; ')}</td></tr>`).join('')}</tbody></table>`;
   };
 
+  // Equipamentos com serial (ativos) que estão com este estoque; "instalado" = serial apontado num chamado depois do relatório.
+  const htmlAtivos = (e, tec) => {
+    const at = ER.ativosDe(e, SN.db.materiais); if (!at.length) return '';
+    const inst = at.filter(a => a.usado).length;
+    return `<h${tec ? 3 : 4} style="margin-top:14px">Equipamentos ${tec ? 'com você' : 'com o técnico'} (patrimônio): ${at.length - inst}${inst ? ` <span class="small muted">· ${inst} já apontado(s) em chamado</span>` : ''}</h${tec ? 3 : 4}>
+      <div class="small muted" style="margin-bottom:6px">Relatório de ativos de ${e.ativosRelatorio ? SN.dt(e.ativosRelatorio.data) : '—'}. Ao instalar, informe o número de série no material do chamado.</div>
+      <div class="tabela-wrap" style="max-height:360px"><table class="tab small"><thead><tr><th>Equipamento</th><th>Serial</th><th>Desde</th><th>Situação</th></tr></thead><tbody>
+      ${at.map(a => `<tr><td>${esc(a.d)}<div class="muted mono">${esc(a.cod)}</div></td><td class="mono">${esc(a.s)}</td><td class="nowrap small">${SN.dt(String(a.desde).replace(' ', 'T')).slice(0, 8)}${a.rom ? `<div class="muted">romaneio ${esc(a.rom)}</div>` : ''}</td>
+        <td class="small">${a.usado ? `<b style="color:var(--ok)">instalado</b> · ${esc(a.usado.chamado || '')}` : 'com o técnico'}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+
   // ═══════════════════════════ Gestão ═══════════════════════════
   let aba = 'SALDOS', previa = null, filtro = { q: '', emp: '' }, escolhas = null;
   SN.rota('/estoque', () => {
@@ -55,10 +66,10 @@
     const emps = [...new Set(lista.flatMap(e => (e.tecnicos || []).map(k => k.split('|')[0])))].sort();
     SN.$('#eCorpo').innerHTML = `<div class="acoes" style="margin-bottom:8px"><input class="inp" id="eQ" placeholder="Buscar estoque ou técnico" value="${esc(filtro.q)}" style="max-width:300px">
         <select class="inp" id="eEmp" style="max-width:240px"><option value="">Todas as empresas</option>${emps.map(x => `<option ${filtro.emp === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="_sem" ${filtro.emp === '_sem' ? 'selected' : ''}>Sem técnico vinculado</option></select></div>
-      <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Estoque (Elleven)</th><th>Técnicos vinculados</th><th>Relatório</th><th class="num">Produtos</th><th class="num">Usados no SigoNet</th><th class="num">Abaixo de zero</th><th class="num">Valor disponível</th></tr></thead><tbody>
+      <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Estoque (Elleven)</th><th>Técnicos vinculados</th><th>Relatório</th><th class="num">Produtos</th><th class="num">Usados no SigoNet</th><th class="num">Abaixo de zero</th><th class="num">Valor disponível</th><th class="num">Equipamentos</th></tr></thead><tbody>
       ${vis.map(x => `<tr class="clic" data-est="${esc(x.e.id)}"><td><b>${esc(x.e.nome)}</b></td><td class="small">${(x.e.tecnicos || []).map(k => esc(k.split('|')[1]) + ' <span class="muted">(' + esc(k.split('|')[0]) + ')</span>').join('<br>') || '<span class="muted">nenhum</span>'}</td>
         <td class="nowrap small">${dataRel(x.e)}</td><td class="num">${Object.keys(x.e.itens || {}).length}</td><td class="num">${x.usados || ''}</td>
-        <td class="num">${x.neg ? `<b style="color:var(--erro)">${x.neg}</b>` : ''}</td><td class="num">${SN.brl(x.valor)}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">Nenhum estoque.</td></tr>'}</tbody></table></div>`;
+        <td class="num">${x.neg ? `<b style="color:var(--erro)">${x.neg}</b>` : ''}</td><td class="num">${SN.brl(x.valor)}</td><td class="num">${(x.e.ativos || []).length || ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nenhum estoque.</td></tr>'}</tbody></table></div>`;
     SN.$('#eQ').oninput = SN.debounce(e => { filtro.q = e.target.value; pintarSaldos(lista); SN.$('#eQ').focus(); }, 250);
     SN.$('#eEmp').onchange = e => { filtro.emp = e.target.value; pintarSaldos(lista); };
     SN.$$('[data-est]').forEach(tr => tr.onclick = () => abrirEstoque(lista.find(e => e.id === tr.dataset.est)));
@@ -67,7 +78,8 @@
     const d = ER.disponivel(e, SN.db.materiais);
     SN.modal({ titulo: e.nome, largo: true, corpo: `<p class="small">Relatório de <b>${dataRel(e)}</b>${e.relatorio && e.relatorio.arquivo ? ' (' + esc(e.relatorio.arquivo) + ')' : ''} · técnicos: ${(e.tecnicos || []).map(k => esc(k.split('|')[1])).join(', ') || 'nenhum vinculado'}</p>
       <input class="inp" id="mQ" placeholder="Buscar produto" style="max-width:300px;margin-bottom:6px"><div id="mTab">${tabelaProdutos(d)}</div>
-      <h4 style="margin-top:12px">Apontado no SigoNet depois do relatório</h4>${htmlUsados(e, true)}`,
+      <h4 style="margin-top:12px">Apontado no SigoNet depois do relatório</h4>${htmlUsados(e, true)}
+      ${htmlAtivos(e)}`,
       aoAbrir: m => { SN.$('#mQ', m).oninput = ev => { SN.$('#mTab', m).innerHTML = tabelaProdutos(d, ev.target.value); }; } });
   };
 
@@ -105,35 +117,56 @@
   };
 
   const pintarImportar = lista => {
-    SN.$('#eCorpo').innerHTML = `<div class="card"><h3>Relatório de movimentações do Elleven (CSV)</h3>
-      <p class="small muted">Arquivo "Movimentacoes Tecnicos-data-AAAA-MM-DD hh_mm_ss.csv". O saldo de cada estoque é calculado com todas as entradas e saídas do arquivo; a data do relatório vem do nome do arquivo. Reimportar atualiza os saldos e mantém os vínculos.</p>
+    SN.$('#eCorpo').innerHTML = `<div class="card"><h3>Relatório do Elleven (CSV)</h3>
+      <p class="small muted">Aceita os dois relatórios do Elleven: <b>"Estoque Materiais consumo de Técnicos"</b> (o saldo de cada técnico já pronto — o mais indicado) ou <b>"Movimentacoes Tecnicos"</b> (entradas e saídas, o saldo é somado). A data do relatório vem do nome do arquivo. Importar de novo atualiza os saldos e mantém os vínculos; estoque que não aparece no relatório novo fica zerado.</p>
       <label class="btn">Escolher o CSV<input type="file" id="iArq" accept=".csv,text/csv" hidden></label><div id="iPrevia" style="margin-top:10px"></div></div>`;
     SN.$('#iArq').onchange = async ev => {
       const file = ev.target.files && ev.target.files[0]; if (!file) return;
       const el = SN.$('#iPrevia'); el.innerHTML = '<span class="muted small">Lendo o arquivo…</span>';
       try {
         const texto = await file.text(), linhas = ER.lerCsv(texto);
-        if (!linhas.length || !('Tecnico' in linhas[0]) || !('Cod. Produto' in linhas[0])) throw new Error('Este arquivo não parece o relatório de movimentações do Elleven (faltam as colunas "Tecnico" e "Cod. Produto").');
+        const fmt = ER.formato(linhas);
+        if (!linhas.length || !fmt) throw new Error('Este arquivo não parece um relatório do Elleven (estoque de consumo, movimentações ou ativos).');
         previa = { arquivo: file.name, ...ER.agregar(linhas, file.name), linhas: linhas.length };
-        const ant = lista.map(e => e.relatorio && e.relatorio.data).filter(Boolean).sort().pop();
-        const prods = new Set(previa.estoques.flatMap(e => Object.keys(e.itens)));
+        const ativos = previa.formato === 'ativos';
+        const ant = lista.map(e => ativos ? e.ativosRelatorio && e.ativosRelatorio.data : e.relatorio && e.relatorio.data).filter(Boolean).sort().pop();
+        const prods = new Set(previa.estoques.flatMap(e => Object.keys(e.itens || {})));
         const foraCat = [...prods].filter(c => !SN.material(c));
-        el.innerHTML = `<div class="faixa small"><b>${esc(file.name)}</b>: ${SN.num(previa.linhas)} movimentações · <b>${previa.estoques.length}</b> estoques · ${prods.size} produtos com saldo · relatório de <b>${SN.dt(previa.data)}</b>
+        const novos = previa.estoques.filter(e => !lista.some(x => x.id === e.id));
+        el.innerHTML = `<div class="faixa small"><b>${esc(file.name)}</b>: ${SN.num(previa.linhas)} ${ativos ? 'movimentações de ativos' : previa.formato === 'saldo' ? 'linhas de saldo' : 'movimentações'} · <b>${previa.estoques.length}</b> estoques ·
+          ${ativos ? `<b>${SN.num(previa.seriais)}</b> equipamento(s) com técnico hoje` : `${prods.size} produtos com saldo`} · relatório de <b>${SN.dt(previa.data)}</b>
           ${previa.erros.length ? `<br><span style="color:var(--erro)">${previa.erros.length} linha(s) ignorada(s): ${esc(previa.erros[0].msg)}</span>` : ''}
-          ${foraCat.length ? `<br>${foraCat.length} produto(s) fora do catálogo do SigoNet (aparecem pelo nome do Elleven).` : ''}</div>
+          ${foraCat.length ? `<br>${foraCat.length} código(s) que não existiam no SigoNet entram no catálogo automaticamente, com a descrição do Elleven.` : ''}
+          ${ativos ? '<br>Ativos com serial: entram no estoque de quem está com o equipamento hoje (último envio em romaneio, sem devolução ou instalação depois). O saldo de consumo não muda.' : ''}</div>
           ${ant && previa.data <= ant ? `<div class="aviso alerta small" style="margin-top:6px">Este relatório (${SN.dt(previa.data)}) não é mais novo que o importado (${SN.dt(ant)}).</div>` : ''}
-          <div class="tabela-wrap" style="max-height:300px;margin-top:8px"><table class="tab small"><thead><tr><th>Estoque</th><th class="num">Produtos com saldo</th><th>Última movimentação</th><th>Já existe</th></tr></thead><tbody>
-          ${previa.estoques.map(e => `<tr><td>${esc(e.nome)}</td><td class="num">${Object.keys(e.itens).length}</td><td class="small">${SN.dt(e.ultimaMov.replace(' ', 'T'))}</td><td class="small">${lista.some(x => x.id === e.id) ? 'sim (atualiza)' : '<b>novo</b>'}</td></tr>`).join('')}</tbody></table></div>
-          <button class="btn prim" id="iImp" style="margin-top:8px">Importar ${previa.estoques.length} estoques</button>`;
+          ${ativos && novos.length ? `<div class="aviso info small" style="margin-top:6px">${novos.length} pessoa(s) com equipamento ainda não tem estoque no SigoNet e será criada: ${novos.map(e => esc(e.nome)).join(', ')}.</div>` : ''}
+          <div class="tabela-wrap" style="max-height:300px;margin-top:8px"><table class="tab small"><thead><tr><th>Estoque</th><th class="num">${ativos ? 'Equipamentos' : 'Produtos com saldo'}</th><th>${ativos ? 'Mais antigo desde' : 'Última movimentação'}</th><th>Já existe</th></tr></thead><tbody>
+          ${previa.estoques.map(e => `<tr><td>${esc(e.nome)}</td><td class="num">${ativos ? e.ativos.length : Object.keys(e.itens).length}</td>
+            <td class="small">${ativos ? SN.dt(String(e.ativos.map(a => a.desde).sort()[0] || '').replace(' ', 'T')) : SN.dt(e.ultimaMov.replace(' ', 'T'))}</td><td class="small">${lista.some(x => x.id === e.id) ? 'sim (atualiza)' : '<b>novo</b>'}</td></tr>`).join('')}</tbody></table></div>
+          <button class="btn prim" id="iImp" style="margin-top:8px">Importar ${ativos ? 'ativos de ' : ''}${previa.estoques.length} estoques</button>`;
         SN.$('#iImp').onclick = () => {
           const u = SN.usuario(), quando = SN.agora(), rel = { data: new Date(previa.data).toISOString(), arquivo: previa.arquivo, importadoEm: quando, por: u.nome };
-          previa.estoques.forEach(n => {
-            const e = estoques().find(x => x.id === n.id);
-            if (e) { Object.assign(e, { nome: n.nome, itens: n.itens, movimentos: n.movimentos, ultimaMov: n.ultimaMov, relatorio: rel }); SN.hist(e, 'Relatório importado', previa.arquivo); }
-            else { const novo = { ...n, tecnicos: [], relatorio: rel, historico: [] }; SN.hist(novo, 'Relatório importado', previa.arquivo); estoques().push(novo); }
-          });
-          SN.log('ESTOQUE_IMPORTAR', previa.arquivo, previa.estoques.length + ' estoques'); SN.salvar();
-          SN.toast(`${previa.estoques.length} estoques importados. Confira os vínculos dos técnicos.`, 'ok'); previa = null; escolhas = null; aba = 'VINC'; SN.render();
+          const noArquivo = {}; previa.estoques.forEach(n => { noArquivo[n.id] = true; });
+          if (ativos) {
+            // Ativos: só a lista de equipamentos muda; o saldo de consumo (itens/relatorio) fica como está.
+            previa.estoques.forEach(n => {
+              let e = estoques().find(x => x.id === n.id);
+              if (!e) { e = { id: n.id, nome: n.nome, itens: {}, tecnicos: [], historico: [] }; estoques().push(e); }
+              e.ativos = n.ativos; e.ativosRelatorio = rel; SN.hist(e, 'Ativos importados', `${n.ativos.length} equipamento(s) · ${previa.arquivo}`);
+            });
+            estoques().forEach(e => { if (noArquivo[e.id] || !(e.ativos || []).length) return; e.ativos = []; e.ativosRelatorio = rel; SN.hist(e, 'Ativos zerados', 'nenhum equipamento no relatório ' + previa.arquivo); });
+          } else {
+            previa.estoques.forEach(n => {
+              const e = estoques().find(x => x.id === n.id);
+              if (e) { Object.assign(e, { nome: n.nome, itens: n.itens, movimentos: n.movimentos, ultimaMov: n.ultimaMov, relatorio: rel }); SN.hist(e, 'Relatório importado', previa.arquivo); }
+              else { const novo = { ...n, tecnicos: [], relatorio: rel, historico: [] }; SN.hist(novo, 'Relatório importado', previa.arquivo); estoques().push(novo); }
+            });
+            // Fora do relatório novo = sem saldo no Elleven: zera (mantém o estoque e os vínculos).
+            estoques().forEach(e => { if (noArquivo[e.id] || !Object.keys(e.itens || {}).length) return; e.itens = {}; e.relatorio = rel; SN.hist(e, 'Zerado', 'não consta no relatório ' + previa.arquivo); });
+          }
+          SN._catExtra = null; // códigos novos do Elleven entram no catálogo
+          SN.log('ESTOQUE_IMPORTAR', previa.arquivo, previa.estoques.length + ' estoques' + (ativos ? ' (ativos)' : '')); SN.salvar();
+          SN.toast(ativos ? `Equipamentos de ${previa.estoques.length} estoques importados.` : `${previa.estoques.length} estoques importados. Confira os vínculos dos técnicos.`, 'ok'); previa = null; escolhas = null; aba = ativos ? 'SALDOS' : 'VINC'; SN.render();
         };
       } catch (e) { el.innerHTML = `<div class="aviso erro small">${esc(e.message)}</div>`; }
     };
@@ -152,6 +185,7 @@
       ${neg ? `<div class="aviso erro small" style="margin-bottom:8px">${neg} material(is) com uso acima do saldo. Fale com a gestão de materiais.</div>` : ''}
       <input class="inp" id="tQ" placeholder="Buscar material" style="margin-bottom:6px">
       <div id="tLista"></div>
+      ${htmlAtivos(e, true)}
       <h3 style="margin-top:14px">Apontado nos chamados depois do relatório</h3>${htmlUsados(e, false)}
       <p class="small muted">Disponível = saldo do relatório − o que você (e quem usa o mesmo estoque) apontou nos chamados depois dele. O estoque oficial é o Elleven.</p>`, 'Meu estoque');
     const pintar = q => {

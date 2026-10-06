@@ -41,8 +41,65 @@ var ER = (function () {
     return max ? max.replace(' ', 'T').slice(0, 19) : '';
   };
 
+  // Dois relatórios do Elleven são aceitos:
+  //  • "Movimentacoes Tecnicos": entradas e saídas (coluna "Entrada/Saida") → o saldo é a soma;
+  //  • "Estoque Materiais consumo de Técnicos": o SALDO de cada técnico × produto já pronto
+  //    (colunas Tecnico, Cod. Produto, Quantidade, Valor = valor total do saldo).
+  //  • "Movimentações Materiais Ativos": eventos de cada equipamento com serial (ATN/SMI). Com quem
+  //    está hoje = último "Enviado em Romaneio … Sob Responsabilidade de <nome>" sem devolução,
+  //    instalação em contrato ou remessa para site depois ("Alterado Situação" não muda o dono).
+  R.formato = function (linhas) { var l = (linhas || [])[0] || {}; return 'Serial' in l && 'Tipo Movimentação' in l ? 'ativos' : 'Entrada/Saida' in l ? 'movimentos' : 'Quantidade' in l ? 'saldo' : ''; };
+  R.agregarAtivos = function (linhas, arquivo) {
+    var lst = (linhas || []).slice().sort(function (a, b) { return String(a['Data Movimentacao']).localeCompare(String(b['Data Movimentacao'])); });
+    var com = {}, erros = [], max = '';
+    lst.forEach(function (l, i) {
+      var s = String(l.Serial || '').trim(), t = String(l['Tipo Movimentação'] || '').trim(), dt = String(l['Data Movimentacao'] || '');
+      if (!s) { erros.push({ linha: i + 2, msg: 'sem serial' }); return; }
+      if (dt > max) max = dt;
+      if (/^enviado em romaneio/i.test(t)) {
+        var desc = String(l['Descrição Movimentacao'] || '').replace(/\s+/g, ' ').trim();
+        var m = /Sob Responsabilidade de (.+?)\.?\s*$/i.exec(desc), rom = /N[ºo°]\s*(\d+)/i.exec(desc);
+        if (!m) { delete com[s]; return; }
+        com[s] = { s: s, cod: String(l['Cod. Produto'] || ''), d: String(l.Produto || ''), desde: dt, rom: rom ? rom[1] : '', com: m[1].trim() };
+      } else if (!/^alterado situa/i.test(t)) delete com[s];
+    });
+    var por = {}; Object.keys(com).forEach(function (s) { var x = com[s]; (por[x.com] = por[x.com] || []).push({ s: x.s, cod: x.cod, d: x.d, desde: x.desde, rom: x.rom }); });
+    var data = R.dataRelatorio(arquivo, []) || max.replace(' ', 'T').slice(0, 19);
+    var estoques = Object.keys(por).sort().map(function (n) { return { id: n, nome: n, ativos: por[n].sort(function (a, b) { return a.d.localeCompare(b.d) || a.s.localeCompare(b.s); }) }; });
+    return { data: data, estoques: estoques, erros: erros, formato: 'ativos', seriais: lst.length ? Object.keys(com).length : 0 };
+  };
+  // Ativos de um estoque e se já foram apontados num chamado do SigoNet depois do relatório (pelo serial).
+  R.ativosDe = function (estoque, materiais) {
+    var ini = estoque && estoque.ativosRelatorio && estoque.ativosRelatorio.data ? new Date(estoque.ativosRelatorio.data).getTime() : null, uso = {};
+    (materiais || []).forEach(function (m) {
+      var t = new Date(m.registradoEm || m.criadoEm || 0).getTime(); if (ini != null && !(t > ini)) return;
+      (m.itens || []).forEach(function (i) { (i.seriais || []).forEach(function (s) { var k = String(s || '').trim().toUpperCase(); if (k) uso[k] = { chamado: m.chamadoId, reg: m.id, tecnico: (m.cab || {}).tecnico || '' }; }); });
+    });
+    return ((estoque && estoque.ativos) || []).map(function (a) { var u = uso[String(a.s).toUpperCase()]; return { s: a.s, cod: a.cod, d: a.d, desde: a.desde, rom: a.rom, usado: u || null }; });
+  };
+  R.agregarSaldo = function (linhas, arquivo) {
+    var est = {}, erros = [], data = R.dataRelatorio(arquivo, []);
+    (linhas || []).forEach(function (l, i) {
+      var nome = String(l.Tecnico || '').trim(), cod = String(l['Cod. Produto'] || '').trim(), q = Number(String(l.Quantidade || '').replace(',', '.'));
+      if (!nome || !cod || !isFinite(q)) { erros.push({ linha: i + 2, msg: 'linha sem estoque, produto ou quantidade' }); return; }
+      var e = est[nome] = est[nome] || { id: nome, nome: nome, itens: {}, movimentos: 0, ultimaMov: '' };
+      var total = Number(String(l.Valor || '').replace(',', '.')) || 0, dt = String(l['Data Movimentacao'] || l['Data Movimentação'] || '');
+      var it = e.itens[cod] = e.itens[cod] || { d: String(l.Produto || ''), un: String(l.Unidade || ''), entradas: 0, saidas: 0, saldo: 0, valor: 0 };
+      it.saldo += q; if (q) it.valor = Math.round(total / q * 100) / 100;
+      e.movimentos++; if (dt > e.ultimaMov) e.ultimaMov = dt;
+    });
+    if (!data) { var max = ''; Object.keys(est).forEach(function (k) { if (est[k].ultimaMov > max) max = est[k].ultimaMov; }); data = max.replace(' ', 'T').slice(0, 19); }
+    var lista = Object.keys(est).sort().map(function (k) {
+      var e = est[k], itens = {}; Object.keys(e.itens).sort().forEach(function (c) { var it = e.itens[c]; it.saldo = Math.round(it.saldo * 1000) / 1000; if (it.saldo !== 0) itens[c] = it; });
+      e.itens = itens; return e;
+    });
+    return { data: data, estoques: lista, erros: erros, formato: 'saldo' };
+  };
+
   // Linhas → um registro por estoque, com o saldo de cada produto (só os diferentes de zero).
   R.agregar = function (linhas, arquivo) {
+    if (R.formato(linhas) === 'ativos') return R.agregarAtivos(linhas, arquivo);
+    if (R.formato(linhas) === 'saldo') return R.agregarSaldo(linhas, arquivo);
     var data = R.dataRelatorio(arquivo, linhas), est = {}, erros = [];
     (linhas || []).forEach(function (l, i) {
       var nome = String(l.Tecnico || '').trim(), cod = String(l['Cod. Produto'] || '').trim(), q = Number(String(l.Quantidade || '').replace(',', '.'));
@@ -61,7 +118,7 @@ var ER = (function () {
       Object.keys(e.itens).sort().forEach(function (c) { var it = e.itens[c]; it.saldo = Math.round(it.saldo * 1000) / 1000; delete it._dv; if (it.saldo !== 0) itens[c] = it; });
       e.itens = itens; return e;
     });
-    return { data: data, estoques: lista, erros: erros };
+    return { data: data, estoques: lista, erros: erros, formato: 'movimentos' };
   };
 
   // Sugestão de vínculo técnico → estoque, pelos nomes (a gestão confirma na tela).
@@ -115,7 +172,7 @@ var ER = (function () {
       if (!m || m.id === ignorarId || m.status === 'SEM_MATERIAL' || !(m.itens || []).length) return;
       var cab = m.cab || {}; if (tecs.indexOf(R.chaveTec(cab.empresa, cab.tecnico)) < 0) return;
       var t = new Date(m.registradoEm || m.criadoEm || 0).getTime();
-      if (ini != null && !(t > ini)) return;
+      if (ini == null || !(t > ini)) return; // sem relatório de consumo importado, não há saldo para descontar
       m.itens.forEach(function (i) { var q = Number(i.qtd) || 0; if (!q) return; var x = out[i.cod] = out[i.cod] || { qtd: 0, regs: [] }; x.qtd += q; if (x.regs.indexOf(m.id) < 0) x.regs.push(m.id); });
     });
     return out;
