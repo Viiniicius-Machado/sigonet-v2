@@ -290,7 +290,7 @@
         SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => (f.cs_mostrar === 'todas' || !travada(cs.id_cs) || f.cs_planejadas.includes(cs.id_cs)) && (!q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q))).map(cs => {
           const i = f.cs_planejadas.indexOf(cs.id_cs), fixa = enviadas.includes(cs.id_cs) && i >= 0;
           const trava = fixa ? 'disabled title="Já tem vistoria enviada nesta rota"' : i >= 0 ? '' : emOutra(cs.id_cs) ? 'disabled title="Em rota de outra equipe: tire de lá primeiro"' : travada(cs.id_cs) && !f.forcar ? 'disabled title="Marque Forçar para escolher"' : '';
-          return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono">${esc(cs.id_cs)}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
+          return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono" ${cs.descricao ? `title="${esc(cs.descricao)}"` : ''}>${esc(cs.id_cs)}${cs.tipo_caixa ? ` <span class="badge">${esc(cs.tipo_caixa)}</span>` : ''}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
             <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs.lat},${cs.lng}">${cs.lat}, ${cs.lng}</a></td></tr>`;
         }).join('') || `<tr><td colspan="6" class="muted">${f.cs_mostrar === 'disp' && lista.length ? 'Nenhuma CS disponível (veja "Mostrar: Todas").' : 'Nenhuma CS.'}</td></tr>`;
         SN.$$('[data-cs]').forEach(cb => cb.onchange = () => { const id = cb.dataset.cs, i = f.cs_planejadas.indexOf(id); if (cb.checked && i < 0) f.cs_planejadas.push(id); if (!cb.checked && i >= 0) f.cs_planejadas.splice(i, 1);
@@ -353,18 +353,121 @@
         let linhas, imp;
         if (/\.(kmz|kml)$/i.test(file.name)) {
           const r = await SN.vst.exec('VST_LER_KMZ', { nome: file.name, dataUrl: await lerArquivo(file, true) });
-          linhas = r.linhas; imp = { col_id: 'id_cs', col_cluster: 'cluster', col_lat: 'lat', col_lng: 'lng', col_endereco: 'endereco' };
+          previa = null; e.target.value = '';
+          return abrirPreviaKmz(file.name, r);
         } else {
           if (!window.XLSX) throw new Error('Leitor de planilhas indisponível (sem internet?).');
           const wb = XLSX.read(await lerArquivo(file), { type: 'array' });
           linhas = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); imp = cfg().importacao;
         }
-        previa = { arquivo: file.name, r: VR.normalizarBase(linhas, imp, SN.$('#bCid').value), linhas, imp };
+        previa = { arquivo: file.name, r: VR.normalizarBase(linhas, imp, SN.$('#bCid').value), linhas, imp }; kmz = null;
         pintarPrevia();
       } catch (err) { el.innerHTML = `<div class="aviso erro small">${esc(err.message)}</div>`; }
     };
-    SN.$('#bCid').onchange = () => { if (previa) { previa.r = VR.normalizarBase(previa.linhas, previa.imp, SN.$('#bCid').value); pintarPrevia(); } };
+    SN.$('#bCid').onchange = () => { if (previa) { previa.r = VR.normalizarBase(previa.linhas, previa.imp, SN.$('#bCid').value); pintarPrevia(); } if (kmz) pintarKmz(); };
     if (previa) pintarPrevia();
+    if (kmz) pintarKmz();
+  };
+
+  // ─────────── KMZ: prévia do que vai para a base ───────────
+  // Cluster = nome do arquivo (ou as pastas do KMZ). Entram só as pastas marcadas (padrão: as que começam
+  // com "CS"); SL, CEO, acessos, cabos e dutos ficam de fora. O KMZ não traz endereço: ele é buscado
+  // pela coordenada no OpenStreetMap (1 por segundo, regra do serviço), e a cidade vem junto.
+  let kmz = null;
+  const geoCache = {}, chaveGeo = c => Number(c.lat).toFixed(5) + ',' + Number(c.lng).toFixed(5);
+  const abrirPreviaKmz = (arquivo, r) => {
+    const nomeArq = arquivo.replace(/\.(kmz|kml)$/i, '').trim();
+    const pontos = {}; r.linhas.forEach(l => { const k = VR.chavePasta(l); pontos[k] = (pontos[k] || 0) + 1; });
+    kmz = { arquivo, linhas: r.linhas, outros: r.outros || {}, pontos, cluster: nomeArq, origem: 'arquivo',
+      pastas: Object.keys(pontos).filter(VR.pastaEhCs), buscar: true, token: {} };
+    if (!SN.$('#bVer').value.trim()) SN.$('#bVer').value = nomeArq + ' (' + SN.vst.dia(hoje()) + ')';
+    pintarKmz(); buscarEnderecos();
+  };
+  const csKmz = () => {
+    const cs = VR.csDoKml(kmz.linhas, { cluster: kmz.cluster, origem_cluster: kmz.origem, pastas: kmz.pastas });
+    const out = cs.map(c => { const g = geoCache[chaveGeo(c)] || {}; return { ...c, endereco: c.endereco || g.endereco || '', cidade_geo: g.cidade || '' }; });
+    out.duplicados = cs.duplicados; return out;
+  };
+  const faltaEndereco = cs => kmz.buscar ? cs.filter(c => !c.endereco && !(chaveGeo(c) in geoCache)) : [];
+  const buscarEnderecos = async () => {
+    if (!kmz) return; const tk = kmz.token = {};
+    let lista = faltaEndereco(csKmz());
+    while (lista.length) {
+      const c = lista[0];
+      try {
+        const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&accept-language=pt-BR&zoom=18&lat=${c.lat}&lon=${c.lng}`, { signal: AbortSignal.timeout(10000) });
+        const a = (await r.json()).address || {};
+        geoCache[chaveGeo(c)] = { endereco: [[a.road, a.house_number].filter(Boolean).join(', '), a.suburb || a.neighbourhood].filter(Boolean).join(' - '),
+          cidade: a.city || a.town || a.village || a.municipality || '' };
+      } catch (e) { geoCache[chaveGeo(c)] = { endereco: '', cidade: '' }; }
+      if (!kmz || kmz.token !== tk) return;
+      pintarKmz(true);
+      await new Promise(ok => setTimeout(ok, 1100));
+      if (!kmz || kmz.token !== tk) return;
+      lista = faltaEndereco(csKmz());
+    }
+    if (kmz && kmz.token === tk) pintarKmz(true);
+  };
+  const pintarKmz = parcial => {
+    const el = SN.$('#bPrevia'); if (!el || !kmz) return;
+    const cs = csKmz(), cidadeCampo = SN.$('#bCid').value.trim();
+    const comEnd = cs.filter(c => c.endereco).length, pend = faltaEndereco(cs).length;
+    const porCl = {}; cs.forEach(c => { const x = porCl[c.cluster || '(sem cluster)'] = porCl[c.cluster || '(sem cluster)'] || { n: 0, semid: 0, R: {} };
+      x.n++; if (!c.id_no_kmz) x.semid++; if (c.tipo_caixa) x.R[c.tipo_caixa] = (x.R[c.tipo_caixa] || 0) + 1; });
+    const existentes = Object.keys((d.base || {}).clusters || {});
+    const status = pend ? `<span class="muted">Buscando os endereços pelo mapa… faltam ${pend} (≈${Math.max(1, Math.ceil(pend * 1.1 / 60))} min)</span> <button class="btn sm" id="kPara">Parar a busca</button>`
+      : `<b>${comEnd}</b> de ${cs.length} CS com endereço${kmz.buscar ? '' : ' (busca parada)'}${comEnd < cs.length && !kmz.buscar ? ' <button class="btn sm" id="kBusca">Buscar o resto</button>' : ''}`;
+    const tabelaCs = `<div class="tabela-wrap" style="max-height:340px;margin-top:6px"><table class="tab small"><thead><tr><th>ID na base</th><th>Tipo</th><th>Endereço (pelo mapa)</th><th>Lat, Lng</th><th>Informação do KMZ</th></tr></thead><tbody>
+      ${cs.map(c => `<tr><td class="mono nowrap">${esc(c.id_cs)}${c.id_no_kmz ? '' : ' <span class="badge alerta" title="O ponto não tem número de CS no KMZ">sem nº</span>'}</td><td>${esc(c.tipo_caixa || '—')}</td>
+        <td>${c.endereco ? esc(c.endereco) + (c.cidade_geo ? `<div class="muted">${esc(c.cidade_geo)}</div>` : '') : `<span class="muted">${chaveGeo(c) in geoCache ? 'não achado' : '…'}</span>`}</td>
+        <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${c.lat},${c.lng}">${Number(c.lat).toFixed(6)}, ${Number(c.lng).toFixed(6)}</a></td>
+        <td class="muted" style="white-space:pre-line;min-width:220px">${esc(c.descricao.slice(0, 160))}${c.descricao.length > 160 ? '…' : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nenhuma CS nas pastas marcadas.</td></tr>'}</tbody></table></div>`;
+    if (parcial && SN.$('#kTabela')) { SN.$('#kTabela').innerHTML = tabelaCs; SN.$('#kStatus').innerHTML = status; ligarStatus(); return; }
+    el.innerHTML = `<div class="faixa small"><b>${esc(kmz.arquivo)}</b>: ${SN.num(kmz.linhas.length)} ponto(s) e ${SN.num(Object.values(kmz.outros).reduce((s, n) => s + n, 0))} linha(s)/área(s) no arquivo</div>
+      <div class="linha-form" style="margin-top:8px"><div class="campo"><label>Cluster *</label><input class="inp" id="kCl" value="${esc(kmz.cluster)}" ${kmz.origem === 'pasta' ? 'disabled' : ''}></div>
+        <div class="campo"><label>O cluster vem de</label><select class="inp" id="kOri"><option value="arquivo" ${kmz.origem === 'arquivo' ? 'selected' : ''}>nome do arquivo (um cluster)</option><option value="pasta" ${kmz.origem === 'pasta' ? 'selected' : ''}>pastas do KMZ (vários clusters)</option></select></div></div>
+      <h4 style="margin:10px 0 4px">O que tem no arquivo</h4>
+      <div class="tabela-wrap" style="max-height:220px"><table class="tab small"><thead><tr><th>Entra na base</th><th>Pasta do KMZ</th><th class="num">Itens</th></tr></thead><tbody>
+        ${Object.entries(kmz.pontos).map(([k, n]) => `<tr><td><input type="checkbox" data-kp="${esc(k)}" ${kmz.pastas.includes(k) ? 'checked' : ''}></td><td>${esc(k)}</td><td class="num">${SN.num(n)} ponto(s)</td></tr>`).join('')}
+        ${Object.entries(kmz.outros).map(([k, n]) => `<tr class="muted"><td>—</td><td>${esc(k)} <span class="small">(cabo, duto ou rota: não é CS)</span></td><td class="num">${SN.num(n)} linha(s)</td></tr>`).join('')}</tbody></table></div>
+      <h4 style="margin:10px 0 4px">Vai para a base</h4>
+      <table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th>Tipos</th><th class="num">Sem nº no KMZ</th><th></th></tr></thead><tbody>
+        ${Object.entries(porCl).map(([k, x]) => `<tr><td><b>${esc(k)}</b></td><td class="num"><b>${SN.num(x.n)}</b></td><td>${Object.entries(x.R).sort().map(([t, n]) => esc(t) + ': ' + n).join(' · ') || '—'}</td><td class="num">${x.semid || ''}</td>
+          <td class="small">${existentes.includes(k) ? '<span style="color:var(--erro)">já existe na base: CS com o mesmo ID são atualizadas</span>' : '<span class="muted">cluster novo</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Nenhuma pasta marcada.</td></tr>'}</tbody></table>
+      ${cs.duplicados ? `<p class="small muted">${cs.duplicados} ponto(s) repetido(s) no arquivo (mesma posição) entram uma vez só.</p>` : ''}
+      <p class="small muted" style="margin:6px 0 0">ID na base = cluster + número da CS no KMZ (cada KMZ recomeça do CS 1). Ponto sem número recebe "CS s/n". A informação do KMZ (cabos, CEO, lote) fica guardada na CS.</p>
+      <div style="margin-top:8px" id="kStatus">${status}</div>
+      <div id="kTabela">${tabelaCs}</div>
+      ${!cidadeCampo && cs.some(c => !c.cidade_geo) && !pend ? '<div class="aviso alerta small" style="margin-top:8px">Preencha a <b>Cidade</b> acima: há CS sem cidade pelo mapa.</div>' : ''}
+      ${cs.length ? `<button class="btn prim" id="kImp" style="margin-top:8px">⬆ Importar ${SN.num(cs.length)} CS para a base</button>` : ''}`;
+    SN.$('#kCl').onchange = e => { kmz.cluster = e.target.value.trim(); pintarKmz(); };
+    SN.$('#kOri').onchange = e => { kmz.origem = e.target.value; pintarKmz(); };
+    SN.$$('[data-kp]').forEach(cb => cb.onchange = () => { const k = cb.dataset.kp; kmz.pastas = cb.checked ? kmz.pastas.concat(k) : kmz.pastas.filter(x => x !== k); pintarKmz(); if (kmz.buscar) buscarEnderecos(); });
+    ligarStatus();
+    if (SN.$('#kImp')) SN.$('#kImp').onclick = importarKmz;
+  };
+  const ligarStatus = () => {
+    if (SN.$('#kPara')) SN.$('#kPara').onclick = () => { kmz.buscar = false; kmz.token = {}; pintarKmz(); };
+    if (SN.$('#kBusca')) SN.$('#kBusca').onclick = () => { kmz.buscar = true; pintarKmz(); buscarEnderecos(); };
+  };
+  const importarKmz = async () => {
+    const bt = SN.$('#kImp'), versao = SN.$('#bVer').value.trim(), cidade = SN.$('#bCid').value.trim();
+    if (!versao) return SN.toast('Informe a versão da base.', 'erro');
+    if (kmz.origem === 'arquivo' && !kmz.cluster) return SN.toast('Informe o nome do cluster.', 'erro');
+    const cs = csKmz(), semCid = cs.filter(c => !cidade && !c.cidade_geo);
+    if (semCid.length) return SN.toast(`Preencha a Cidade: ${semCid.length} CS sem cidade pelo mapa.`, 'erro');
+    const pend = faltaEndereco(cs).length;
+    if (pend && !await SN.confirmar('Endereços ainda em busca', `Faltam ${pend} endereço(s). Importar agora deixa essas CS sem endereço.`, 'Importar assim')) return;
+    kmz.buscar = false; kmz.token = {};
+    const linhas = cs.map(c => ({ id_cs: c.id_cs, cluster: c.cluster, cidade: cidade || c.cidade_geo, lat: c.lat, lng: c.lng, endereco: c.endereco, tipo_caixa: c.tipo_caixa, descricao: c.descricao }));
+    const clusters = [...new Set(cs.map(c => c.cluster))];
+    bt.disabled = true; const lotes = []; for (let i = 0; i < linhas.length; i += 300) lotes.push(linhas.slice(i, i + 300));
+    try {
+      for (let i = 0; i < lotes.length; i++) { bt.textContent = `Importando ${i + 1}/${lotes.length}…`;
+        await SN.vst.exec('VST_IMPORTAR_BASE', { versao, cidade, arquivo: kmz.arquivo, linhas: lotes[i], ultimo: i === lotes.length - 1, total: linhas.length }); }
+      SN.toast(`${SN.num(linhas.length)} CS importadas no cluster ${clusters.join(', ')}.`, 'ok');
+      kmz = null; Object.keys(csCache).forEach(k => delete csCache[k]); await recarregar();
+    } catch (e) { SN.toast(e.message, 'erro'); bt.disabled = false; bt.textContent = '⬆ Importar para a base'; }
   };
   // Renomear o cluster: o servidor troca o nome na base, nas rotas (até as concluídas), nas
   // vistorias, no chamado de cada rota e na LPU/Materiais/Fibra deles (até as pagas).

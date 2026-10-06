@@ -1022,7 +1022,8 @@ var VR = (function () {
       cidade: achaCol(ex, imp.col_cidade, ['cidade', 'municipio', 'city']),
       lat: achaCol(ex, imp.col_lat, ['lat', 'latitude']),
       lng: achaCol(ex, imp.col_lng, ['lng', 'lon', 'long', 'longitude']),
-      endereco: achaCol(ex, imp.col_endereco, ['endereco', 'logradouro', 'address', 'descricao', 'description'])
+      endereco: achaCol(ex, imp.col_endereco, ['endereco', 'logradouro', 'address', 'descricao', 'description']),
+      tipo: imp.col_tipo ? achaCol(ex, imp.col_tipo, []) : null, descricao: imp.col_descricao ? achaCol(ex, imp.col_descricao, []) : null
     };
     ['id', 'cluster', 'lat', 'lng'].forEach(function (k) { if (!col[k]) erros.push({ linha: 0, msg: 'Coluna de ' + k + ' não encontrada. Ajuste o mapeamento em Configurações.' }); });
     if (!col.cidade && vazio(cidadePadrao)) erros.push({ linha: 0, msg: 'O arquivo não tem coluna de cidade: informe a cidade da base.' });
@@ -1038,6 +1039,9 @@ var VR = (function () {
       vistos[id] = true;
       validas.push({ id_cs: id, cidade: cidade, cluster: String(l[col.cluster] == null ? '' : l[col.cluster]).trim(), lat: lat, lng: lng,
         endereco: col.endereco ? String(l[col.endereco] == null ? '' : l[col.endereco]).trim() : '' });
+      var c = validas[validas.length - 1];
+      if (col.tipo && l[col.tipo]) c.tipo_caixa = String(l[col.tipo]).trim();
+      if (col.descricao && l[col.descricao]) c.descricao = String(l[col.descricao]).trim().slice(0, 1000);
     });
     return { validas: validas, erros: erros, colunas: col };
   };
@@ -1052,7 +1056,7 @@ var VR = (function () {
   var tag = function (xml, nome) { var m = new RegExp('<' + nome + '\\b[^>]*>([\\s\\S]*?)</' + nome + '>', 'i').exec(xml); return m ? desXml(m[1]) : ''; };
   R.lerKml = function (texto, mapeamento) {
     var map = mapeamento || {}, idDe = map.kml_id || 'nome', clDe = map.kml_cluster || 'pasta';
-    var re = /<(\/?)(Folder|Placemark)\b[^>]*>/gi, pastas = [], linhas = [], ignorados = 0, m;
+    var re = /<(\/?)(Folder|Placemark)\b[^>]*>/gi, pastas = [], linhas = [], ignorados = 0, outros = {}, m;
     while ((m = re.exec(texto))) {
       if (m[2].toLowerCase() === 'folder') {
         if (m[1]) { pastas.pop(); continue; }
@@ -1064,7 +1068,7 @@ var VR = (function () {
       var fim = texto.indexOf('</Placemark>', re.lastIndex); if (fim < 0) break;
       var pm = texto.slice(re.lastIndex, fim); re.lastIndex = fim + 12;
       var ponto = /<Point\b[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/i.exec(pm);
-      if (!ponto) { ignorados++; continue; }
+      if (!ponto) { ignorados++; var kp = pastas.join(' / ') || '(raiz)'; outros[kp] = (outros[kp] || 0) + 1; continue; }
       var xy = desXml(ponto[1]).split(/[\s,]+/).filter(Boolean).map(Number);
       var campos = {}, d, reD = /<Data\s+name="([^"]*)"[^>]*>[\s\S]*?<value>([\s\S]*?)<\/value>[\s\S]*?<\/Data>/gi, reS = /<SimpleData\s+name="([^"]*)"[^>]*>([\s\S]*?)<\/SimpleData>/gi;
       while ((d = reD.exec(pm))) campos[desXml(d[1])] = desXml(d[2]);
@@ -1072,9 +1076,54 @@ var VR = (function () {
       var nome = tag(pm.replace(/<ExtendedData[\s\S]*?<\/ExtendedData>/i, ''), 'name');
       var pega = function (regra, padrao) { return regra.indexOf('campo:') === 0 ? (campos[regra.slice(6)] || '') : padrao; };
       linhas.push({ id: pega(idDe, nome), cluster: pega(clDe, pastas.length ? pastas[pastas.length - 1] : ''),
-        lat: xy[1], lng: xy[0], endereco: tag(pm, 'address') || campos.endereco || '', campos: campos });
+        lat: xy[1], lng: xy[0], endereco: tag(pm, 'address') || campos.endereco || '', campos: campos,
+        nome: nome, descricao: tag(pm.replace(/<ExtendedData[\s\S]*?<\/ExtendedData>/i, ''), 'description'), pastas: pastas.slice() });
     }
-    return { linhas: linhas, ignorados: ignorados };
+    return { linhas: linhas, ignorados: ignorados, outros: outros };
+  };
+
+  // KMZ de rede subterrânea (padrão UPIX/NetTurbo) → CS da base, para a prévia da importação.
+  // - entram só os pontos das pastas marcadas (padrão: pasta cujo nome começa com "CS");
+  // - cluster: o nome do arquivo (padrão) ou a pasta acima da pasta de CS;
+  // - ID: "CS 12" achado no nome ou na 1ª linha da descrição; senão o nome, se não for genérico
+  //   (R1, R2, CS, SL…); senão "CS s/n 01". O ID leva o cluster na frente ("Treze de Maio - CS 12"),
+  //   porque cada KMZ recomeça do CS 1 e o ID é único na base inteira;
+  // - tipo da caixa: R1, R2… no nome ou na descrição; a descrição inteira fica guardada (cabos, CEO, lote);
+  // - ponto repetido (mesma coordenada no mesmo cluster) entra uma vez só (saida.duplicados conta os pulados).
+  var GENERICO = /^(r\s?\d|cs|sl|ceo|\+|marcador sem t[ií]tulo|subida lateral|caixa)$/i;
+  R.chavePasta = function (l) { return (l.pastas || []).join(' / ') || '(raiz)'; };
+  R.pastaEhCs = function (chave) { var u = String(chave).split(' / ').pop(); return /^cs\b/i.test(String(u).trim()); };
+  R.clusterDaPasta = function (pastas) {
+    var p = (pastas || []).slice(); while (p.length && /^(cs|acessos?)\b/i.test(String(p[p.length - 1]).trim())) p.pop();
+    return p.length ? String(p[p.length - 1]).trim() : '';
+  };
+  R.csDoKml = function (linhas, op) {
+    op = op || {};
+    var marcadas = op.pastas || null, origem = op.origem_cluster || 'arquivo', clArq = String(op.cluster || '').trim();
+    var usados = {}, saida = [], semId = {}, mesmoPonto = {}, duplicados = 0;
+    (linhas || []).forEach(function (l) {
+      var chave = R.chavePasta(l);
+      if (marcadas ? marcadas.indexOf(chave) < 0 : !R.pastaEhCs(chave)) return;
+      var cluster = origem === 'pasta' ? (R.clusterDaPasta(l.pastas) || clArq) : clArq;
+      // KMZ com a mesma pasta copiada duas vezes: o mesmo ponto (até ~1 m) no mesmo cluster entra uma vez só.
+      var kp = cluster + '|' + Number(l.lat).toFixed(5) + '|' + Number(l.lng).toFixed(5);
+      if (mesmoPonto[kp]) { duplicados++; return; } mesmoPonto[kp] = true;
+      var desc = String(l.descricao || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').trim();
+      var linha1 = desc.split('\n')[0].trim(), nome = String(l.nome || '').trim();
+      var num = /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(nome) || /^\s*CS\s*-?\s*(\d+[A-Z]?)\b/i.exec(linha1);
+      var rot = num ? 'CS ' + num[1].toUpperCase() : (nome && !GENERICO.test(nome) ? nome : '');
+      var tp = /(^|[^A-Z0-9])R\s?([1-9])(?![0-9])/i.exec(nome + '\n' + desc);
+      saida.push({ cluster: cluster, rot: rot, tipo_caixa: tp ? 'R' + tp[2] : '', descricao: desc.slice(0, 1000), lat: l.lat, lng: l.lng,
+        endereco: l.endereco || '', pasta: chave, id_no_kmz: !!rot });
+    });
+    saida.forEach(function (c) { if (!c.rot) { semId[c.cluster] = (semId[c.cluster] || 0) + 1; c.rot = 'CS s/n ' + ('0' + semId[c.cluster]).slice(-2); } });
+    saida.forEach(function (c) {
+      var base = (c.cluster ? c.cluster + ' - ' : '') + c.rot, id = base, n = 1;
+      while (usados[id]) id = base + ' (' + (++n) + ')';
+      usados[id] = true; c.id_cs = id; c.repetida = n > 1;
+    });
+    saida.duplicados = duplicados;
+    return saida;
   };
 
   return R;
