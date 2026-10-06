@@ -23,7 +23,7 @@
   // Cada ponto leva "id" da atividade (CS ou rota): os números e o ranking contam atividades, não pontos.
   const pontosDe = d => {
     const rotaPor = {}; d.rotas.forEach(r => { rotaPor[r.id_rota] = r; });
-    const out = [];
+    const out = [], semPonto = [];
     (d.vistorias || []).forEach(v => {
       const r = rotaPor[v.id_rota]; if (!r || !num(v.lat) || !num(v.lng) || !v.status_revisao || v.status_revisao === 'RASCUNHO') return;
       out.push({ lat: +v.lat, lng: +v.lng, peso: 1, seg: 'SUBTERRANEA', concl: v.status_revisao === 'APROVADA', quando: v.fim || v.enviado_em, id: v.id_vistoria,
@@ -36,9 +36,12 @@
       const lst = aps[id], quando = lst.map(a => String(a.data || '')).sort().pop(), concl = lst.every(a => a.status_revisao === 'APROVADA');
       const base = { seg: 'AEREA', concl, quando, id: r.id_rota, rota: r.id_rota, prestador: r.prestador || '', tecnico: r.tecnico || '', cidade: r.cidade || '', local: r.cidade + (r.motivo ? ' · ' + r.motivo : ''),
         metros: lst.filter(a => a.status_revisao === 'APROVADA').reduce((s, a) => s + (Number(a.metros) || 0), 0) };
+      const antes = out.length;
       if ((r.tracado || []).length) VR.pontosAoLongo(r.tracado, 40, 300).forEach(q => out.push({ ...base, lat: q[0], lng: q[1], peso: 0.35, item: 'Rota percorrida', tracado: r.tracado }));
       else lst.forEach(a => (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf' && num(f.lat) && num(f.lng)).forEach(f => out.push({ ...base, lat: +f.lat, lng: +f.lng, peso: 1, item: L_ROT[f.tipo_foto] || 'Foto' })));
+      if (out.length === antes) semPonto.push({ ...base, kmz: r.kmz_url || '' }); // sem traçado e sem foto com GPS
     });
+    out.semPonto = semPonto;
     return out;
   };
   // Rotas aéreas com apontamento, KMZ e ainda sem traçado: o servidor lê o KMZ e guarda (uma vez).
@@ -75,6 +78,8 @@
     const todos = pontosDe(d);
     const vis = todos.filter(p => SN.noIntervalo(p.quando, iv) && (!filtro.seg || p.seg === filtro.seg) && (!filtro.sit || (filtro.sit === 'concl') === p.concl) && (!filtro.prest || p.prestador === filtro.prest));
     const prests = [...new Set(todos.map(p => p.prestador).filter(Boolean))].sort();
+    const fora = (todos.semPonto || []).filter(p => SN.noIntervalo(p.quando, iv) && (!filtro.seg || filtro.seg === 'AEREA') && (!filtro.sit || (filtro.sit === 'concl') === p.concl) && (!filtro.prest || p.prestador === filtro.prest));
+    const porque = p => semTracado[p.rota] || (!p.kmz ? 'rota sem KMZ' : !/drive\.google\.com/.test(p.kmz) ? 'o KMZ é um link (My Maps/Earth) que o servidor não consegue ler' : 'lendo o KMZ…');
     const unico = (l, k) => new Set(l.map(p => p[k])).size;
     const sub = vis.filter(p => p.seg === 'SUBTERRANEA'), aer = vis.filter(p => p.seg === 'AEREA');
     const ativ = {}; vis.forEach(p => { ativ[p.seg + '|' + p.id] = p; }); const atividades = Object.values(ativ);
@@ -107,7 +112,10 @@
         <div class="card"><h3>Onde mais atuamos</h3>${rank.length ? `<table class="tab small"><thead><tr><th>Local</th><th class="num">Atividades</th><th class="num">Concl.</th></tr></thead><tbody>
           ${rank.map(([k, x]) => `<tr class="clic" data-foco="${esc(k)}"><td>${esc(k)}<div class="muted">${x.seg === 'AEREA' ? 'aérea' : 'subterrânea'}</div></td><td class="num">${SN.num(x.n)}</td><td class="num">${x.n ? Math.round(100 * x.c / x.n) : 0}%</td></tr>`).join('')}</tbody></table>
           <p class="small muted">Toque num local para aproximar o mapa.</p>` : '<p class="muted small">—</p>'}
-          ${Object.keys(semTracado).length ? `<p class="small" style="color:var(--alerta,#b26a00)">${Object.keys(semTracado).length} rota(s) aérea(s) sem traçado (${esc(Object.keys(semTracado).slice(0, 5).join(', '))}): o KMZ precisa ser arquivo enviado ou link do Google Drive. Nesses casos vale o GPS das fotos tiradas pela câmera do SigoNet.</p>` : ''}
+          ${fora.length ? `<div class="aviso alerta small" style="margin-top:8px"><b>${fora.length} rota(s) aérea(s) fora do mapa</b> — sem traçado do KMZ e sem foto com GPS:
+            <table class="tab small" style="margin-top:6px"><tbody>${fora.map(p => `<tr><td><b>${esc(p.rota)}</b> ${p.concl ? '(aprovada)' : '(em andamento)'}<div class="muted">${esc(p.local)} · ${esc(porque(p))}</div></td>
+              <td class="nowrap"><label class="btn sm">Anexar KMZ<input type="file" accept=".kmz,.kml" data-kmz-rota="${esc(p.rota)}" hidden></label></td></tr>`).join('')}</tbody></table>
+            <div class="muted" style="margin-top:4px">Anexe o arquivo .kmz da rota: o traçado entra no mapa na hora (não muda status, metros nem LPU).</div></div>` : ''}
           <p class="small muted">Aérea: o calor segue o traçado do KMZ da rota. Histórico importado da planilha não tem traçado nem GPS e não aparece aqui.</p></div></div>`);
     SN.ligarPeriodo(() => pintar(d), P);
     const muda = (k, el, alvo) => SN.$(el).onchange = e => { alvo[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value; pintar(d); };
@@ -124,6 +132,17 @@
     if (ver.pontos) vis.filter(p => !p.tracado).forEach(p => L.circleMarker([p.lat, p.lng], { radius: 5, weight: 1, color: '#fff', fillColor: p.concl ? '#2e7d32' : '#e08a00', fillOpacity: 0.9 })
       .bindPopup(`<b>${esc(p.item)}</b><br>${esc(p.rota)} · ${p.seg === 'AEREA' ? 'aérea' : 'subterrânea'}<br>${esc(p.local)}<br>${esc(p.prestador)}${p.tecnico ? ' · ' + esc(p.tecnico) : ''}<br>${p.quando ? SN.dt(p.quando) : ''} · ${p.concl ? 'concluído' : 'em andamento'}`).addTo(mapa));
     if (vis.length) mapa.fitBounds(L.latLngBounds(vis.map(p => [p.lat, p.lng])).pad(0.15), { maxZoom: 16 });
+    SN.$$('[data-kmz-rota]').forEach(inp => inp.onchange = async () => {
+      const file = inp.files && inp.files[0], id = inp.dataset.kmzRota; if (!file) return;
+      const r = d.rotas.find(x => x.id_rota === id);
+      try {
+        const dataUrl = await new Promise((ok, falha) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = falha; fr.readAsDataURL(file); });
+        const up = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: (r && r.cidade) || '', dataUrl });
+        const res = await SN.vst.exec('VST_ROTA_TRACADO', { id_rota: id, drive_id: up.drive_id, url: up.url });
+        if (r) { r.tracado = res.tracado; r.kmz_drive_id = up.drive_id; } delete semTracado[id];
+        SN.toast(`${id}: traçado do KMZ no mapa.`, 'ok'); pintar(d);
+      } catch (e) { SN.toast(e.message, 'erro'); }
+    });
     SN.$$('[data-foco]').forEach(tr => tr.onclick = () => { const ps = vis.filter(p => (p.local || p.cidade) === tr.dataset.foco); if (ps.length) mapa.fitBounds(L.latLngBounds(ps.map(p => [p.lat, p.lng])).pad(0.3), { maxZoom: 17 }); });
     // Tela cheia: só o mapa com o título, para projetar na reunião.
     SN.$('#mTela').onclick = () => { const c = SN.$('#mCaixa'); (c.requestFullscreen || c.webkitRequestFullscreen || (() => { })).call(c); };
