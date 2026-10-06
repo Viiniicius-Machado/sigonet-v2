@@ -1169,6 +1169,35 @@ var VR = (function () {
     });
     return out.sort(function (a, b) { return (a.tipo_ponto === 'CEO' ? 0 : 1) - (b.tipo_ponto === 'CEO' ? 0 : 1) || a.dist_m - b.dist_m; });
   };
+  // Traçado da rota aérea guardado na rota (para o Mapa de atuação): só as linhas que contam, cada
+  // uma reduzida a no máximo "max" pontos e com 5 casas (~1 m). [[ [lat,lng], ... ], ...]
+  R.tracadoDasLinhas = function (linhas, max) {
+    max = max || 150; var out = [];
+    (linhas || []).forEach(function (l) {
+      if (!l.conta) return;
+      (l.pts || []).forEach(function (p) {
+        if (!p || p.length < 2) return;
+        var passo = Math.max(1, Math.ceil(p.length / max)), r = [];
+        for (var i = 0; i < p.length; i += passo) r.push([Math.round(p[i][0] * 1e5) / 1e5, Math.round(p[i][1] * 1e5) / 1e5]);
+        var u = p[p.length - 1]; if ((p.length - 1) % passo) r.push([Math.round(u[0] * 1e5) / 1e5, Math.round(u[1] * 1e5) / 1e5]);
+        out.push(r);
+      });
+    });
+    return out.slice(0, 40);
+  };
+  // Pontos a cada ~"passo" metros ao longo do traçado (calor do mapa acompanha a rota).
+  R.pontosAoLongo = function (tracado, passo, max) {
+    passo = passo || 40; max = max || 400; var out = [];
+    (tracado || []).forEach(function (l) {
+      for (var i = 1; i < l.length; i++) {
+        var a = l[i - 1], b = l[i], d = R.distanciaM(a[0], a[1], b[0], b[1]), n = Math.max(1, Math.round(d / passo));
+        for (var k = i === 1 ? 0 : 1; k <= n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+      }
+      if (l.length === 1) out.push(l[0]);
+    });
+    if (out.length <= max) return out;
+    var st = out.length / max, r = []; for (var j = 0; j < max; j++) r.push(out[Math.floor(j * st)]); return r;
+  };
   R.somaLinhasKml = function (linhas) { return (linhas || []).reduce(function (s, x) { return s + (x.conta ? x.metros : 0); }, 0); };
 
   // KMZ de rede subterrânea (padrão UPIX/NetTurbo) → CS da base, para a prévia da importação.

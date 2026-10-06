@@ -224,7 +224,14 @@ SN.enviarMudancas = async () => {
   const assin = {}; Object.entries(SN.db.assinaturas || {}).forEach(([n, v]) => { if ((SN._assinEnviadas[n] || 0) < v) assin[n] = v; });
   pendente = false;
   if (!ops.length && !Object.keys(assin).length) return;
-  enviando = true;
+  // Lote: no máximo LOTE_ENVIO registros por gravação. Uma importação grande (ex.: ~100 estoques) iria
+  // numa gravação só e seguraria a trava do servidor por segundos, atrasando o NOC e os técnicos.
+  // A operação vai na frente; o resto sobe nas rodadas seguintes, logo em seguida.
+  const PESO = { chamados: 0, lpus: 1, materiais: 1, fibras: 1, pagamentos: 2, disponibilidade: 2, log: 3, integracoes: 3, estoques: 4 };
+  ops.sort((a, b) => (PESO[a.colecao] == null ? 2 : PESO[a.colecao]) - (PESO[b.colecao] == null ? 2 : PESO[b.colecao]));
+  const resto = ops.length > SN.LOTE_ENVIO ? ops.splice(SN.LOTE_ENVIO) : [];
+  if (resto.length) pendente = true;
+  enviando = true; let loteOk = false;
   // marca como enviado já (se falhar, desfaz e tenta de novo)
   ops.forEach(o => { if (o.excluir) delete SN._snap[o.colecao][o.id]; else SN._snap[o.colecao][o.id] = o._s; });
   try {
@@ -259,6 +266,7 @@ SN.enviarMudancas = async () => {
       }
       else ver[x.id] = x.v;
     });
+    loteOk = true;
     if (conflitos) { SN.toast(`${conflitos} registro(s) tinham sido alterados por outra pessoa — a tela foi atualizada com a versão mais nova. Refaça sua alteração se precisar.`, 'erro'); SN.aoMudarBase(); }
     else if (mesclados) SN.aoMudarBase();
   } catch (e) {
@@ -270,8 +278,12 @@ SN.enviarMudancas = async () => {
     }
     SN.offline = !!e.rede;
     clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 5000 + Math.random() * 7000);
-  } finally { enviando = false; SN.indicadorSync(); SN.guardarLocal(); }
+  } finally {
+    enviando = false; SN.indicadorSync(); SN.guardarLocal();
+    if (resto.length && loteOk) { clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 250); } // próximo lote (falha: o catch já agendou a nova tentativa)
+  }
 };
+SN.LOTE_ENVIO = 25;
 // Resultado do último envio de um registro: erro do servidor ('' = gravou) e se ainda falta subir.
 SN._errosEnvio = {};
 SN.erroEnvio = (col, id) => SN._errosEnvio[col + '|' + id] || '';

@@ -421,11 +421,15 @@ SN.catalogoExtra = () => {
     (e.ativos || []).forEach(a => { if (!SN._catFixo[a.cod] && !ex[a.cod]) ex[a.cod] = { t: 'ATN', c: a.cod, d: a.d || a.cod, p: 0, elleven: true }; });
     Object.entries(e.itens || {}).forEach(([c, it]) => { if (SN._catFixo[c]) return; const x = ex[c] || (ex[c] = { t: /^(ATN|SMI)/i.test(c) ? 'ATN' : 'INS', c, d: it.d || c, p: 0, elleven: true }); if (!x.p && it.valor) x.p = Number(it.valor) || 0; });
   });
-  SN._catExtra = Object.values(ex); SN._catExtraDe = ests; SN._catExtraN = ests.length;
+  SN._catExtra = Object.values(ex); SN._catExtra._idx = ex; SN._catExtraDe = ests; SN._catExtraN = ests.length;
   return SN._catExtra;
 };
 SN.todosMateriais = () => CATALOGO_MATERIAIS.concat(SN.catalogoExtra());
-SN.material = cod => CATALOGO_MATERIAIS.find(m => m.c === cod) || SN.catalogoExtra().find(m => m.c === cod);
+SN._catIdx = null;
+SN.material = cod => {
+  if (!SN._catIdx) { SN._catIdx = {}; CATALOGO_MATERIAIS.forEach(m => { SN._catIdx[m.c] = m; }); }
+  return SN._catIdx[cod] || SN.catalogoExtra()._idx[cod];
+};
 // Preço válido no dia (data local) em que o material foi apontado; sem data = hoje.
 SN.precoMaterial = (cod, quando) => {
   const m = SN.material(cod); let p = m ? m.p : 0;

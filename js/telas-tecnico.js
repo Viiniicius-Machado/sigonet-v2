@@ -465,7 +465,8 @@ SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   const est = SN.estoqueDoTecnico ? SN.estoqueDoTecnico(h.empresa, h.tecnico) : null;
   const dispEst = {}; if (est) SN.ER.disponivel(est, SN.db.materiais, reg && reg.id).forEach(x => { dispEst[x.cod] = x; });
   // Seriais deste equipamento que estão com o técnico (relatório de ativos do Elleven) e ainda não foram apontados.
-  const serEst = cod => est ? SN.ER.ativosDe(est, SN.db.materiais).filter(a => a.cod === cod && (!a.usado || a.usado.reg === (reg && reg.id))) : [];
+  const ativosEst = est ? SN.ER.ativosDe(est, SN.db.materiais).filter(a => !a.usado || a.usado.reg === (reg && reg.id)) : [];
+  const serEst = cod => ativosEst.filter(a => a.cod === cod);
   const dispTxt = (cod, noForm) => { if (!est) return ''; const x = dispEst[cod], disp = (x ? x.disp : 0) - (noForm || 0), un = x && x.un ? ' ' + String(x.un).toLowerCase().replace('unid', 'un') : '';
     const n = SN.num(disp, Number.isInteger(disp) ? 0 : 2);
     return disp < 0 ? `<div class="small" style="color:var(--erro)">Seu estoque: ${n}${un} — acima do saldo, avise a gestão de materiais</div>`
