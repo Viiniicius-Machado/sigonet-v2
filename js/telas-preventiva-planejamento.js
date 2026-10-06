@@ -75,7 +75,7 @@
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ""}</td><td>${SN.vst.badgeRota(r.status)}</td><td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : progresso(r)}</td>
           <td class="nowrap">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está preenchendo e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.segmento !== 'AEREA' && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm" data-edcs="${esc(r.id_rota)}" title="Tirar, somar ou trocar CS desta rota já despachada">CS da rota</button>` : ''}${r.segmento !== 'AEREA' && r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="O técnico enviou todas as CS mas não tocou em Concluir rota">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button>` : ''}</td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.segmento !== 'AEREA' && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm" data-edcs="${esc(r.id_rota)}" title="Tirar, somar ou trocar CS desta rota já despachada">CS da rota</button>` : ''}${r.segmento !== 'AEREA' && r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="O técnico enviou todas as CS mas não tocou em Concluir rota">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}" title="Cancela a atividade (some do app do técnico, cancela o chamado e libera as CS)">Cancelar</button>` : ''}${r.status !== 'PLANEJADA' ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da rota em PDF">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha completa de cada CS/apontamento (com fotos)">Baixar tudo</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : (todas.length && (iv || filtro.seg || filtro.status || filtro.q) ? '<p class="muted">Nenhuma rota neste período/filtro. Troque o período (ou "Tudo") para ver as outras.</p>' : '<p class="muted">Nenhuma rota. Use "Nova rota".</p>')}</div>`;
     SN.ligarPeriodo(pintarRotas, periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { periodo.per = 'tudo'; filtro.status = andamentoFora.every(r => r.status === 'EM_CAMPO') ? 'EM_CAMPO' : ''; pintarRotas(); };
@@ -120,6 +120,7 @@
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.pdf); if (!r) return;
       if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoRota(r, d, cfg(), cv));
       else SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg())); });
+    SN.$$('[data-zip]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.zip); if (r) baixarTudo(r, b); });
     SN.$$('[data-edcs]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.edcs); if (!r) return;
       form = Object.assign(JSON.parse(JSON.stringify(r)), { segmento: 'SUBTERRANEA', modo_cs: true, cs_originais: (r.cs_planejadas || []).slice(), forcar: false, forcar_motivo: '', motivo_cs: '' }); aba = 'NOVA'; pintar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { form = JSON.parse(JSON.stringify(d.rotas.find(r => r.id_rota === b.dataset.ed))); form.segmento = form.segmento || 'SUBTERRANEA'; aba = 'NOVA'; pintar(); });
@@ -321,6 +322,59 @@
       SN.$('#fCsNenhuma').onclick = () => { f.cs_planejadas = enviadas.filter(id => f.cs_planejadas.includes(id)); f.cs_inicio = ''; linhas(); atualizarContagem(); };
       linhas(); atualizarContagem();
     } catch (e) { el.innerHTML = `<span style="color:var(--erro)">${esc(e.message)}</span>`; }
+  };
+
+  // ═══════════════════════════ Baixar tudo da rota (.zip) ═══════════════════════════
+  // Resumo da rota + ficha completa de cada CS (subterrânea) ou apontamento (aérea), com as fotos,
+  // um PDF por item dentro de um .zip (um PDF único ficaria pesado demais para abrir). Opcional:
+  // as fotos originais em JPG. Tudo montado no navegador; as fotos vêm do Drive pelo servidor.
+  const carregarJsZip = () => window.JSZip ? Promise.resolve() : new Promise((ok, falha) => {
+    const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = ok; s.onerror = () => falha(new Error('Não foi possível carregar o compactador (sem internet?).')); document.head.appendChild(s); });
+  const nomeArq = t => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 90);
+  const bytesDe = dataUrl => { const bin = atob(String(dataUrl).split(',')[1] || ''), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+  const baixarTudo = async (r, bt) => {
+    const aerea = r.segmento === 'AEREA';
+    const itens = aerea ? (d.producao || []).filter(a => a.id_rota === r.id_rota && a.status_revisao && a.status_revisao !== 'RASCUNHO').sort((a, b) => String(a.data).localeCompare(String(b.data)))
+      : (d.vistorias || []).filter(v => v.id_rota === r.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO').sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0));
+    const nFotos = itens.reduce((s, x) => s + (x.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf').length, 0);
+    const op = await SN.modal({ titulo: 'Baixar tudo · ' + r.id_rota,
+      corpo: `<p>Vai gerar um arquivo <b>.zip</b> com:</p><ul class="small"><li>o resumo da rota (PDF);</li><li>${aerea ? 'a ficha de cada apontamento' : 'a ficha completa de cada CS'} com as fotos: <b>${itens.length}</b> PDF(s), ${nFotos} foto(s).</li></ul>
+        <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="zFotos"> Incluir também as fotos originais em JPG (arquivo maior)</label>
+        <p class="small muted">Leva alguns segundos por ${aerea ? 'apontamento' : 'CS'}. Não feche a página até o download começar.</p>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Gerar .zip', cls: 'prim', acao: m => ({ fotos: SN.$('#zFotos', m).checked }) }] });
+    if (!op) return;
+    const rotulo = bt.textContent; bt.disabled = true;
+    const passo = t => { bt.textContent = t; };
+    try {
+      passo('Preparando…'); await carregarJsZip();
+      if (!window.jspdf) throw new Error('Gerador de PDF indisponível (sem internet?).');
+      const zip = new JSZip(), pasta = zip.folder(nomeArq(`${r.id_rota} - ${aerea ? (r.cidade || '') + ' ' + (r.motivo || '') : r.cluster || ''}`));
+      const resumo = await SN.vst.pdfResumoRota(r, d, cfg());
+      if (resumo) pasta.file('00 - Resumo da rota.pdf', resumo.output('arraybuffer'));
+      let feitos = 0, semFoto = 0;
+      for (const x of itens) {
+        feitos++; passo(`Gerando ${feitos}/${itens.length}…`);
+        const fotos = (x.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), b64 = {};
+        for (let i = 0; i < fotos.length; i += 20) {
+          try { (await SN.vst.exec('VST_FOTOS_B64', { ids: fotos.slice(i, i + 20).map(f => f.id_foto) })).fotos.forEach(f => { if (f.dataUrl) b64[f.id_foto] = f.dataUrl; }); } catch (e) { }
+        }
+        semFoto += fotos.filter(f => !b64[f.id_foto]).length;
+        const locais = {}; Object.entries(b64).forEach(([id, u]) => { locais[id] = { thumb: u }; });
+        const nome = aerea ? `${String(feitos).padStart(2, '0')} - ${SN.vst.dia(x.data).replace(/\//g, '-')} ${x.tipo === 'final' ? 'final' : 'parcial'}`
+          : `${String(x.ordem || feitos).padStart(2, '0')} - ${x.cs_nova ? 'CS fora do cadastro' : x.id_cs}`;
+        const url = aerea ? await SN.vst.pdfApontamento(x, r, VR.producaoRota(r, (d.producao || []).filter(p => p.id_rota === r.id_rota && p.status_revisao !== 'REJEITADA')).totais, locais)
+          : await SN.vst.pdfFichaCs(x, r, locais);
+        if (url) pasta.file(nomeArq(nome) + '.pdf', bytesDe(url));
+        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
+      }
+      passo('Compactando…');
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeArq(`${r.id_rota} - completo`) + '.zip';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      SN.toast(`${r.id_rota}: ${itens.length + 1} PDF(s) no .zip (${(blob.size / 1048576).toFixed(1)} MB)${semFoto ? ` · ${semFoto} foto(s) não vieram do Drive` : ''}.`, semFoto ? 'alerta' : 'ok');
+    } catch (e) { SN.toast(e.message || String(e), 'erro'); }
+    finally { bt.disabled = false; bt.textContent = rotulo; }
   };
 
   // ═══════════════════════════ Base de CS ═══════════════════════════
