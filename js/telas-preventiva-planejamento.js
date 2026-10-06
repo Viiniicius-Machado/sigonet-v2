@@ -32,7 +32,7 @@
 
   const cfg = () => VR.normalizarConfig(d.config);
   const pintar = () => {
-    const abas = [['ROTAS', '🗺️ Rotas'], ['NOVA', form && form.modo_cs ? '✏️ CS da rota ' + form.id_rota : form && form.id_rota ? '✏️ Editar rota' : '➕ Nova rota'], ['BASE', '🕳️ Base de CS'], ['HIST', '📚 Histórico'], ['CFG', '⚙️ Configurações']];
+    const abas = [['ROTAS', '🗺️ Rotas'], ['NOVA', form && form.modo_cs ? '✏️ CS da rota ' + form.id_rota : form && form.id_rota ? '✏️ Editar rota' : '➕ Nova rota'], ['BASE', '🗂️ Base KML'], ['HIST', '📚 Histórico'], ['CFG', '⚙️ Configurações']];
     SN.casca('vst_planejamento', `
       <div class="cab-pagina"><div><h1>Preventiva · Planejamento</h1><p>Crie e despache rotas aéreas e subterrâneas. Ao despachar, o chamado Preventiva é criado sozinho e aparece na fila do técnico.</p></div></div>
       <div class="abas">${abas.map(([k, r]) => `<button class="aba ${aba === k ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>
@@ -127,6 +127,16 @@
   };
 
   // ═══════════════════════════ Nova / editar rota ═══════════════════════════
+  // Linhas do KMZ da rota aérea: o planejador vê cada uma e marca o que o técnico vai percorrer.
+  const aplicarMedicao = (f, m) => { if (!m || !(m.linhas || []).length) return; f.kmz_medicao = { metros: m.metros, linhas: m.linhas }; f.metros_previstos = m.metros; };
+  const htmlLinhasKmz = f => {
+    const m = f.kmz_medicao; if (!m || !m.linhas.length) return '';
+    const soRota = m.linhas.some(l => l.rota);
+    return `<details ${m.linhas.length <= 12 ? 'open' : ''} style="margin-top:6px"><summary class="small"><b>Linhas do KMZ</b>: ${SN.num(m.metros)} m em ${m.linhas.filter(l => l.conta).length} de ${m.linhas.length} linha(s)</summary>
+      <div class="small muted" style="margin:4px 0">${soRota ? 'O KMZ tem linha "Rota": só ela conta (os cabos desenhados por cima do mesmo caminho ficam de fora).' : 'Todas as linhas contam; linha repetida (mesmo traçado) conta uma vez.'} Marque o que o técnico vai percorrer.</div>
+      <table class="tab small"><tbody>${m.linhas.map((l, i) => `<tr><td style="width:28px"><input type="checkbox" data-kl="${i}" ${l.conta ? 'checked' : ''}></td>
+        <td>${esc(l.nome || '(sem nome)')}${l.repetida ? ' <span class="badge">repetida</span>' : ''}<div class="muted">${esc(l.pasta || '')}</div></td><td class="num nowrap">${SN.num(l.metros)} m</td></tr>`).join('')}</tbody></table></details>`;
+  };
   const novaRota = seg => ({ segmento: seg, cidade: '', prestador: '', tecnico: '', data_planejada: hoje(), data_limite: '', observacao: '',
     motivo: '', solicitante: '', notificacao: '', kmz_url: '', metros_previstos: '', cluster: '', cs_planejadas: [], extensao_km: '', cenario_esperado: { dono_duto: '', operadoras: [] } });
   // A extensão fica guardada em km (dashboard, medição, PDF); no formulário aparece em metros.
@@ -154,16 +164,18 @@
       <div class="linha-form">
         <div class="campo"><label>Motivo da preventiva *</label><select class="inp" data-f="motivo">${opcoes(c.motivos_aerea, f.motivo, 'Escolha…')}</select></div>
         <div class="campo"><label>Solicitante / área *</label><select class="inp" data-f="solicitante">${opcoes(c.solicitantes, f.solicitante, 'Escolha…')}</select></div>
-        <div class="campo"><label>Notificação / referência</label><input class="inp" data-f="notificacao" placeholder="ex.: notificação 189783-2026" value="${esc(f.notificacao)}"></div>
-        <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-f="metros_previstos" data-num="1" value="${esc(f.metros_previstos)}"></div>
+        <div class="campo"><label>Notificação / Protocolo</label><input class="inp" data-f="notificacao" placeholder="ex.: notificação 189783-2026 ou protocolo 143073" value="${esc(f.notificacao)}"></div>
+        <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-f="metros_previstos" data-num="1" value="${esc(f.metros_previstos)}">
+          <div class="small muted">${f.kmz_medicao ? 'Calculado pelas linhas do KMZ (pode ajustar).' : 'Preenchido sozinho ao anexar o KMZ.'}</div></div>
       </div>
       <div class="campo"><label>KMZ da rota (link) — ou envie o arquivo</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="inp" style="flex:1;min-width:240px" data-f="kmz_url" placeholder="https://… (Google Drive, My Maps…)" value="${esc(f.kmz_url)}">
           <label class="btn">📎 Enviar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label></div>
-        ${f.kmz_url ? `<div class="small"><a href="${esc(f.kmz_url)}" target="_blank" rel="noopener">abrir KMZ</a></div>` : ''}</div>`
+        ${f.kmz_url ? `<div class="small"><a href="${esc(f.kmz_url)}" target="_blank" rel="noopener">abrir KMZ</a>${f.kmz_medicao ? '' : ' · <a href="#" id="fKmzMedir">calcular os metros pelas linhas</a>'}</div>` : ''}
+        <div id="fKmzLinhas">${htmlLinhasKmz(f)}</div></div>`
       : `
       <div class="linha-form">
-        <div class="campo"><label>Cluster *</label><select class="inp" data-f="cluster">${opcoes(clusters, f.cluster, clusters.length ? 'Escolha…' : 'Importe a base de CS primeiro')}</select></div>
+        <div class="campo"><label>Cluster *</label><select class="inp" data-f="cluster">${opcoes(clusters, f.cluster, clusters.length ? 'Escolha…' : 'Importe a Base KML primeiro')}</select></div>
         <div class="campo"><label>Extensão da rota (metros) — automática</label><input class="inp" id="fKm" readonly tabindex="-1" style="background:var(--fundo2,#f3f4f1)" value="${metrosRota(f.extensao_km)}" placeholder="selecione as CS">
           <div class="small muted" id="fKmInfo">Soma em linha reta entre as CS, na ordem da rota.</div></div>
         <div class="campo"><label>Dono do duto (cenário esperado)</label><input class="inp" data-cen="dono_duto" value="${esc((f.cenario_esperado || {}).dono_duto || '')}"></div>
@@ -185,7 +197,9 @@
     SN.$$('[data-f]').forEach(i => {
       const k = i.dataset.f, ler = () => i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value;
       i.oninput = () => { f[k] = ler(); errosNaTela(); };
-      i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (k === 'cluster') { f.cs_planejadas = []; f.extensao_km = ''; } if (['prestador', 'cluster', 'cidade', 'kmz_url'].includes(k)) pintarForm(); else errosNaTela(); };
+      i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (k === 'cluster') { f.cs_planejadas = []; f.extensao_km = ''; }
+        if (k === 'kmz_url') { f.kmz_medicao = null; f.kmz_drive_id = ''; if (/drive\.google\.com/.test(f.kmz_url)) { pintarForm(); return medirLink(); } }
+        if (['prestador', 'cluster', 'cidade', 'kmz_url'].includes(k)) pintarForm(); else errosNaTela(); };
     });
     SN.$$('[data-cen]').forEach(i => i.oninput = () => { f.cenario_esperado = f.cenario_esperado || {}; f.cenario_esperado[i.dataset.cen] = i.value; });
     SN.$$('[data-op]').forEach(b => b.onclick = () => { const ops = (f.cenario_esperado = f.cenario_esperado || {}).operadoras = f.cenario_esperado.operadoras || [];
@@ -195,9 +209,15 @@
       const file = kmz.files && kmz.files[0]; if (!file) return;
       if (!f.cidade) return SN.toast('Informe a cidade antes de enviar o KMZ (ele é guardado na pasta da cidade).', 'erro');
       SN.toast('Enviando KMZ para o Drive…');
-      try { const r = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: f.cidade, dataUrl: await lerArquivo(file, true) }); f.kmz_url = r.url; f.kmz_drive_id = r.drive_id; SN.toast('KMZ enviado.', 'ok'); pintarForm(); }
+      try { const r = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: f.cidade, dataUrl: await lerArquivo(file, true) }); f.kmz_url = r.url; f.kmz_drive_id = r.drive_id;
+        aplicarMedicao(f, r.medicao); SN.toast(r.medicao && r.medicao.linhas.length ? `KMZ enviado: ${SN.num(f.metros_previstos)} m de rota.` : 'KMZ enviado (sem linhas para medir: informe os metros).', 'ok'); pintarForm(); }
       catch (e) { SN.toast(e.message, 'erro'); }
     };
+    // Link colado (Drive): mede pelo servidor quando o link muda ou no "calcular".
+    const medirLink = async () => { try { const r = await SN.vst.exec('VST_KMZ_MEDIR', { url: f.kmz_url, drive_id: f.kmz_drive_id }); aplicarMedicao(f, r.medicao); SN.toast(`${SN.num(f.metros_previstos)} m de rota pelo KMZ.`, 'ok'); pintarForm(); } catch (e) { SN.toast(e.message, 'erro'); } };
+    if (SN.$('#fKmzMedir')) SN.$('#fKmzMedir').onclick = ev => { ev.preventDefault(); medirLink(); };
+    SN.$$('[data-kl]').forEach(cb => cb.onchange = () => { const l = f.kmz_medicao.linhas[+cb.dataset.kl]; l.conta = cb.checked;
+      f.kmz_medicao.metros = VR.somaLinhasKml(f.kmz_medicao.linhas); f.metros_previstos = f.kmz_medicao.metros; pintarForm(); });
     if (!aerea && f.cluster) carregarCs(f);
     const salvar = async despachar => {
       const v = errosNaTela(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
@@ -377,7 +397,7 @@
     finally { bt.disabled = false; bt.textContent = rotulo; }
   };
 
-  // ═══════════════════════════ Base de CS ═══════════════════════════
+  // ═══════════════════════════ Base KML (CS e demais pontos) ═══════════════════════════
   const pintarBase = () => {
     const b = d.base || { total: 0, clusters: {} }, imp = (d.importacoes || []).slice().reverse();
     // Progresso por cluster (o cluster vem da rota em que a CS foi planejada/aprovada).
@@ -385,7 +405,7 @@
     const prog = {}; Object.values(VR.situacaoCs(d.rotas, d.vistorias)).forEach(x => { const cl = (rotaPor[x.id_rota] || {}).cluster; if (!cl) return;
       const y = prog[cl] = prog[cl] || { c: 0, r: 0 }; if (x.situacao === 'CONCLUIDA') y.c++; else y.r++; });
     SN.$('#pCorpo').innerHTML = `<div class="grid g2">
-      <div class="card"><h3>Importar base de CS</h3>
+      <div class="card"><h3>Importar base (KMZ, KML, CSV ou XLSX)</h3>
         <p class="small muted">CSV ou XLSX com colunas de ID da CS, cluster, latitude e longitude (cidade e endereço opcionais). Os nomes das colunas são reconhecidos sozinhos ou pelo mapeamento em Configurações. KMZ/KML: o nome do ponto vira o ID e a pasta vira o cluster.</p>
         <div class="linha-form"><div class="campo"><label>Versão da base *</label><input class="inp" id="bVer" placeholder="ex.: Tom v1 (out/2026)"></div>
           <div class="campo"><label>Cidade (se o arquivo não tiver)</label><input class="inp" id="bCid" list="lCid2"><datalist id="lCid2">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div>
@@ -704,7 +724,7 @@
         <div class="campo"><label>Solicitante *</label><select class="inp" data-t="solicitante">${opcoes(cf.solicitantes, r.solicitante, 'Escolha…')}</select></div>
         <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-t="metros_previstos" value="${esc(r.metros_previstos)}"></div>
         <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-t="data_limite" min="${esc(r.data_planejada)}" value="${esc(r.data_limite || '')}"><div class="small muted">Em branco = ${esc(SN.data(r.data_planejada + 'T12:00:00'))}</div></div></div>
-        <div class="campo"><label>Notificação / referência</label><input class="inp" data-t="notificacao" value="${esc(r.notificacao)}"></div>
+        <div class="campo"><label>Notificação / Protocolo</label><input class="inp" data-t="notificacao" value="${esc(r.notificacao)}"></div>
         <div class="campo"><label>Link do KMZ</label><div style="display:flex;gap:8px"><input class="inp" style="flex:1" data-t="kmz_url" placeholder="https://…" value="${esc(r.kmz_url)}">
           <label class="btn">📎 Arquivo<input type="file" id="tKmz" accept=".kmz,.kml" hidden></label></div></div>`;
       SN.$$('[data-t]', f).forEach(i => i.oninput = i.onchange = () => { r[i.dataset.t] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; });

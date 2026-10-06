@@ -98,7 +98,7 @@ SN.vst = SN.vst || {};
     doc.secao('Rota');
     doc.linha('Rota', `${rota.id_rota} · ${rota.cidade} · ${rota.regiao || ''}`);
     doc.linha('Motivo / solicitante', `${rota.motivo} · ${rota.solicitante}`);
-    if (rota.notificacao) doc.linha('Notificação', rota.notificacao);
+    if (rota.notificacao) doc.linha('Notificação / Protocolo', rota.notificacao);
     doc.linha('Prestador / técnico', `${rota.prestador} · ${a.tecnico || ''}`);
     if (rota.id_chamado) doc.linha('Chamado', rota.id_chamado);
     doc.linha('Metros previstos', SN.num(rota.metros_previstos) + ' m');
@@ -175,7 +175,7 @@ SN.vst = SN.vst || {};
     doc.linha('Onde', aerea ? `${rota.cidade || ''}${rota.regiao ? ' · ' + rota.regiao : ''}` : `${rota.cidade || ''} · Cluster ${rota.cluster || '—'} · previsto ${SN.num(Math.round((Number(rota.extensao_km) || 0) * 1000))} m`);
     if (aerea) {
       doc.linha('Motivo / solicitante', `${rota.motivo || '—'} · ${rota.solicitante || '—'}`);
-      if (rota.notificacao) doc.linha('Notificação', rota.notificacao);
+      if (rota.notificacao) doc.linha('Notificação / Protocolo', rota.notificacao);
       doc.linha('Metros previstos', SN.num(rota.metros_previstos) + ' m');
     }
     doc.linha('Prestador / técnico', `${rota.prestador || '—'} · ${rota.tecnico || 'qualquer técnico do prestador'}`);

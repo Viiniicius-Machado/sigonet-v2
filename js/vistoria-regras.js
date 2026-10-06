@@ -1099,6 +1099,44 @@ var VR = (function () {
     return { linhas: linhas, ignorados: ignorados, outros: outros };
   };
 
+  // Rota aérea: comprimento das LINHAS do KML (LineString, inclusive dentro de MultiGeometry),
+  // somando trecho a trecho pela distância real (haversine). Pontos e áreas não entram.
+  // Devolve { metros, linhas: [{ nome, pasta, metros, rota, repetida, conta }] } — uma entrada por Placemark com linha.
+  // Os KMZ da preventiva trazem a linha "Rota" (o caminho a percorrer) E os cabos desenhados por cima
+  // do mesmo trajeto: se houver linha chamada "Rota" (no nome ou na pasta), só elas contam; senão,
+  // contam todas. Linha repetida (mesmo traçado) conta uma vez. "conta" = entra na soma.
+  R.medirKml = function (texto) {
+    var t = String(texto || ''), re = /<(\/?)(Folder|Placemark)\b[^>]*>/gi, pastas = [], linhas = [], m, vistos = {};
+    while ((m = re.exec(t))) {
+      if (m[2].toLowerCase() === 'folder') {
+        if (m[1]) { pastas.pop(); continue; }
+        var resto = t.slice(re.lastIndex), prox = resto.search(/<(Folder|Placemark|\/Folder)\b/i);
+        pastas.push(tag(prox < 0 ? resto : resto.slice(0, prox), 'name'));
+        continue;
+      }
+      if (m[1]) continue;
+      var fim = t.indexOf('</Placemark>', re.lastIndex); if (fim < 0) break;
+      var pm = t.slice(re.lastIndex, fim); re.lastIndex = fim + 12;
+      var reL = /<LineString\b[\s\S]*?<coordinates>([\s\S]*?)<\/coordinates>/gi, l, metros = 0, achou = false, assinatura = [];
+      while ((l = reL.exec(pm))) {
+        achou = true;
+        var pts = desXml(l[1]).split(/\s+/).filter(Boolean).map(function (p) { var x = p.split(','); return { lng: Number(x[0]), lat: Number(x[1]) }; })
+          .filter(function (p) { return isFinite(p.lat) && isFinite(p.lng); });
+        for (var i = 1; i < pts.length; i++) metros += R.distanciaM(pts[i - 1].lat, pts[i - 1].lng, pts[i].lat, pts[i].lng);
+        if (pts.length) assinatura.push([pts[0].lat.toFixed(4) + ',' + pts[0].lng.toFixed(4), pts[pts.length - 1].lat.toFixed(4) + ',' + pts[pts.length - 1].lng.toFixed(4)].sort().join('>')); // nos dois sentidos
+      }
+      if (!achou) continue;
+      var nome = tag(pm.replace(/<ExtendedData[\s\S]*?<\/ExtendedData>/i, ''), 'name'), pasta = pastas.filter(Boolean).join(' / ');
+      var chave = assinatura.sort().join('|') + '|' + Math.round(metros / 5);
+      linhas.push({ nome: nome, pasta: pasta, metros: Math.round(metros), rota: /(^|[^a-z])rota([^a-z]|$)/i.test(nome + ' ' + (pastas[pastas.length - 1] || '')), repetida: !!vistos[chave] });
+      vistos[chave] = true;
+    }
+    var temRota = linhas.some(function (x) { return x.rota; });
+    linhas.forEach(function (x) { x.conta = !x.repetida && (!temRota || x.rota) && x.metros > 0; });
+    return { metros: R.somaLinhasKml(linhas), linhas: linhas, so_rota: temRota };
+  };
+  R.somaLinhasKml = function (linhas) { return (linhas || []).reduce(function (s, x) { return s + (x.conta ? x.metros : 0); }, 0); };
+
   // KMZ de rede subterrânea (padrão UPIX/NetTurbo) → CS da base, para a prévia da importação.
   // - entram só os pontos das pastas marcadas (padrão: pasta cujo nome começa com "CS");
   // - cluster: o nome do arquivo (padrão) ou a pasta acima da pasta de CS;

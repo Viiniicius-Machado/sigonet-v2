@@ -159,7 +159,7 @@
   const htmlApontamento = (a, r, d) => {
     const doRota = (d.producao || []).filter(x => x.id_rota === a.id_rota && x.status_revisao !== 'REJEITADA');
     const p = VR.producaoRota(r, doRota), fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    return secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação', r.notificacao] : null,
+    return secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação / Protocolo', r.notificacao] : null,
         ['Prestador / técnico', `${r.prestador} · ${a.tecnico || ''}`], ['Previsto', SN.num(r.metros_previstos) + ' m'], ['KMZ', r.kmz_url || '—']], [])
       + secao(`Apontamento ${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'} · ${SN.vst.dia(a.data)}`, [
         ...L.producao_aerea.map(c => [c.rot, SN.num(Number(a[c.k]) || 0)]), a.observacao ? ['Observação', a.observacao] : null], [])
