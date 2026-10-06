@@ -338,11 +338,13 @@
         <label class="btn">📂 Escolher arquivo (CSV, XLSX, KMZ, KML)<input type="file" id="bArq" accept=".csv,.xlsx,.xls,.kmz,.kml" hidden></label>
         <div id="bPrevia" style="margin-top:10px"></div></div>
       <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> CS em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
-        ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
-          return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td></tr>`; }).join('')}</tbody></table>
+        ${Object.keys(b.clusters).length ? `<table class="tab small"><thead><tr><th>Cluster</th><th class="num">CS</th><th class="num">Concluídas</th><th class="num">Em rota</th><th class="num">Feito</th><th></th></tr></thead><tbody>${Object.entries(b.clusters).sort().map(([k, n]) => { const x = prog[k] || { c: 0, r: 0 };
+          return `<tr><td>${esc(k)}</td><td class="num">${SN.num(n)}</td><td class="num">${SN.num(x.c)}</td><td class="num">${SN.num(x.r)}</td><td class="num"><b>${n ? Math.round(100 * x.c / n) : 0}%</b></td>
+            <td>${k === '(sem cluster)' ? '' : `<button class="btn sm" data-rencl="${esc(k)}" title="Renomear o cluster em todo o sistema">✏️</button>`}</td></tr>`; }).join('')}</tbody></table>
           <p class="small muted">Concluída = vistoria aprovada na revisão. CS em rota não entra em outra rota; concluída só com "Forçar".</p>` : ''}
         <h4 style="margin-top:12px">Importações</h4>${imp.length ? `<table class="tab small"><thead><tr><th>Quando</th><th>Versão</th><th>Arquivo</th><th class="num">CS</th><th>Por</th></tr></thead><tbody>
           ${imp.map(x => `<tr><td class="nowrap">${SN.dt(x.data)}</td><td>${esc(x.versao)}</td><td>${esc(x.arquivo || '')}</td><td class="num">${SN.num(x.qtd)}</td><td>${esc(x.por)}</td></tr>`).join('')}</tbody></table>` : '<p class="muted small">Nenhuma ainda.</p>'}</div></div>`;
+    SN.$$('[data-rencl]').forEach(b => b.onclick = () => renomearCluster(b.dataset.rencl, Object.keys(d.base.clusters)));
     SN.$('#bArq').onchange = async e => {
       const file = e.target.files && e.target.files[0]; if (!file) return;
       const el = SN.$('#bPrevia'); el.innerHTML = '<span class="muted small">Lendo arquivo…</span>';
@@ -362,6 +364,31 @@
     };
     SN.$('#bCid').onchange = () => { if (previa) { previa.r = VR.normalizarBase(previa.linhas, previa.imp, SN.$('#bCid').value); pintarPrevia(); } };
     if (previa) pintarPrevia();
+  };
+  // Renomear o cluster: o servidor troca o nome na base, nas rotas (até as concluídas), nas
+  // vistorias, no chamado de cada rota e na LPU/Materiais/Fibra deles (até as pagas).
+  const renomearCluster = async (de, existentes) => {
+    const nRotas = d.rotas.filter(r => r.cluster === de).length;
+    const novo = await SN.modal({ titulo: 'Renomear cluster ' + de,
+      corpo: `<p class="small">O nome muda em <b>todo o processo</b>: base de CS, ${SN.num(nRotas)} rota(s) (inclusive concluídas), vistorias, chamados, LPU, Materiais e Fibra dessas rotas (inclusive aprovadas e pagas), relatórios e PDFs gerados a partir de agora. A pasta das fotos no Drive também é renomeada.</p>
+        <p class="small muted">PDFs já salvos no Drive (fichas de CS) guardam o nome antigo no próprio arquivo.</p>
+        <div class="campo"><label>Nome novo *</label><input class="inp" id="mNome" value="${esc(de)}"></div><div id="mAviso" class="small"></div>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Renomear', cls: 'prim', acao: m => { const v = SN.$('#mNome', m).value.trim().replace(/\s+/g, ' ');
+        if (!v) { SN.toast('Informe o nome novo.', 'erro'); return false; } if (v === de) { SN.toast('O nome novo é igual ao atual.', 'erro'); return false; } return v; } }],
+      aoAbrir: m => { const i = SN.$('#mNome', m); i.focus(); i.select();
+        i.oninput = () => { SN.$('#mAviso', m).innerHTML = existentes.includes(i.value.trim()) && i.value.trim() !== de ? '<span style="color:var(--erro)">Já existe um cluster com esse nome: os dois vão virar um só.</span>' : ''; }; } });
+    if (!novo) return;
+    const juntar = existentes.includes(novo);
+    if (juntar && !await SN.confirmar('Juntar clusters', `O cluster <b>${esc(de)}</b> vai se juntar ao <b>${esc(novo)}</b>. Isso não se desfaz sozinho. Continuar?`, 'Juntar', 'perigo')) return;
+    try {
+      const r = await SN.vst.exec('VST_RENOMEAR_CLUSTER', { de, para: novo, juntar });
+      const n = r.n || {};
+      SN.toast(`Cluster ${de} → ${novo}: ${SN.num(n.cs || 0)} CS, ${SN.num(n.rotas || 0)} rota(s), ${SN.num(n.chamados || 0)} chamado(s), ${SN.num((n.lpus || 0) + (n.materiais || 0) + (n.fibras || 0))} LPU/Materiais/Fibra.`, 'ok');
+      delete csCache[de]; delete csCache[novo];
+      if (form && form.cluster === de) form.cluster = novo;
+      if (SN.sincronizar) SN.sincronizar().catch(() => { });
+      await recarregar();
+    } catch (e) { SN.toast(e.message, 'erro'); }
   };
   const pintarPrevia = () => {
     const el = SN.$('#bPrevia'); if (!el || !previa) return;
