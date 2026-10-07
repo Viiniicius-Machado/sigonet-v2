@@ -586,3 +586,7 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 /* KPIs do Financeiro da LPU: colunas largas o bastante para valores em R$ */
 .kpis-fin{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
 .kpis-fin .kpi{padding:12px}
+/* Palavra longa sem espaço (ex.: "MUTIRÃO/REORDENAMENTO/FAXINA") quebra dentro do card em vez de vazar.
+   break-word só quebra quando não cabe e não muda a largura das colunas de tabela. */
+.card, .coluna, .os, .kpi, .aviso, .est-chip, .modal{overflow-wrap:break-word}
+.coluna, .os{min-width:0}
