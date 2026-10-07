@@ -11,12 +11,21 @@
   let P = { per: 'mes', ref: '' }, filtro = { seg: '', sit: '', prest: '' }, ver = { calor: true, pontos: false }, mapa = null;
   const num = v => v !== '' && v != null && isFinite(Number(v));
   const carregarCss = href => { if (document.querySelector(`link[href="${href}"]`)) return; const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = href; document.head.appendChild(l); };
-  const carregarJs = src => new Promise((ok, falha) => { if (document.querySelector(`script[src="${src}"]`)) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => falha(new Error('Não foi possível carregar o mapa (sem internet?).')); document.head.appendChild(s); });
-  const carregarLeaflet = async () => {
+  // Um carregamento só por biblioteca: quem chega enquanto ela ainda está baixando espera a mesma promessa
+  // (a tela pinta duas vezes ao abrir; antes a 2ª seguia sem esperar e dava "sem internet").
+  const scripts = {};
+  const carregarJs = src => scripts[src] || (scripts[src] = new Promise((ok, falha) => {
+    const s = document.createElement('script'); s.src = src; s.onload = ok;
+    s.onerror = () => { delete scripts[src]; s.remove(); falha(new Error('Não foi possível carregar o mapa (sem internet?).')); };
+    document.head.appendChild(s);
+  }));
+  let leaflet = null;
+  const carregarLeaflet = () => leaflet || (leaflet = (async () => {
     carregarCss('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css');
     if (!window.L) await carregarJs('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js');
-    if (!L.heatLayer) await carregarJs('https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js');
-  };
+    if (!window.L.heatLayer) await carregarJs('https://cdnjs.cloudflare.com/ajax/libs/leaflet.heat/0.2.0/leaflet-heat.js');
+  })().catch(e => { leaflet = null; throw e; }));
+
 
   // Pontos de atuação. Subterrânea: um por CS vistoriada (GPS de campo). Aérea: a rota inteira, ao longo
   // do traçado do KMZ (rota.tracado); sem traçado, cai no GPS das fotos (foto da galeria não tem GPS).
@@ -148,6 +157,7 @@
     SN.$('#mTela').onclick = () => { const c = SN.$('#mCaixa'); (c.requestFullscreen || c.webkitRequestFullscreen || (() => { })).call(c); };
     document.onfullscreenchange = () => { const cheio = !!document.fullscreenElement, m = SN.$('#mMapa'); if (!m) return; m.style.height = cheio ? '100vh' : '620px'; setTimeout(() => mapa && mapa.invalidateSize(), 150); };
   };
+  SN.vst.carregarLeaflet = carregarLeaflet; // também usado pelo mapa da rota no app do técnico (aérea)
   SN.vst.MENU.push({ id: 'vst_mapa', tela: 'vst_dashboard', rot: 'Mapa de atuação', ico: '🗺️', href: '#/vst/mapa' });
   if (SN.vst.registrarMenu) SN.vst.registrarMenu();
 })();

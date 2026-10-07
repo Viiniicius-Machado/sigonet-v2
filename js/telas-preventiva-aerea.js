@@ -38,7 +38,7 @@
     if (inicial && !A.form) { const rasc = locais.find(l => l.status_local === 'rascunho'); A.form = rasc ? rasc.dados : null; }
   };
   const ligarOuvinte = () => { if (!A.desligar) A.desligar = SN.VL.aoMudar(aoMudar); };
-  const sair = () => { if (A && A.desligar) { A.desligar(); A.desligar = null; } SN.VF.desligarGps(); };
+  const sair = () => { if (A && A.desligar) { A.desligar(); A.desligar = null; } if (A) clearInterval(A.timerEu); SN.VF.desligarGps(); };
   window.addEventListener('hashchange', () => { if (A && !aberta()) sair(); });
   const aoMudar = async () => {
     if (!aberta()) return sair();
@@ -90,13 +90,56 @@
         ${r.pontos_base.map(p => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d"><span class="badge ${p.tipo_ponto === 'CEO' ? 'info' : ''}">${esc(p.tipo_ponto)}</span> ${esc(p.id_cs)}</div>
           <div class="c">${esc(p.endereco || '')}${p.descricao ? `<div class="muted" style="white-space:pre-line">${esc(p.descricao.slice(0, 200))}</div>` : ''}</div></div>
           <a class="btn sm" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${p.lat},${p.lng}">Mapa</a></div>`).join('')}</details></div>` : ''}
+      <div id="aMapaCard"></div>
       ${A.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: trabalhando com os dados salvos no aparelho. O apontamento fica guardado e sobe quando a conexão voltar.</div>' : ''}
       <div id="aProg"></div>
       ${SN.vst.cartaoOs ? SN.vst.cartaoOs(r, {}) : ''}
       <div class="card" style="margin-bottom:10px"><h3>Apontamentos</h3><div id="aLista"></div></div>
       <div id="aForm"></div>`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => SN.navegar(el.dataset.os));
-    pintarProgresso(); pintarLista(); pintarForm();
+    pintarProgresso(); pintarLista(); pintarForm(); pintarMapa();
+  };
+
+  // ─────────── Mapa da rota: traçado do KMZ, CEO/pontos da base no caminho e fotos com GPS ───────────
+  // Rota antiga sem traçado guardado: pede ao servidor (ele lê o KMZ do Drive). "Minha posição" usa o GPS
+  // que a tela já acompanha (SN.VF.posicao). Sem internet o fundo não carrega, mas o traçado aparece.
+  const pintarMapa = async () => {
+    const el = SN.$('#aMapaCard'); if (!el || !A) return;
+    const r = A.rota;
+    if (!(r.tracado || []).length && r.kmz_url && !A.pediuTracado && navigator.onLine) {
+      A.pediuTracado = true;
+      try { const x = await SN.vst.exec('VST_TRACADOS', { ids: [r.id_rota] }); if ((x.tracados || {})[r.id_rota]) r.tracado = x.tracados[r.id_rota]; else A.semTracado = (x.falhas || {})[r.id_rota] || ''; } catch (e) { }
+      if (!aberta() || SN.$('#aMapaCard') !== el) return;
+    }
+    const tr = r.tracado || [], pb = r.pontos_base || [];
+    const fotos = []; lista().forEach(x => (x.dados.fotos || []).forEach(f => { const l = A.fotosLocais[f.id_foto], m = (l && l.meta) || f; const lat = Number(m.lat), lng = Number(m.lng);
+      if (f.tipo_foto !== 'ficha_pdf' && m.lat !== '' && m.lat != null && isFinite(lat) && isFinite(lng)) fotos.push({ lat, lng, tipo: f.tipo_foto }); }));
+    if (!tr.length && !pb.length && !fotos.length) { el.innerHTML = r.kmz_url ? `<div class="aviso info small" style="margin-bottom:10px">O mapa da rota aparece quando o KMZ é um arquivo (o planejamento pode reenviar). Use "Abrir rota (KMZ)" acima.</div>` : ''; return; }
+    el.innerHTML = `<div class="card" style="margin-bottom:10px;padding:10px" id="aMapaBox"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px">
+        <b>Mapa da rota</b><span><button class="btn sm" id="aMinha">Minha posição</button> <button class="btn sm" id="aCheia">Tela cheia</button></span></div>
+      <div id="aMapa" style="height:300px;border-radius:8px;overflow:hidden;background:#eef0ea"></div>
+      <div class="small muted" style="margin-top:6px"><span style="color:#3d4f11">━</span> rota${pb.length ? ` · <span style="color:#1f5fd1">●</span> CEO/ponto da base (${pb.length})` : ''}${fotos.length ? ` · <span style="color:#e08a00">●</span> fotos (${fotos.length})` : ''} · <span style="color:#2a7de1">●</span> você</div></div>`;
+    try { await SN.vst.carregarLeaflet(); } catch (e) { SN.$('#aMapa').innerHTML = '<div class="small muted" style="padding:12px">Sem internet para carregar o mapa agora.</div>'; return; }
+    if (!aberta() || !document.body.contains(el)) return;
+    const LF = window.L; // aqui "L" são as listas da Preventiva (VR_LISTAS)
+    if (A.mapa) { try { A.mapa.remove(); } catch (e) { } }
+    const mapa = A.mapa = LF.map('aMapa', { preferCanvas: true, zoomControl: true });
+    LF.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mapa);
+    const lim = [];
+    tr.forEach(l => { LF.polyline(l, { color: '#3d4f11', weight: 5, opacity: 0.85 }).addTo(mapa); l.forEach(p => lim.push(p)); });
+    pb.forEach(p => { LF.circleMarker([p.lat, p.lng], { radius: 7, weight: 2, color: '#fff', fillColor: '#1f5fd1', fillOpacity: 0.95 })
+      .bindPopup(`<b>${esc(p.tipo_ponto)} ${esc(p.id_cs)}</b>${p.descricao ? '<br>' + esc(p.descricao.slice(0, 160)) : ''}<br><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}">Ir até aqui</a>`).addTo(mapa); lim.push([p.lat, p.lng]); });
+    fotos.forEach(f => { LF.circleMarker([f.lat, f.lng], { radius: 4, weight: 1, color: '#fff', fillColor: '#e08a00', fillOpacity: 0.9 }).addTo(mapa); lim.push([f.lat, f.lng]); });
+    if (lim.length) mapa.fitBounds(LF.latLngBounds(lim).pad(0.12), { maxZoom: 17 }); else mapa.setView([-22.9, -47.06], 12);
+    // Minha posição: ponto azul atualizado a cada 5 s enquanto a tela está aberta.
+    let eu = null;
+    const atualizarEu = centrar => { const p = SN.VF.posicao; if (!p || !A || A.mapa !== mapa) return false;
+      if (!eu) eu = LF.circleMarker([p.lat, p.lng], { radius: 7, weight: 3, color: '#fff', fillColor: '#2a7de1', fillOpacity: 1 }).addTo(mapa); else eu.setLatLng([p.lat, p.lng]);
+      if (centrar) mapa.setView([p.lat, p.lng], Math.max(mapa.getZoom(), 17)); return true; };
+    atualizarEu(false); clearInterval(A.timerEu); A.timerEu = setInterval(() => { if (!aberta()) return clearInterval(A.timerEu); atualizarEu(false); }, 5000);
+    SN.$('#aMinha').onclick = () => { if (!atualizarEu(true)) SN.toast('Aguardando o GPS do celular… permita a localização para o SigoNet.', 'erro'); };
+    SN.$('#aCheia').onclick = () => { const c = SN.$('#aMapaBox'); (c.requestFullscreen || c.webkitRequestFullscreen || (() => { })).call(c); };
+    document.onfullscreenchange = () => { const m = SN.$('#aMapa'); if (!m) return; m.style.height = document.fullscreenElement ? 'calc(100vh - 70px)' : '300px'; setTimeout(() => A && A.mapa && A.mapa.invalidateSize(), 150); };
   };
 
   const pintarProgresso = () => {
