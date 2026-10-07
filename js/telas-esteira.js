@@ -61,7 +61,7 @@
       const faixas = []; cs.forEach(c => { const ini = ms(c.tempos.atribuicao || c.tempos.abertura), fim = ms(fimAtendimento(c)) || agora; let k = faixas.findIndex(f => f <= ini); if (k < 0) { k = faixas.length; faixas.push(0); } faixas[k] = fim; c._faixa = k; });
       const alt = Math.max(1, faixas.length) * 26 + 4;
       return `<div class="est-linha"><div class="est-nome"><span class="est-dot dot-${cls}"></span><div><b>${esc(SN.nomeExibicao ? SN.nomeExibicao(tc.nome) : tc.nome)}</b>${cs.length ? ` <span class="muted">(${cs.filter(c => !SN.STATUS[c.status].aberto || c.status === 'CONCLUIDO_TECNICO').length}/${cs.length})</span>` : ''}<div class="muted">${txt}</div></div></div>
-        <div class="est-trilho" style="height:${alt}px">${cs.map(c => `<div style="position:absolute;left:0;right:0;top:${2 + c._faixa * 26}px;height:24px">${bloco(c)}</div>`).join('')}</div></div>`; };
+        <div class="est-trilho" style="height:${alt}px">${cs.map(c => `<div class="est-faixa" style="position:absolute;left:0;right:0;top:${2 + c._faixa * 26}px;height:24px">${bloco(c)}</div>`).join('')}</div></div>`; };
     const naoAtr = lista.filter(c => c.status === 'NAO_ATRIBUIDO');
     const horas = []; for (let h = h0; h <= h1; h++) horas.push(h);
     const ehHoje = dia === hojeIso;
@@ -123,5 +123,21 @@
       SN.diaEsteira = n === 0 ? '' : SN.dataIsoLocal(new Date(new Date(base + 'T12:00:00').getTime() + n * 864e5)); if (SN.diaEsteira === SN.dataIsoLocal(new Date())) SN.diaEsteira = ''; SN.render(); });
     const bt = SN.$('[data-esttodos]'); if (bt) bt.onclick = () => { SN.esteiraTodos = !SN.esteiraTodos; SN.render(); };
     SN.$$('.est-os[data-id], .est-chip[data-id]').forEach(el => el.onclick = () => SN.navegar('#/chamado/' + el.dataset.id));
+    SN.arrumarFaixas();
+    if (!SN._ouveResizeEst) { SN._ouveResizeEst = true; let t; window.addEventListener('resize', () => { clearTimeout(t); t = setTimeout(SN.arrumarFaixas, 150); }); }
+  };
+  // Empilhamento pelo tamanho real na tela: cada chamado ocupa da ponta das barras até o fim do
+  // nome do cliente; dois chamados só dividem a faixa se nem as barras nem os textos se encostam.
+  SN.arrumarFaixas = () => {
+    SN.$$('.est-trilho').forEach(tr => {
+      const base = tr.getBoundingClientRect().left, itens = [...tr.querySelectorAll(':scope > .est-faixa')];
+      if (!itens.length) return;
+      const ext = itens.map(el => { let a = Infinity, b = -Infinity;
+        el.querySelectorAll('.est-seg, .est-rot, .est-prev').forEach(x => { const r = x.getBoundingClientRect(); if (!r.width) return; a = Math.min(a, r.left - base); b = Math.max(b, r.right - base); });
+        return { el, a, b }; }).sort((x, y) => x.a - y.a);
+      const fins = [];
+      ext.forEach(x => { let k = fins.findIndex(f => f + 8 <= x.a); if (k < 0) { k = fins.length; fins.push(0); } fins[k] = x.b; x.el.style.top = (2 + k * 26) + 'px'; });
+      tr.style.height = (Math.max(1, fins.length) * 26 + 4) + 'px';
+    });
   };
 })();

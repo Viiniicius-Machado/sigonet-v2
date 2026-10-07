@@ -166,7 +166,8 @@ SN.rota('/tec/os/:id', id => {
           <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço e lat/lng (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
           <label class="btn" title="Fotos da galeria ou PDF, sem marca d'água">🖼 Galeria / arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
         <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço e coordenadaso.</p>
-        <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar RFO</button>
+        <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar relatório</button>
+        <div class="small muted center" id="rfoAuto" style="margin-top:4px">O relatório é salvo automaticamente enquanto você escreve.</div>
       </div>` : ''}
     ${libera ? `<div class="card" style="margin-top:12px"><h3>Apontamentos</h3>
       <p class="small muted">Cada um tem vida própria: salvar fecha a tela e segue para a gestão, sem prender o chamado.</p>
@@ -297,7 +298,30 @@ SN.rota('/tec/os/:id', id => {
   };
   const bR = SN.$('#bSalvarRfo');
   if (bR) {
-    bR.onclick = () => { salvarRfo(); SN.hist(c, 'RFO salvo', ''); SN.log('SALVAR_RFO', c.id, ''); SN.salvar(); SN.toast('RFO salvo.', 'ok'); };
+    bR.onclick = () => { clearTimeout(tAuto); salvarRfo(); SN.hist(c, 'Relatório salvo', ''); SN.log('SALVAR_RFO', c.id, ''); SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); SN.toast('Relatório salvo.', 'ok'); };
+    // Salvamento automático: a sincronização redesenha a tela quando nenhum campo está em foco
+    // (teclado fechado, tela rolada), e o app pode ser fechado a qualquer hora. Por isso o que
+    // o técnico escreve vai para o chamado enquanto digita, ao sair de cada campo e ao sair do app.
+    let tAuto = null;
+    const aqui = () => bR.isConnected; // ainda é a tela deste chamado (o botão some quando a tela troca)
+    const autoSalvar = ja => {
+      clearTimeout(tAuto);
+      const f = () => { if (!aqui()) return; salvarRfo(); SN.salvar(); if (ja === 'saida' && SN.guardarLocal) SN.guardarLocal(true);
+        const el = SN.$('#rfoAuto'); if (el) el.textContent = 'Salvo automaticamente às ' + SN.hora(SN.agora()) + '.'; };
+      ja ? f() : (tAuto = setTimeout(f, 800));
+    };
+    const card = bR.closest('.card');
+    card.addEventListener('input', () => autoSalvar());
+    card.addEventListener('change', () => autoSalvar());
+    card.addEventListener('focusout', () => autoSalvar(true));
+    card.addEventListener('click', ev => { if (ev.target.closest('[data-ceo],[data-ceotipo]')) autoSalvar(); });
+    SN._rfoSaida = () => autoSalvar('saida');
+    if (!SN._ouveSaidaRfo) {
+      SN._ouveSaidaRfo = true;
+      const sair = () => { if (SN._rfoSaida) SN._rfoSaida(); };
+      document.addEventListener('visibilitychange', () => { if (document.hidden) sair(); });
+      window.addEventListener('pagehide', sair);
+    }
     SN.$('#inFoto').onchange = async ev => {
       salvarRfo();
       const arqs = [...ev.target.files]; ev.target.value = '';
