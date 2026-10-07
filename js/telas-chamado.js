@@ -168,6 +168,7 @@ SN.lerMascara = txt => {
 
 // ═══════════════════════════ Chamados (kanban NOC) ═══════════════════════════
 SN.filtroTipoChamados = 'Todos';
+SN.visaoChamados = (() => { try { return localStorage.getItem('sigonet_v2_visao_chamados') || 'quadro'; } catch (e) { return 'quadro'; } })();
 SN.rota('/chamados', () => {
   const tipos = ['Todos', ...new Set(MATRIZ_SLA.map(m => m.tipo))];
   const hoje = SN.agora().slice(0, 10);
@@ -199,9 +200,10 @@ SN.rota('/chamados', () => {
       <div class="acoes"><button class="btn" id="btnElleven" title="Simula uma OS recebida do ERP Elleven via webhook">⤓ Receber OS do Elleven</button>
         <button class="btn prim" id="btnNova">+ Nova OS</button></div></div>
     ${SN.htmlFilaValidacao('NOC', true)}${SN.htmlFilaValidacao('OEM', true)}
-    <div class="abas">${tipos.map(t => `<button class="aba ${t === SN.filtroTipoChamados ? 'ativa' : ''}" data-t="${t}">${t}<span class="n">${cont(t)}</span></button>`).join('')}</div>
-    <div class="kanban">${cols.map(([nome, f]) => { const itens = lista.filter(f).sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
-      return `<div class="coluna"><h4>${nome}<span class="badge">${itens.length}</span></h4>${itens.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="abas" style="flex:1">${tipos.map(t => `<button class="aba ${t === SN.filtroTipoChamados ? 'ativa' : ''}" data-t="${t}">${t}<span class="n">${cont(t)}</span></button>`).join('')}</div>
+      ${SN.htmlLinhaTempo ? `<div class="chips" style="margin-bottom:8px"><button class="chip ${SN.visaoChamados !== 'linha' ? 'sel' : ''}" data-visao="quadro">Quadro</button><button class="chip ${SN.visaoChamados === 'linha' ? 'sel' : ''}" data-visao="linha">Linha do tempo</button></div>` : ''}</div>
+    ${SN.visaoChamados === 'linha' && SN.htmlLinhaTempo ? SN.htmlLinhaTempo(lista, despachaveis) : `<div class="kanban">${cols.map(([nome, f]) => { const itens = lista.filter(f).sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
+      return `<div class="coluna"><h4>${nome}<span class="badge">${itens.length}</span></h4>${itens.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>`}
     <div class="card" style="margin-top:16px"><div class="card-tit"><h3>Mão de obra hoje</h3><span class="muted small">Titulares de dupla representam a equipe</span></div>
       <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico / equipe</th><th>Empresa</th><th>Frente</th><th>Situação</th><th class="num">OS em aberto</th></tr></thead><tbody>
       ${despachaveis.sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => { const ind = SN.indisponivel(t.nome); const carga = SN.cargaAberta(t.nome);
@@ -212,6 +214,9 @@ SN.rota('/chamados', () => {
       </tbody></table></div></div>`);
   SN.ligarValidacao();
   SN.$$('.aba[data-t]').forEach(b => b.onclick = () => { SN.filtroTipoChamados = b.dataset.t; SN.render(); });
+  // Quadro (colunas) ou Linha do tempo por técnico (estilo Dispatch Console do Oracle). Lembra a escolha no aparelho.
+  SN.$$('[data-visao]').forEach(b => b.onclick = () => { SN.visaoChamados = b.dataset.visao; try { localStorage.setItem('sigonet_v2_visao_chamados', SN.visaoChamados); } catch (e) { } SN.render(); });
+  if (SN.ligarLinhaTempo && SN.visaoChamados === 'linha') SN.ligarLinhaTempo();
   SN.$$('.os').forEach(o => o.onclick = () => SN.navegar('#/chamado/' + o.dataset.id));
   SN.$('#btnNova').onclick = () => SN.novaOS();
   SN.$('#btnElleven').onclick = () => SN.novaOS({ origem: 'Elleven', motivo: 'POSSÍVEL ROMPIMENTO', cliente: 'CLIENTE EXEMPLO LTDA', etiqueta: 'AB12CD34',
