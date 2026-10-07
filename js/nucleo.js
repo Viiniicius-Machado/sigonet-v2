@@ -863,7 +863,7 @@ window.addEventListener('hashchange', () => SN.render());
 SN.MENU = [
   { grupo: 'Operação' },
   { tela: 'inicio', rot: 'Início', ico: '🏠', href: '#/inicio' },
-  { tela: 'chamados', rot: 'Chamados (NOC)', ico: '📞', href: '#/chamados' },
+  { tela: 'chamados', rot: 'Esteira', ico: '📞', href: '#/chamados' },
   { grupo: 'Gestões vinculadas' },
   { tela: 'lpu', rot: 'Gestão de LPU', ico: '📄', href: '#/lpu' },
   { tela: 'servicedesk', rot: 'Service Desk', ico: '🎧', href: '#/servicedesk' },

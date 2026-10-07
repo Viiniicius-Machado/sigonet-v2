@@ -63,10 +63,41 @@ SN.rota('/portal', () => {
   const tecs = Object.entries(porTec).sort((a, b) => b[1].n - a[1].n);
   // Financeiro por conta (LPU de prestador contabilizada/em pagamento/paga no ciclo do mês)
   const lpusMes = d.lpus.filter(l => SN.cicloDe(l) === f.mes && (!f.emp || l.cab.empresa === f.emp));
-  const gastoConta = cod => lpusMes.filter(l => l.cab.conta === cod && ['CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'].includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
   const [ano, mm] = f.mes.split('-').map(Number), diasMes = new Date(ano, mm, 0).getDate();
   const hojeMes = SN.agora().slice(0, 7) === f.mes ? new Date().getDate() : diasMes;
   const somaSt = st => lpusMes.filter(l => l.status === st).reduce((s, l) => s + SN.valorLpu(l), 0);
+  // ── Financeiro da LPU no ciclo (só prestador tem valor; CLT entra em h·h) ──
+  // lançado = tudo menos reprovada · aprovado = contabilizada/em pagamento/paga · saldo = aprovado ainda não pago
+  const APROV = ['CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'], PIPE = ['AGUARDANDO_LIDER', 'NO_SERVICE_DESK'];
+  const lancadas = lpusMes.filter(l => l.status !== 'REPROVADA');
+  const fator = hojeMes ? diasMes / hojeMes : 1; // ritmo do mês até hoje → fim do mês (mês fechado = 1)
+  const porPrest = {};
+  lancadas.filter(l => l.vinculo === 'PRESTADOR').forEach(l => { const e = l.cab.empresa || '—', v = SN.valorLpu(l);
+    const o = porPrest[e] = porPrest[e] || { obras: new Set(), lpus: 0, lanc: 0, pipe: 0, aprov: 0, pago: 0 };
+    o.obras.add(l.chamadoId || l.id); o.lpus++; o.lanc += v; if (PIPE.includes(l.status)) o.pipe += v; if (APROV.includes(l.status)) o.aprov += v; if (l.status === 'PAGA') o.pago += v; });
+  const prestadores = Object.entries(porPrest).map(([e, o]) => ({ e, obras: o.obras.size, lpus: o.lpus, lanc: o.lanc, pipe: o.pipe, aprov: o.aprov, pago: o.pago,
+    saldo: o.aprov - o.pago, ticket: o.obras.size ? o.lanc / o.obras.size : 0 })).sort((a, b) => b.lanc - a.lanc);
+  const contaLanc = cod => lancadas.filter(l => l.cab.conta === cod).reduce((s, l) => s + SN.valorLpu(l), 0);
+  const contaAprov = cod => lancadas.filter(l => l.cab.conta === cod && APROV.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
+  const contasFin = d.contas.map(c => { const lanc = contaLanc(c.codigo); return { c, lanc, aprov: contaAprov(c.codigo), proj: lanc * fator }; }).filter(x => x.c.budget || x.lanc);
+  const semConta = lancadas.filter(l => !SN.conta(l.cab.conta)).reduce((s, l) => s + SN.valorLpu(l), 0);
+  const grupoFin = g => { const xs = contasFin.filter(x => x.c.grupo === g);
+    return { lanc: xs.reduce((s, x) => s + x.lanc, 0), aprov: xs.reduce((s, x) => s + x.aprov, 0), proj: xs.reduce((s, x) => s + x.proj, 0), budget: xs.reduce((s, x) => s + (x.c.budget || 0), 0) }; };
+  const opex = grupoFin('OPEX'), capex = grupoFin('CAPEX');
+  // Descrições (serviços da LPU) mais usadas no ciclo
+  const porDesc = {};
+  lancadas.forEach(l => (l.itens || []).forEach(it => { if (!it.cod) return; const cat = SN.itemLpu(it.cod) || {};
+    const x = porDesc[it.cod] = porDesc[it.cod] || { cod: it.cod, desc: cat.desc || it.cod, medida: cat.medida || '', qtd: 0, valor: 0, obras: new Set() };
+    x.qtd += Number(it.qtd) || 0; if (l.vinculo === 'PRESTADOR') x.valor += SN.valorItem(it); x.obras.add(l.chamadoId || l.id); }));
+  const descricoes = Object.values(porDesc).sort((a, b) => b.qtd - a.qtd || b.valor - a.valor);
+  // Hora-homem por colaborador (CLT): titular e apoio, chamados concluídos no ciclo
+  const porColab = {};
+  concl.forEach(c => [['titular', c.tecnico], ['apoio', c.apoio && c.apoio.tecnico]].forEach(([papel, t]) => {
+    if (!t) return; const emp = papel === 'apoio' ? (c.apoio.empresa || (SN.tecnico(t) || {}).empresa || c.empresa) : c.empresa;
+    if (SN.empresa(emp).vinculo !== 'CLT') return; const h = SN.horaHomem(c, papel); if (h.pendente) return;
+    const o = porColab[t] = porColab[t] || { emp, n: 0, desl: 0, campo: 0, hh: 0 };
+    o.n++; o.desl += h.deslocMin / 60; o.campo += h.campoMin / 60; o.hh += h.horas; }));
+  const colabs = Object.entries(porColab).sort((a, b) => b[1].hh - a[1].hh);
   const tiposLista = [...new Set(MATRIZ_SLA.map(m => m.tipo))];
   // IRR do mês e do mês anterior (base: chamados GTD/Manutenção com etiqueta abertos no mês)
   const irrDe = mes => { const base = d.chamados.filter(c => filtra(c) && SN.mesChave(c.tempos.abertura) === mes && SN.entraNoIrr(c));
@@ -148,15 +179,44 @@ SN.rota('/portal', () => {
       <div class="card"><h3>Ocorrências mais comuns</h3>${SN.barras(SN.contar(concl, c => c.cat3 || c.cat2).slice(0, 10))}</div>
       <div class="card"><h3>Cidades com mais chamados</h3>${SN.barras(SN.contar(abertos, c => (c.cidade || '').toUpperCase()).slice(0, 10))}</div>
     </div>
+    <div class="card-tit" style="margin-top:22px"><h2 style="margin:0">Financeiro da LPU · ${SN.mesNome(f.mes)}</h2>
+      <span class="muted small">LPU de prestador no ciclo (data da conclusão do chamado) · reprovadas não entram · projeção = ritmo até hoje × dias do mês</span></div>
+    <div class="kpis7">
+      ${[['OPEX', opex], ['CAPEX', capex]].map(([g, x]) => `<div class="kpi ${g === 'OPEX' ? 'destaque' : ''}"><div class="rot">${g} lançado</div><div class="val">${SN.brl(x.lanc)}</div>
+        <div class="sub">aprovado ${SN.brl(x.aprov)} · budget ${SN.brl(x.budget)}${x.budget ? ' (' + SN.num(x.lanc / x.budget * 100) + '%)' : ''}</div></div>
+        <div class="kpi"><div class="rot">${g} projeção do mês</div><div class="val" style="color:${x.budget && x.proj > x.budget ? 'var(--erro)' : 'inherit'}">${SN.brl(x.proj)}</div>
+        <div class="sub">${x.budget ? (x.proj > x.budget ? 'passa o budget em ' + SN.brl(x.proj - x.budget) : 'sobra ' + SN.brl(x.budget - x.proj) + ' do budget') : 'sem budget cadastrado'}</div></div>`).join('')}
+      <div class="kpi"><div class="rot">Total OPEX + CAPEX</div><div class="val">${SN.brl(opex.lanc + capex.lanc + semConta)}</div><div class="sub">projeção ${SN.brl(opex.proj + capex.proj + semConta * fator)}${semConta ? ' · ' + SN.brl(semConta) + ' sem conta' : ''}</div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="card-tit"><h3>Prestadores · saldo e ticket médio</h3><button class="btn sm" id="bRelPrest">Exportar</button></div>
+        <div class="tabela-wrap" style="max-height:380px"><table class="tab small"><thead><tr><th>Prestador</th><th class="num">Obras</th><th class="num">Lançado</th><th class="num" title="Aguardando líder ou no Service Desk">Em aprovação</th><th class="num" title="Contabilizada, em pagamento ou paga">Aprovado</th><th class="num">Pago</th><th class="num" title="Aprovado e ainda não pago">Saldo a pagar</th><th class="num" title="Lançado ÷ obras (chamados)">Ticket médio</th></tr></thead><tbody>
+        ${prestadores.map(x => `<tr><td><b>${SN.esc(x.e)}</b></td><td class="num">${x.obras}</td><td class="num">${SN.brl(x.lanc)}</td><td class="num">${SN.brl(x.pipe)}</td><td class="num">${SN.brl(x.aprov)}</td>
+          <td class="num">${SN.brl(x.pago)}</td><td class="num"><b>${SN.brl(x.saldo)}</b></td><td class="num">${SN.brl(x.ticket)}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Nenhuma LPU de prestador no ciclo.</td></tr>'}
+        ${prestadores.length > 1 ? (() => { const t = k => prestadores.reduce((s, x) => s + x[k], 0), ob = t('obras');
+          return `<tr><td><b>Total</b></td><td class="num"><b>${ob}</b></td><td class="num"><b>${SN.brl(t('lanc'))}</b></td><td class="num"><b>${SN.brl(t('pipe'))}</b></td><td class="num"><b>${SN.brl(t('aprov'))}</b></td><td class="num"><b>${SN.brl(t('pago'))}</b></td><td class="num"><b>${SN.brl(t('saldo'))}</b></td><td class="num"><b>${SN.brl(ob ? t('lanc') / ob : 0)}</b></td></tr>`; })() : ''}
+        </tbody></table></div></div>
     <div class="grid g2" style="margin-top:14px">
-      <div class="card"><div class="card-tit"><h3>Orçamento por conta contábil</h3><span class="muted small">LPU de prestador contabilizada no ciclo</span></div>
-        ${d.contas.map(c => { const g = gastoConta(c.codigo); if (!c.budget && !g) return '';
-          const pct = c.budget ? g / c.budget : 0, proj = hojeMes ? g / hojeMes * diasMes : g;
-          const st = pct > 1 ? 'erro' : proj > c.budget && c.budget ? 'alerta' : '';
+      <div class="card"><div class="card-tit"><h3>Projeção por conta contábil</h3><span class="muted small">quanto cada conta deve entregar no fim do mês</span></div>
+        ${contasFin.map(({ c, lanc, aprov, proj }) => { const pct = c.budget ? lanc / c.budget : 0, pp = c.budget ? proj / c.budget : 0;
+          const st = pct > 1 ? 'erro' : pp > 1 ? 'alerta' : '';
           return `<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;gap:8px"><span class="small"><b>${c.codigo.slice(-4)}</b> ${SN.esc(c.nome)} <span class="badge">${c.grupo}</span></span>
-            <span class="small nowrap">${SN.brl(g)} / ${SN.brl(c.budget)}</span></div>
+            <span class="small nowrap">${SN.brl(lanc)} / ${SN.brl(c.budget)}</span></div>
             <div class="gauge ${st}"><div style="width:${Math.min(100, pct * 100)}%"></div></div>
-            <div class="small muted">${SN.num(pct * 100)}% usado · projeção de fim de mês ${SN.brl(proj)} ${st === 'alerta' ? '<span class="badge alerta">⚠ risco de estourar</span>' : st === 'erro' ? '<span class="badge erro">✕ estourado</span>' : ''}</div></div>`; }).join('')}</div>
+            <div class="small muted">aprovado ${SN.brl(aprov)} · ${SN.num(pct * 100)}% do budget · <b>projeção ${SN.brl(proj)}</b>${c.budget ? ' (' + SN.num(pp * 100) + '%)' : ''}
+              ${st === 'alerta' ? '<span class="badge alerta">risco de estourar</span>' : st === 'erro' ? '<span class="badge erro">estourado</span>' : ''}</div></div>`; }).join('') || '<p class="muted small">Sem LPU nem budget no ciclo.</p>'}</div>
+      <div class="card"><div class="card-tit"><h3>Descrições mais utilizadas</h3><button class="btn sm" id="bRelDesc">Exportar</button></div>
+        <div class="tabela-wrap" style="max-height:380px"><table class="tab small"><thead><tr><th>Código</th><th>Descrição</th><th class="num">Quantidade</th><th class="num">Obras</th><th class="num">Valor</th></tr></thead><tbody>
+        ${descricoes.slice(0, 20).map(x => `<tr><td class="mono">${SN.esc(x.cod)}</td><td>${SN.esc(x.desc)}</td><td class="num">${SN.num(x.qtd, x.qtd % 1 ? 1 : 0)}${x.medida ? ' <span class="muted">' + SN.esc(x.medida) + '</span>' : ''}</td>
+          <td class="num">${x.obras.size}</td><td class="num">${SN.brl(x.valor)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted center">Sem serviços lançados no ciclo.</td></tr>'}
+        </tbody></table></div>${descricoes.length > 20 ? `<p class="small muted">Mostrando 20 de ${descricoes.length}; "Exportar" traz todas.</p>` : ''}</div>
+    </div>
+    <div class="grid g2" style="margin-top:14px">
+      <div class="card"><div class="card-tit"><h3>Hora-homem por colaborador</h3><button class="btn sm" id="bRelHh">Exportar</button></div>
+        <p class="small muted" style="margin-top:0">Equipe própria (CLT), titular e apoio, chamados concluídos no mês. h·h = (deslocamento + em campo) × pessoas da equipe.</p>
+        <div class="tabela-wrap" style="max-height:340px"><table class="tab small"><thead><tr><th>Colaborador</th><th class="num">Chamados</th><th class="num">Deslocamento</th><th class="num">Em campo</th><th class="num">h·h</th></tr></thead><tbody>
+        ${colabs.map(([t, o]) => `<tr><td>${SN.esc(SN.nomeExibicao(t))}</td><td class="num">${o.n}</td><td class="num">${SN.num(o.desl, 1)} h</td><td class="num">${SN.num(o.campo, 1)} h</td><td class="num"><b>${SN.num(o.hh, 1)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">Sem chamados de equipe própria concluídos.</td></tr>'}
+        ${colabs.length ? `<tr><td><b>Total</b></td><td class="num"><b>${colabs.reduce((s, [, o]) => s + o.n, 0)}</b></td><td class="num"><b>${SN.num(colabs.reduce((s, [, o]) => s + o.desl, 0), 1)} h</b></td><td class="num"><b>${SN.num(colabs.reduce((s, [, o]) => s + o.campo, 0), 1)} h</b></td><td class="num"><b>${SN.num(colabs.reduce((s, [, o]) => s + o.hh, 0), 1)}</b></td></tr>` : ''}
+        </tbody></table></div></div>
       <div class="card"><h3>Ciclo administrativo</h3>
         <table class="tab"><thead><tr><th>LPU (prestadores)</th><th class="num">Qtd</th><th class="num">Valor</th></tr></thead><tbody>
           ${Object.entries(SN.LPU_STATUS).map(([k, v]) => `<tr><td>${SN.badgeLpu(k)}</td><td class="num">${lpusMes.filter(l => l.status === k).length}</td><td class="num">${SN.brl(somaSt(k))}</td></tr>`).join('')}
@@ -206,6 +266,11 @@ SN.rota('/portal', () => {
     HoraHomem: SN.empresa(o.emp).vinculo === 'CLT' ? +o.hh.toFixed(2) : '' })));
   SN.$('#bRelLpu').onclick = () => SN.exportar('lpu_' + f.mes, lpusMes.map(l => ({ LPU: l.id, Chamado: l.chamadoId, Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj,
     Tecnico: l.cab.tecnico, Conta: l.cab.conta, Vinculo: l.vinculo, Valor: SN.valorLpu(l), HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot })));
+  SN.$('#bRelPrest').onclick = () => SN.exportar('prestadores_' + f.mes, prestadores.map(x => ({ Prestador: x.e, CNPJ: SN.empresa(x.e).cnpj || '', Obras: x.obras, LPUs: x.lpus,
+    Lancado: +x.lanc.toFixed(2), EmAprovacao: +x.pipe.toFixed(2), Aprovado: +x.aprov.toFixed(2), Pago: +x.pago.toFixed(2), SaldoAPagar: +x.saldo.toFixed(2), TicketMedio: +x.ticket.toFixed(2) })));
+  SN.$('#bRelDesc').onclick = () => SN.exportar('servicos_lpu_' + f.mes, descricoes.map(x => ({ Codigo: x.cod, Descricao: x.desc, Medida: x.medida, Quantidade: x.qtd, Obras: x.obras.size, Valor: +x.valor.toFixed(2) })));
+  SN.$('#bRelHh').onclick = () => SN.exportar('hora_homem_' + f.mes, colabs.map(([t, o]) => ({ Colaborador: t, Empresa: o.emp, Chamados: o.n,
+    Deslocamento_h: +o.desl.toFixed(2), EmCampo_h: +o.campo.toFixed(2), HoraHomem: +o.hh.toFixed(2) })));
   SN.$('#bRelMat').onclick = () => SN.exportar('materiais_' + f.mes, d.materiais.filter(m => SN.mesChave(m.registradoEm) === f.mes).flatMap(m => m.itens.map(i => ({ Registro: m.id,
     Chamado: m.chamadoId, Cliente: m.cliente, Tecnico: m.cab.tecnico, Empresa: m.cab.empresa, Codigo: i.cod, Descricao: i.desc, Qtd: i.qtd, Seriais: (i.seriais || []).join(', '), Status: SN.MAT_STATUS[m.status].rot }))));
   SN.$('#bRelFib').onclick = () => SN.exportar('fibra_' + f.mes, d.fibras.filter(x => SN.mesChave(x.enviadoEm) === f.mes).flatMap(x => x.ceos.map(e => ({ Registro: x.id,
@@ -235,7 +300,7 @@ SN.rota('/portal', () => {
 }, { tela: 'portal' });
 
 // ═══════════════════════════ Cadastros e Acessos ═══════════════════════════
-SN.TELAS = { chamados: 'Chamados (NOC)', lpu: 'Gestão de LPU', servicedesk: 'Service Desk', materiais: 'Controle de Materiais', fibra: 'Cadastro de Fibra',
+SN.TELAS = { chamados: 'Esteira', lpu: 'Gestão de LPU', servicedesk: 'Service Desk', materiais: 'Controle de Materiais', fibra: 'Cadastro de Fibra',
   base: 'Base OEM', portal: 'Portal de Gestão', cadastros: 'Cadastros e Acessos', auditoria: 'Auditoria' };
 SN.abaCad = 'tecnicos';
 // Com servidor, PIN/complemento ficam só na planilha; a tela recebe apenas "configurado sim/não".

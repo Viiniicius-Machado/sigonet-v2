@@ -92,7 +92,7 @@ SN.rota('/inicio', () => {
     fibra: d.fibras.filter(f => ['AGUARDANDO_VALIDACAO', 'PENDENTE_CADASTRO'].includes(f.status)).length
   };
   const cards = [
-    ['chamados', '#/chamados', '📞', 'Chamados (NOC)', 'Abertura, classificação, despacho e fechamento. Mede MTTD/MTTA/MTTR/SLA.', 'não atribuídos'],
+    ['chamados', '#/chamados', '📞', 'Esteira', 'Abertura, classificação, despacho e fechamento. Mede MTTD/MTTA/MTTR/SLA.', 'não atribuídos'],
     ['lpu', '#/lpu', '📄', 'Gestão de LPU', 'Líder confere, edita (com log), aprova ou reprova e envia ao Service Desk.', 'aguardando líder'],
     ['servicedesk', '#/servicedesk', '🎧', 'Service Desk', 'Contabilização, conta contábil, tratativa de pagamento e NF.', 'pendências'],
     ['materiais', '#/materiais', '📦', 'Controle de Materiais', 'Busca por dia, semana, mês e ano; conferência e registro da baixa feita no Elleven.', 'em aberto'],
