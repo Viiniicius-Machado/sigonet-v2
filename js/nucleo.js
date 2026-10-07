@@ -626,7 +626,12 @@ SN.localAtual = async () => {
 SN.gpsTxt = g => g && g.lat ? `📍 ${SN.esc(g.lat + ',' + g.lng)}${g.precisao ? ' · ±' + g.precisao + ' m' : ''} · <a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${SN.esc(g.lat + ',' + g.lng)}">abrir no mapa</a>` : '';
 // RFO: "Trabalhou na CEO?" — se sim, qual caso.
 SN.CEO_TIPOS = { NOVA_NOVA: 'CEO nova → CEO nova', NOVA_EXISTENTE: 'CEO nova → CEO existente', EXISTENTE_EXISTENTE: 'CEO existente → CEO existente' };
-SN.ceoTxt = rfo => { const x = rfo && rfo.ceo; if (!x || !x.trabalhou) return ''; return x.trabalhou === 'sim' ? 'Sim · ' + (SN.CEO_TIPOS[x.tipo] || 'caso não informado') : 'Não'; };
+// CEO nova: número (letras e números, ex.: 4521 ou 4521A) e endereço são obrigatórios.
+// "nova → nova" = duas CEO novas; "nova → existente" = uma.
+SN.ceoNovasQtd = tipo => tipo === 'NOVA_NOVA' ? 2 : tipo === 'NOVA_EXISTENTE' ? 1 : 0;
+SN.numeroCeoOk = n => /^[A-Z0-9][A-Z0-9.\-\/]{1,11}$/.test(String(n || '').trim().toUpperCase());
+SN.ceoNovasTxt = rfo => ((rfo && rfo.ceo && rfo.ceo.novas) || []).map(x => `CEO nova ${x.numero || '?'}${x.endereco ? ' (' + x.endereco + ')' : ''}`).join(' · ');
+SN.ceoTxt = rfo => { const x = rfo && rfo.ceo; if (!x || !x.trabalhou) return ''; return x.trabalhou === 'sim' ? 'Sim · ' + (SN.CEO_TIPOS[x.tipo] || 'caso não informado') + (SN.ceoNovasTxt(rfo) ? ' · ' + SN.ceoNovasTxt(rfo) : '') : 'Não'; };
 SN.LPU_STATUS = {
   AGUARDANDO_LIDER:  { rot: 'Aguardando líder',        cls: 'alerta' },
   REPROVADA:         { rot: 'Reprovada (técnico corrige)', cls: 'erro' },

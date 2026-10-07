@@ -150,11 +150,11 @@ SN.rota('/tec/os/:id', id => {
         <p class="small muted">Categoria 1 veio do despacho e não muda. Ajuste as demais se o que encontrou em campo for diferente.</p>
         <div id="tecClass"></div>
         <div class="campo"><label>Causa *</label><textarea class="inp" id="rCausa">${SN.esc(c.rfo.causa || '')}</textarea></div>
-        <div class="campo"><label>Ação realizada *</label><textarea class="inp" id="rAcao">${SN.esc(c.rfo.acao || '')}</textarea></div>
         <div class="campo"><label>Trabalhou na CEO? *</label>
           <div class="chips" id="rCeo">${[['sim', 'Sim'], ['nao', 'Não']].map(([k, r]) => `<button type="button" class="chip ${(c.rfo.ceo || {}).trabalhou === k ? 'sel' : ''}" data-ceo="${k}">${r}</button>`).join('')}</div>
           <div id="rCeoTipo" style="margin-top:8px" ${(c.rfo.ceo || {}).trabalhou === 'sim' ? '' : 'hidden'}><label class="small">Qual caso? *</label>
-            <div class="chips">${Object.entries(SN.CEO_TIPOS).map(([k, r]) => `<button type="button" class="chip ${(c.rfo.ceo || {}).tipo === k ? 'sel' : ''}" data-ceotipo="${k}">${r}</button>`).join('')}</div></div></div>
+            <div class="chips">${Object.entries(SN.CEO_TIPOS).map(([k, r]) => `<button type="button" class="chip ${(c.rfo.ceo || {}).tipo === k ? 'sel' : ''}" data-ceotipo="${k}">${r}</button>`).join('')}</div>
+            <div id="rCeoNovas"></div></div></div>
         <div class="campo"><label>Solução *</label><textarea class="inp" id="rSol">${SN.esc(c.rfo.solucao || '')}</textarea></div>
         <div class="campo"><label>Local da falha</label>
           <div style="display:flex;gap:6px"><input class="inp" id="rLocal" style="flex:1;min-width:0" placeholder="Escreva o endereço ou use o GPS" value="${SN.esc(c.rfo.localFalha || '')}">
@@ -193,11 +193,30 @@ SN.rota('/tec/os/:id', id => {
   pintarRfo();
   let ceo = { ...(c.rfo.ceo || {}) };
   SN.$$('[data-ceo]').forEach(b => b.onclick = () => {
-    ceo.trabalhou = b.dataset.ceo; if (ceo.trabalhou !== 'sim') delete ceo.tipo;
+    ceo.trabalhou = b.dataset.ceo; if (ceo.trabalhou !== 'sim') { delete ceo.tipo; delete ceo.novas; }
     SN.$$('[data-ceo]').forEach(x => x.classList.toggle('sel', x === b)); SN.$('#rCeoTipo').hidden = ceo.trabalhou !== 'sim';
     if (ceo.trabalhou !== 'sim') SN.$$('[data-ceotipo]').forEach(x => x.classList.remove('sel'));
   });
-  SN.$$('[data-ceotipo]').forEach(b => b.onclick = () => { ceo.tipo = b.dataset.ceotipo; SN.$$('[data-ceotipo]').forEach(x => x.classList.toggle('sel', x === b)); });
+  SN.$$('[data-ceotipo]').forEach(b => b.onclick = () => { ceo.tipo = b.dataset.ceotipo; SN.$$('[data-ceotipo]').forEach(x => x.classList.toggle('sel', x === b)); pintarCeoNovas(); });
+  // CEO nova: número e endereço obrigatórios (uma para "nova → existente", duas para "nova → nova").
+  const pintarCeoNovas = () => {
+    const el = SN.$('#rCeoNovas'); if (!el) return;
+    const n = ceo.trabalhou === 'sim' ? SN.ceoNovasQtd(ceo.tipo) : 0;
+    ceo.novas = (ceo.novas || []).slice(0, n); while (ceo.novas.length < n) ceo.novas.push({ numero: '', endereco: '', gps: null });
+    if (!n) { el.innerHTML = ''; delete ceo.novas; return; }
+    el.innerHTML = ceo.novas.map((x, i) => `<div class="card" style="margin-top:8px;padding:10px"><b class="small">CEO nova${n > 1 ? ' ' + (i + 1) : ''}</b>
+      <div class="campo" style="margin-top:6px"><label>Número da CEO *</label><input class="inp" data-cnum="${i}" value="${SN.esc(x.numero)}" placeholder="ex.: 4521 ou 4521A" autocapitalize="characters" maxlength="12" style="text-transform:uppercase"></div>
+      <div class="campo"><label>Endereço da CEO nova *</label><div style="display:flex;gap:6px"><input class="inp" data-cend="${i}" style="flex:1;min-width:0" value="${SN.esc(x.endereco)}" placeholder="Rua, número, referência">
+        <button type="button" class="btn" data-cgps="${i}">Usar GPS</button></div><div class="small muted">${x.gps && x.gps.lat ? 'GPS ' + x.gps.lat + ', ' + x.gps.lng : 'No local da CEO, toque em "Usar GPS".'}</div></div></div>`).join('');
+    SN.$$('[data-cnum]', el).forEach(inp => inp.oninput = () => { ceo.novas[+inp.dataset.cnum].numero = inp.value.trim().toUpperCase(); });
+    SN.$$('[data-cend]', el).forEach(inp => inp.oninput = () => { ceo.novas[+inp.dataset.cend].endereco = inp.value.trim(); });
+    SN.$$('[data-cgps]', el).forEach(b => b.onclick = async () => {
+      const x = ceo.novas[+b.dataset.cgps]; b.disabled = true; b.textContent = 'Obtendo…';
+      try { const r = await SN.localAtual(); x.gps = r.gps; if (r.endereco && !x.endereco) x.endereco = r.endereco; pintarCeoNovas(); SN.toast(r.endereco ? 'Endereço da CEO capturado.' : 'Coordenada salva; escreva o endereço.', 'ok'); }
+      catch (e) { SN.toast(e.message, 'erro'); b.disabled = false; b.textContent = 'Usar GPS'; }
+    });
+  };
+  pintarCeoNovas();
   const bA = SN.$('#bAcao');
   if (bA) bA.onclick = async () => {
     const agora = SN.agora();
@@ -234,10 +253,11 @@ SN.rota('/tec/os/:id', id => {
       SN.hist(c, 'Categoria ajustada em campo', [c.cat2, c.cat3, c.cat4].filter(Boolean).join(' › ') + ' → ' + [cl.cat2, cl.cat3, cl.cat4].filter(Boolean).join(' › '));
       Object.assign(c, { cat2: cl.cat2 || '', cat3: cl.cat3 || '', cat4: cl.cat4 || '' });
     }
-    c.rfo = { causa: SN.$('#rCausa').value.trim(), acao: SN.$('#rAcao').value.trim(), solucao: SN.$('#rSol').value.trim(),
+    c.rfo = { causa: SN.$('#rCausa').value.trim(), acao: c.rfo.acao || '', solucao: SN.$('#rSol').value.trim(), // "Ação realizada" saiu do formulário (06/10/2026)
       localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: SN.$('#rObs').value.trim(), ceo: ceo.trabalhou ? { ...ceo } : undefined };
     if (!c.rfo.ceo) delete c.rfo.ceo;
-    if (!c.tempos.diagnostico && (c.rfo.causa || c.rfo.acao)) c.tempos.diagnostico = SN.agora();
+    if (!c.rfo.acao) delete c.rfo.acao;
+    if (!c.tempos.diagnostico && c.rfo.causa) c.tempos.diagnostico = SN.agora();
     return cl;
   };
   // Local da falha pelo GPS. O GPS do celular funciona sem internet: a coordenada
@@ -299,9 +319,12 @@ SN.rota('/tec/os/:id', id => {
     };
     SN.$('#bConcluir').onclick = async () => {
       const cl = salvarRfo();
-      if (!c.rfo.causa || !c.rfo.acao || !c.rfo.solucao) { SN.salvar(); return SN.toast('Preencha causa, ação e solução para concluir (análise e tratamento são obrigatórios).', 'erro'); }
+      if (!c.rfo.causa || !c.rfo.solucao) { SN.salvar(); return SN.toast('Preencha causa e solução para concluir (análise e tratamento são obrigatórios).', 'erro'); }
       if (!c.rfo.ceo) { SN.salvar(); return SN.toast('Responda se trabalhou na CEO.', 'erro'); }
       if (c.rfo.ceo.trabalhou === 'sim' && !c.rfo.ceo.tipo) { SN.salvar(); return SN.toast('Informe o caso da CEO (nova → nova, nova → existente ou existente → existente).', 'erro'); }
+      const novas = c.rfo.ceo.novas || [];
+      if (novas.length < SN.ceoNovasQtd(c.rfo.ceo.tipo) || novas.some(x => !SN.numeroCeoOk(x.numero))) { SN.salvar(); return SN.toast('Informe o número de cada CEO nova (letras e números, ex.: 4521 ou 4521A).', 'erro'); }
+      if (novas.some(x => !x.endereco)) { SN.salvar(); return SN.toast('Informe o endereço de cada CEO nova (escreva ou use o GPS no local).', 'erro'); }
       if (!cl.sla) return SN.toast('Complete as categorias.', 'erro');
       if (SN.exigeValidacao(c) && !SN.validado(c)) { SN.salvar(); return SN.toast(c.validacao && c.validacao.status === 'PEDIDA' ? 'Aguarde o ' + SN.nomeValidador(c) + ' validar para concluir.' : 'Peça a validação ao ' + SN.nomeValidador(c) + ' antes de concluir.', 'erro'); }
       const semFoto = !(c.fotos || []).some(f => f.tipo === 'imagem');
@@ -383,9 +406,9 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     if (prev) vis.sort((a, b) => (qtd[b.cod] ? 1 : 0) - (qtd[a.cod] ? 1 : 0)); // Preventiva: itens preenchidos primeiro
     SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>
       <div class="c">${i.cod} · ${i.classe} · por ${i.medida}
-      ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>
-      <input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}>
-      ${editavel ? `<button type="button" class="btn lpu-foto-bt" data-fb="${i.cod}" title="Fotos deste serviço">📷${(fotosIt[i.cod] || []).length ? `<span class="n">${fotosIt[i.cod].length}</span>` : ''}</button>` : '<span></span>'}
+      ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label title="Marque quando o serviço foi em condição crítica (valor crítico da tabela); desmarcado = valor comum"><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>
+      <label class="small" style="display:flex;flex-direction:column;gap:2px;color:var(--texto-2)">Qtd<input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}></label>
+      ${editavel ? `<button type="button" class="btn lpu-foto-bt" data-fb="${i.cod}" title="Fotos deste serviço">Fotos${(fotosIt[i.cod] || []).length ? `<span class="n">${fotosIt[i.cod].length}</span>` : ''}</button>` : '<span></span>'}
       <div class="lpu-foto-acoes" data-fa="${i.cod}" hidden>
         <label class="btn sm prim">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden data-cam="${i.cod}"></label>
         <label class="btn sm">🖼 Galeria<input type="file" accept="image/*" multiple hidden data-gal="${i.cod}"></label></div>
@@ -414,7 +437,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const pintarFotosIt = cod => {
     const el = SN.$(`[data-fl="${cod}"]`); if (!el) return;
     const b = SN.$(`[data-fb="${cod}"]`), n = (fotosIt[cod] || []).length;
-    if (b) b.innerHTML = '📷' + (n ? `<span class="n">${n}</span>` : '');
+    if (b) b.innerHTML = 'Fotos' + (n ? `<span class="n">${n}</span>` : '');
     SN.pintarFotos(el, fotosIt[cod] || [], { vazio: '', remover: editavel ? a => { fotosIt[cod] = fotosIt[cod].filter(x => x !== a); if (!fotosIt[cod].length) delete fotosIt[cod]; guardarRasc(true); pintarFotosIt(cod); } : null });
   };
   const guardarRasc = ja => {

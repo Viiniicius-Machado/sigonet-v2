@@ -418,7 +418,7 @@ SN.rota('/chamado/:id', id => {
     <div class="grid g2" style="margin-top:14px">
       <div class="card"><h3>RFO · causa, ação e solução</h3>
         ${c.rfo && c.rfo.causa ? `<table class="tab"><tbody><tr><td class="muted">Causa</td><td>${SN.esc(c.rfo.causa)}</td></tr>
-          <tr><td class="muted">Ação</td><td>${SN.esc(c.rfo.acao)}</td></tr>${c.rfo.ceo ? `<tr><td class="muted">Trabalhou na CEO</td><td>${SN.esc(SN.ceoTxt(c.rfo))}</td></tr>` : ''}<tr><td class="muted">Solução</td><td>${SN.esc(c.rfo.solucao)}</td></tr>
+          ${c.rfo.acao ? `<tr><td class="muted">Ação</td><td>${SN.esc(c.rfo.acao)}</td></tr>` : ''}${c.rfo.ceo ? `<tr><td class="muted">Trabalhou na CEO</td><td>${SN.esc(SN.ceoTxt(c.rfo))}</td></tr>` : ''}<tr><td class="muted">Solução</td><td>${SN.esc(c.rfo.solucao)}</td></tr>
           ${c.rfo.localFalha || c.rfo.gpsFalha ? `<tr><td class="muted">Local da falha</td><td>${SN.esc(c.rfo.localFalha || '')}
             ${c.rfo.gpsFalha ? `${c.rfo.localFalha ? '<br>' : ''}<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}">📍 ${SN.esc(c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng)}</a>` : ''}</td></tr>` : ''}
           ${c.rfo.obs ? `<tr><td class="muted">Observações</td><td>${SN.esc(c.rfo.obs)}</td></tr>` : ''}</tbody></table>` : '<p class="muted">Ainda não preenchido pelo técnico.</p>'}
@@ -475,7 +475,7 @@ SN.pdfChamado = async (c, abrir, conversa) => {
   doc.linha('MTTD / MTTA', `${SN.dur(m.mttd)} / ${SN.dur(m.mtta)}`); doc.linha('MTTR / Tempo em campo', `${SN.dur(m.mttr)} / ${SN.dur(m.tmc)}`);
   doc.linha('SLA', m.sla == null ? '—' : m.sla ? 'Dentro do prazo' : 'Fora do prazo');
   doc.secao('RFO');
-  doc.linha('Causa', c.rfo.causa); doc.linha('Ação', c.rfo.acao); if (c.rfo.ceo) doc.linha('Trabalhou na CEO', SN.ceoTxt(c.rfo)); doc.linha('Solução', c.rfo.solucao);
+  doc.linha('Causa', c.rfo.causa); if (c.rfo.acao) doc.linha('Ação', c.rfo.acao); if (c.rfo.ceo) doc.linha('Trabalhou na CEO', SN.ceoTxt(c.rfo)); doc.linha('Solução', c.rfo.solucao);
   if (c.rfo.localFalha || c.rfo.gpsFalha) doc.linha('Local da falha', [c.rfo.localFalha, c.rfo.gpsFalha && 'GPS ' + c.rfo.gpsFalha.lat + ',' + c.rfo.gpsFalha.lng].filter(Boolean).join(' · '));
   if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
   await SN.pdfFotos(doc, c.fotos || [], 'Fotos do atendimento'); // na ordem em que foram adicionadas

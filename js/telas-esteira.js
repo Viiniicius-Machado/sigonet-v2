@@ -22,8 +22,10 @@
     // Janela de horas: 06–22 h por padrão, abrindo se houver atividade fora dela.
     const doDia = lista.filter(c => { const t = c.tempos || {}, ini = ms(t.atribuicao || t.abertura), fim = ms(fimAtendimento(c)) || (SN.STATUS[c.status].aberto ? agora : ms(t.fechamento));
       return ini != null && ini < d1 && (fim == null || fim >= d0); });
-    let h0 = 6, h1 = 22;
-    doDia.forEach(c => { const t = c.tempos || {}; [t.atribuicao, t.abertura, t.chegada, fimAtendimento(c)].forEach(v => { const x = ms(v); if (x == null || x < d0 || x >= d1) return; const h = new Date(x).getHours(); h0 = Math.min(h0, h); h1 = Math.max(h1, h + 1); }); });
+    let h0 = 6, h1 = 20;
+    const marcaHora = x => { if (x == null || x < d0 || x >= d1) return; const h = new Date(x).getHours(); h0 = Math.min(h0, Math.max(0, h - 1)); h1 = Math.max(h1, Math.min(24, h + 2)); };
+    doDia.forEach(c => { const t = c.tempos || {}; [t.atribuicao, t.abertura, t.chegada, fimAtendimento(c), c.prazoLimite, c.deslocamento && c.deslocamento.previsaoChegada].forEach(v => marcaHora(ms(v))); });
+    if (agora >= d0 && agora < d1) marcaHora(agora);
     const j0 = d0 + h0 * 36e5, j1 = d0 + h1 * 36e5, pct = x => Math.max(0, Math.min(100, (x - j0) / (j1 - j0) * 100));
     const seg = (a, b, cls, estilo, titulo) => { if (a == null || b == null || b <= j0 || a >= j1) return ''; const l = pct(a), w = Math.max(0.6, pct(b) - l);
       return `<div class="est-seg ${cls}" style="left:${l}%;width:${w}%;${estilo || ''}" title="${esc(titulo || '')}"></div>`; };
@@ -39,7 +41,7 @@
       const sla = marca(ms(c.prazoLimite), 'est-sla', 'prazo ' + SN.hora(c.prazoLimite));
       const iniRot = Math.max(atr || j0, j0), rot = che || des || atr;
       return `<div class="est-os" data-id="${esc(c.id)}">${h}${pv}${sla}
-        <div class="est-rot" style="left:${pct(Math.max(rot || j0, j0))}%">${esc(c.cliente || c.id)}${c.tipo ? ` <span>${esc(c.cat2 || c.tipo)}</span>` : ''}</div></div>`;
+        <div class="est-rot" style="${pct(Math.max(rot || j0, j0)) > 72 ? `right:${100 - pct(Math.max(rot || j0, j0))}%;text-align:right` : `left:${pct(Math.max(rot || j0, j0))}%`}">${esc(c.cliente || c.id)}${c.tipo ? ` <span>${esc(c.cat2 || c.tipo)}</span>` : ''}</div></div>`;
     };
     // Linhas: técnicos despacháveis (agrupados por empresa) + quem tem chamado no dia.
     const nomes = {}; (tecnicos || []).forEach(tc => { nomes[tc.nome] = tc; });
