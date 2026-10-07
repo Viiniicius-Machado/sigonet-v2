@@ -41,6 +41,20 @@
         <td class="small">${a.usado ? `<b style="color:var(--ok)">instalado</b> · ${esc(a.usado.chamado || '')}` : 'com o técnico'}</td></tr>`).join('')}</tbody></table></div>`;
   };
 
+  // Técnicos ativos ainda sem estoque que têm sugestão (nome, apelido ou único estoque da empresa) ficam
+  // vinculados sozinhos. Quem já tem vínculo não é mexido. Devolve quantos foram vinculados.
+  const vincularSugeridos = () => {
+    const lst = estoques(), tecs = SN.db.tecnicos.filter(t => t.ativo !== false), sug = ER.sugerirVinculos(lst, tecs);
+    let n = 0;
+    tecs.forEach(t => {
+      const k = ER.chaveTec(t.empresa, t.nome), x = sug[k];
+      if (!x || ER.estoqueDe(lst, t.empresa, t.nome)) return;
+      const e = lst.find(z => z.id === x.id); if (!e) return;
+      e.tecnicos = (e.tecnicos || []).concat(k); SN.hist(e, 'Vínculo automático', `${t.nome} (${{ nome: 'pelo nome', apelido: 'pelo apelido', empresa: 'único estoque da empresa' }[x.motivo] || x.motivo})`); n++;
+    });
+    return n;
+  };
+
   // ═══════════════════════════ Gestão ═══════════════════════════
   let aba = 'SALDOS', previa = null, filtro = { q: '', emp: '' }, escolhas = null;
   SN.rota('/estoque', () => {
@@ -176,8 +190,11 @@
             estoques().forEach(e => { if (noArquivo[e.id] || !Object.keys(e.itens || {}).length) return; e.itens = {}; e.relatorio = rel; SN.hist(e, 'Zerado', 'não consta no relatório ' + previa.arquivo); });
           }
           SN._catExtra = null; // códigos novos do Elleven entram no catálogo
-          SN.log('ESTOQUE_IMPORTAR', previa.arquivo, previa.estoques.length + ' estoques' + (ativos ? ' (ativos)' : '')); SN.salvar();
-          SN.toast(ativos ? `Equipamentos de ${previa.estoques.length} estoques importados.` : `${previa.estoques.length} estoques importados. Confira os vínculos dos técnicos.`, 'ok'); previa = null; escolhas = null; aba = ativos ? 'SALDOS' : 'VINC'; SN.render();
+          const auto = vincularSugeridos(); // técnico ainda sem estoque e com sugestão pelo nome: vincula sozinho
+          SN.log('ESTOQUE_IMPORTAR', previa.arquivo, previa.estoques.length + ' estoques' + (ativos ? ' (ativos)' : '') + (auto ? ` · ${auto} vínculo(s) automático(s)` : '')); SN.salvar();
+          const faltam = SN.db.tecnicos.filter(t => t.ativo !== false && !ER.estoqueDe(estoques(), t.empresa, t.nome)).length;
+          SN.toast(`${ativos ? 'Equipamentos de ' : ''}${previa.estoques.length} estoques importados${auto ? ` · ${auto} técnico(s) vinculado(s) automaticamente` : ''}${faltam ? ` · ${faltam} ainda sem estoque` : ''}.`, 'ok');
+          previa = null; escolhas = null; aba = faltam && auto ? 'VINC' : 'SALDOS'; SN.render();
         };
       } catch (e) { el.innerHTML = `<div class="aviso erro small">${esc(e.message)}</div>`; }
     };
