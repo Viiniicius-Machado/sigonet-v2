@@ -630,6 +630,9 @@ SN.CEO_TIPOS = { NOVA_NOVA: 'CEO nova → CEO nova', NOVA_EXISTENTE: 'CEO nova �
 // "nova → nova" = duas CEO novas; "nova → existente" = uma.
 SN.ceoNovasQtd = tipo => tipo === 'NOVA_NOVA' ? 2 : tipo === 'NOVA_EXISTENTE' ? 1 : 0;
 SN.numeroCeoOk = n => /^[A-Z0-9][A-Z0-9.\-\/]{1,11}$/.test(String(n || '').trim().toUpperCase());
+// Duas CEO novas não podem estar no mesmo endereço (não existem duas emendas no mesmo ponto).
+// Compara sem acento, maiúsculas, espaços e pontuação ("Rua X, 10" = "rua x 10").
+SN.mesmoEnderecoCeo = (a, b) => { const n = s => SN.normal(s).replace(/[^a-z0-9]/g, ''); return !!n(a) && n(a) === n(b); };
 SN.ceoNovasTxt = rfo => ((rfo && rfo.ceo && rfo.ceo.novas) || []).map(x => `CEO nova ${x.numero || '?'}${x.endereco ? ' (' + x.endereco + ')' : ''}`).join(' · ');
 SN.ceoTxt = rfo => { const x = rfo && rfo.ceo; if (!x || !x.trabalhou) return ''; return x.trabalhou === 'sim' ? 'Sim · ' + (SN.CEO_TIPOS[x.tipo] || 'caso não informado') + (SN.ceoNovasTxt(rfo) ? ' · ' + SN.ceoNovasTxt(rfo) : '') : 'Não'; };
 SN.LPU_STATUS = {

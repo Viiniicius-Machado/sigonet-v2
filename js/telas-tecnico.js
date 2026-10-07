@@ -205,12 +205,15 @@ SN.rota('/tec/os/:id', id => {
     const n = ceo.trabalhou === 'sim' ? SN.ceoNovasQtd(ceo.tipo) : 0;
     ceo.novas = (ceo.novas || []).slice(0, n); while (ceo.novas.length < n) ceo.novas.push({ numero: '', endereco: '', gps: null });
     if (!n) { el.innerHTML = ''; delete ceo.novas; return; }
-    el.innerHTML = ceo.novas.map((x, i) => `<div class="card" style="margin-top:8px;padding:10px"><b class="small">CEO nova${n > 1 ? ' ' + (i + 1) : ''}</b>
+    el.innerHTML = ceo.novas.map((x, i) => `<div class="card" style="margin-top:8px;padding:10px"><b class="small">CEO nova${n > 1 ? ' ' + 'AB'[i] : ''}</b>
       <div class="campo" style="margin-top:6px"><label>Número da CEO *</label><input class="inp" data-cnum="${i}" value="${SN.esc(x.numero)}" placeholder="ex.: 4521 ou 4521A" autocapitalize="characters" maxlength="12" style="text-transform:uppercase"></div>
       <div class="campo"><label>Endereço da CEO nova *</label><div style="display:flex;gap:6px"><input class="inp" data-cend="${i}" style="flex:1;min-width:0" value="${SN.esc(x.endereco)}" placeholder="Rua, número, referência">
-        <button type="button" class="btn" data-cgps="${i}">Usar GPS</button></div><div class="small muted">${x.gps && x.gps.lat ? 'GPS ' + x.gps.lat + ', ' + x.gps.lng : 'No local da CEO, toque em "Usar GPS".'}</div></div></div>`).join('');
+        <button type="button" class="btn" data-cgps="${i}">Usar GPS</button></div><div class="small muted">${x.gps && x.gps.lat ? 'GPS ' + x.gps.lat + ', ' + x.gps.lng : 'No local da CEO, toque em "Usar GPS".'}</div></div></div>`).join('')
+      + (n > 1 ? '<div class="aviso erro small" id="ceoMesmoEnd" style="margin-top:8px" hidden>A CEO nova A e a B estão com o mesmo endereço. Não existem duas emendas no mesmo endereço: corrija o endereço de uma delas.</div>' : '');
+    const conferirEnd = () => { const av = SN.$('#ceoMesmoEnd', el); if (av) av.hidden = !(ceo.novas.length > 1 && SN.mesmoEnderecoCeo(ceo.novas[0].endereco, ceo.novas[1].endereco)); };
+    conferirEnd();
     SN.$$('[data-cnum]', el).forEach(inp => inp.oninput = () => { ceo.novas[+inp.dataset.cnum].numero = inp.value.trim().toUpperCase(); });
-    SN.$$('[data-cend]', el).forEach(inp => inp.oninput = () => { ceo.novas[+inp.dataset.cend].endereco = inp.value.trim(); });
+    SN.$$('[data-cend]', el).forEach(inp => inp.oninput = () => { ceo.novas[+inp.dataset.cend].endereco = inp.value.trim(); conferirEnd(); });
     SN.$$('[data-cgps]', el).forEach(b => b.onclick = async () => {
       const x = ceo.novas[+b.dataset.cgps]; b.disabled = true; b.textContent = 'Obtendo…';
       try { const r = await SN.localAtual(); x.gps = r.gps; if (r.endereco && !x.endereco) x.endereco = r.endereco; pintarCeoNovas(); SN.toast(r.endereco ? 'Endereço da CEO capturado.' : 'Coordenada salva; escreva o endereço.', 'ok'); }
@@ -349,6 +352,7 @@ SN.rota('/tec/os/:id', id => {
       const novas = c.rfo.ceo.novas || [];
       if (novas.length < SN.ceoNovasQtd(c.rfo.ceo.tipo) || novas.some(x => !SN.numeroCeoOk(x.numero))) { SN.salvar(); return SN.toast('Informe o número de cada CEO nova (letras e números, ex.: 4521 ou 4521A).', 'erro'); }
       if (novas.some(x => !x.endereco)) { SN.salvar(); return SN.toast('Informe o endereço de cada CEO nova (escreva ou use o GPS no local).', 'erro'); }
+      if (novas.length > 1 && SN.mesmoEnderecoCeo(novas[0].endereco, novas[1].endereco)) { SN.salvar(); return SN.toast('A CEO nova A e a B não podem ter o mesmo endereço: não existem duas emendas no mesmo endereço.', 'erro'); }
       if (!cl.sla) return SN.toast('Complete as categorias.', 'erro');
       if (SN.exigeValidacao(c) && !SN.validado(c)) { SN.salvar(); return SN.toast(c.validacao && c.validacao.status === 'PEDIDA' ? 'Aguarde o ' + SN.nomeValidador(c) + ' validar para concluir.' : 'Peça a validação ao ' + SN.nomeValidador(c) + ' antes de concluir.', 'erro'); }
       const semFoto = !(c.fotos || []).some(f => f.tipo === 'imagem');

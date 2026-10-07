@@ -572,3 +572,17 @@ img[data-ver]{cursor:zoom-in}
 .conv-arq span{display:flex;flex-direction:column;min-width:0}.conv-arq b{font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.conv-arq small{color:var(--texto-3)}
 .conv-chip{max-width:100%}.conv-chip .muted{font-size:.72rem}
 .conv-txt .conv-coord{display:inline-block;margin:2px 0;padding:3px 8px}.conv-txt a{word-break:break-all}
+
+/* ── Proteção geral: texto nunca sai do card (06/10/2026) ──
+   KPI dentro de grade: o número diminui para caber na largura do card (container query);
+   rótulo e subtítulo quebram linha; nada passa da borda. */
+.kpi{min-width:0;overflow-wrap:anywhere}
+.grid > .kpi, .kpis7 > .kpi, .kpis-fin > .kpi{container-type:inline-size}
+html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font-size:clamp(.95rem, 11cqi, 1.4rem);white-space:nowrap;overflow-wrap:normal}
+.card{min-width:0}
+.card-tit{flex-wrap:wrap}
+.card-tit > *{min-width:0}
+.card-tit > .muted{overflow-wrap:anywhere}
+/* KPIs do Financeiro da LPU: colunas largas o bastante para valores em R$ */
+.kpis-fin{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.kpis-fin .kpi{padding:12px}

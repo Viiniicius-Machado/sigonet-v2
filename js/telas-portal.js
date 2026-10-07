@@ -62,7 +62,16 @@ SN.rota('/portal', () => {
   const hhTotal = Object.values(porTec).reduce((s, o) => s + o.hh, 0);
   const tecs = Object.entries(porTec).sort((a, b) => b[1].n - a[1].n);
   // Financeiro por conta (LPU de prestador contabilizada/em pagamento/paga no ciclo do mês)
-  const lpusMes = d.lpus.filter(l => SN.cicloDe(l) === f.mes && (!f.emp || l.cab.empresa === f.emp));
+  // Tudo na tela segue o filtro: o segmento (e a natureza) de LPU, materiais e fibra vêm do chamado de
+  // origem; sem chamado, da conta padrão do segmento.
+  const chPorId = {}; d.chamados.forEach(c => { chPorId[c.id] = c; });
+  const segPorConta = cod => (Object.entries(CONTA_PADRAO_POR_TIPO).find(([, v]) => v === cod) || [''])[0];
+  const doFiltro = (chId, emp, conta) => { const c = chPorId[chId];
+    return (!f.emp || emp === f.emp) && (!f.tipo || (c ? c.tipo : segPorConta(conta)) === f.tipo) && (!f.natureza || (c && SN.naturezaDe(f.natureza)[2](c))); };
+  const lpusMes = d.lpus.filter(l => SN.cicloDe(l) === f.mes && doFiltro(l.chamadoId, l.cab.empresa, l.cab.conta));
+  const matMes = d.materiais.filter(m => SN.mesChave(m.registradoEm) === f.mes && doFiltro(m.chamadoId, (m.cab || {}).empresa));
+  const fibMes = d.fibras.filter(x => SN.mesChave(x.enviadoEm) === f.mes && doFiltro(x.chamadoId, (x.cab || {}).empresa));
+  const filtrado = !!(f.tipo || f.emp || f.natureza);
   const [ano, mm] = f.mes.split('-').map(Number), diasMes = new Date(ano, mm, 0).getDate();
   const hojeMes = SN.agora().slice(0, 7) === f.mes ? new Date().getDate() : diasMes;
   const somaSt = st => lpusMes.filter(l => l.status === st).reduce((s, l) => s + SN.valorLpu(l), 0);
@@ -79,7 +88,7 @@ SN.rota('/portal', () => {
     saldo: o.aprov - o.pago, ticket: o.obras.size ? o.lanc / o.obras.size : 0 })).sort((a, b) => b.lanc - a.lanc);
   const contaLanc = cod => lancadas.filter(l => l.cab.conta === cod).reduce((s, l) => s + SN.valorLpu(l), 0);
   const contaAprov = cod => lancadas.filter(l => l.cab.conta === cod && APROV.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
-  const contasFin = d.contas.map(c => { const lanc = contaLanc(c.codigo); return { c, lanc, aprov: contaAprov(c.codigo), proj: lanc * fator }; }).filter(x => x.c.budget || x.lanc);
+  const contasFin = d.contas.map(c => { const lanc = contaLanc(c.codigo); return { c, lanc, aprov: contaAprov(c.codigo), proj: lanc * fator }; }).filter(x => f.tipo ? x.c.codigo === CONTA_PADRAO_POR_TIPO[f.tipo] || x.lanc : x.c.budget || x.lanc);
   const semConta = lancadas.filter(l => !SN.conta(l.cab.conta)).reduce((s, l) => s + SN.valorLpu(l), 0);
   const grupoFin = g => { const xs = contasFin.filter(x => x.c.grupo === g);
     return { lanc: xs.reduce((s, x) => s + x.lanc, 0), aprov: xs.reduce((s, x) => s + x.aprov, 0), proj: xs.reduce((s, x) => s + x.proj, 0), budget: xs.reduce((s, x) => s + (x.c.budget || 0), 0) }; };
@@ -124,8 +133,12 @@ SN.rota('/portal', () => {
       <div class="acoes"><button class="btn" id="bRelCh">Relatório de chamados</button><button class="btn" id="bRelTec">Eficiência por técnico</button></div></div>
     <div class="card card-filtros"><div class="filtros">
       <select class="inp" id="pMes">${meses.map(m => `<option value="${m}" ${m === f.mes ? 'selected' : ''}>${SN.mesNome(m)} (dia 1º a ${new Date(+m.slice(0, 4), +m.slice(5), 0).getDate()})</option>`).join('')}</select>
-      <select class="inp" id="pTipo"><option value="">Todos os segmentos</option>${tiposLista.map(t => `<option ${t === f.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div></div>
+      <select class="inp" id="pEmp"><option value="">Todas as empresas</option>${SN.opcoesEmpresas(f.emp)}</select></div>
+      <div class="abas" style="margin:10px 0 0;flex-wrap:wrap">${[['', 'Todos os segmentos']].concat(tiposLista.map(t => [t, t])).map(([k, r]) => {
+        const n = d.chamados.filter(c => SN.mesChave(c.tempos.abertura) === f.mes && c.status !== 'CANCELADO' && (!f.emp || c.empresa === f.emp) && (!k || c.tipo === k)).length;
+        return `<button class="aba ${f.tipo === k ? 'ativa' : ''}" data-seg="${SN.esc(k)}">${SN.esc(r)} <span class="badge">${n}</span></button>`; }).join('')}</div></div>
+    ${f.tipo ? `<div class="aviso info small" style="margin-bottom:10px">Visão do segmento <b>${SN.esc(f.tipo)}</b>: chamados, LPU, contas contábeis, OPEX/CAPEX, materiais e fibra abaixo são só deste segmento${f.emp ? ' e da empresa <b>' + SN.esc(f.emp) + '</b>' : ''}.
+      <a href="javascript:void 0" data-seg="">Ver todos os segmentos</a></div>` : ''}
     ${temNatureza ? `<div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
       ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>` : ''}
     <div class="kpis7">
@@ -175,18 +188,19 @@ SN.rota('/portal', () => {
         ${irrForaDoFiltro ? '<p class="muted small">—</p>' : SN.barras(SN.contar(irr.rep, x => x.ant.tecnico ? SN.nomeExibicao(x.ant.tecnico) : '').slice(0, 15))}</div>
     </div>
     <div class="grid g3" style="margin-top:14px">
-      <div class="card"><h3>Por segmento</h3>${SN.barras(SN.contar(abertos, c => c.tipo || 'Sem classificação'))}</div>
+      ${f.tipo ? `<div class="card"><h3>Por categoria · ${SN.esc(f.tipo)}</h3>${SN.barras(SN.contar(abertos, c => c.cat2 || 'Sem classificação').slice(0, 10))}</div>`
+        : `<div class="card"><h3>Por segmento</h3>${SN.barras(SN.contar(abertos, c => c.tipo || 'Sem classificação'))}</div>`}
       <div class="card"><h3>Ocorrências mais comuns</h3>${SN.barras(SN.contar(concl, c => c.cat3 || c.cat2).slice(0, 10))}</div>
       <div class="card"><h3>Cidades com mais chamados</h3>${SN.barras(SN.contar(abertos, c => (c.cidade || '').toUpperCase()).slice(0, 10))}</div>
     </div>
     <div class="card-tit" style="margin-top:22px"><h2 style="margin:0">Financeiro da LPU · ${SN.mesNome(f.mes)}</h2>
       <span class="muted small">LPU de prestador no ciclo (data da conclusão do chamado) · reprovadas não entram · projeção = ritmo até hoje × dias do mês</span></div>
-    <div class="kpis7">
-      ${[['OPEX', opex], ['CAPEX', capex]].map(([g, x]) => `<div class="kpi ${g === 'OPEX' ? 'destaque' : ''}"><div class="rot">${g} lançado</div><div class="val">${SN.brl(x.lanc)}</div>
+    <div class="kpis-fin">
+      ${[['OPEX', opex], ['CAPEX', capex]].filter(([g]) => !f.tipo || contasFin.some(x => x.c.grupo === g)).map(([g, x]) => `<div class="kpi ${g === 'OPEX' ? 'destaque' : ''}"><div class="rot">${g} lançado</div><div class="val">${SN.brl(x.lanc)}</div>
         <div class="sub">aprovado ${SN.brl(x.aprov)} · budget ${SN.brl(x.budget)}${x.budget ? ' (' + SN.num(x.lanc / x.budget * 100) + '%)' : ''}</div></div>
         <div class="kpi"><div class="rot">${g} projeção do mês</div><div class="val" style="color:${x.budget && x.proj > x.budget ? 'var(--erro)' : 'inherit'}">${SN.brl(x.proj)}</div>
         <div class="sub">${x.budget ? (x.proj > x.budget ? 'passa o budget em ' + SN.brl(x.proj - x.budget) : 'sobra ' + SN.brl(x.budget - x.proj) + ' do budget') : 'sem budget cadastrado'}</div></div>`).join('')}
-      <div class="kpi"><div class="rot">Total OPEX + CAPEX</div><div class="val">${SN.brl(opex.lanc + capex.lanc + semConta)}</div><div class="sub">projeção ${SN.brl(opex.proj + capex.proj + semConta * fator)}${semConta ? ' · ' + SN.brl(semConta) + ' sem conta' : ''}</div></div>
+      <div class="kpi"><div class="rot">${f.tipo ? 'Total do segmento' : 'Total OPEX + CAPEX'}</div><div class="val">${SN.brl(opex.lanc + capex.lanc + semConta)}</div><div class="sub">projeção ${SN.brl(opex.proj + capex.proj + semConta * fator)}${semConta ? ' · ' + SN.brl(semConta) + ' sem conta' : ''}</div></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-tit"><h3>Prestadores · saldo e ticket médio</h3><button class="btn sm" id="bRelPrest">Exportar</button></div>
         <div class="tabela-wrap" style="max-height:380px"><table class="tab small"><thead><tr><th>Prestador</th><th class="num">Obras</th><th class="num">Lançado</th><th class="num" title="Aguardando líder ou no Service Desk">Em aprovação</th><th class="num" title="Contabilizada, em pagamento ou paga">Aprovado</th><th class="num">Pago</th><th class="num" title="Aprovado e ainda não pago">Saldo a pagar</th><th class="num" title="Lançado ÷ obras (chamados)">Ticket médio</th></tr></thead><tbody>
@@ -222,14 +236,14 @@ SN.rota('/portal', () => {
           ${Object.entries(SN.LPU_STATUS).map(([k, v]) => `<tr><td>${SN.badgeLpu(k)}</td><td class="num">${lpusMes.filter(l => l.status === k).length}</td><td class="num">${SN.brl(somaSt(k))}</td></tr>`).join('')}
         </tbody></table>
         <div class="grid g2" style="margin-top:12px">
-          <div><h4>Materiais</h4>${Object.entries(SN.MAT_STATUS).map(([k, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${v.rot}</span><b>${d.materiais.filter(m => m.status === k).length}</b></div>`).join('')}</div>
-          <div><h4>Cadastro de fibra</h4>${Object.entries(SN.FIB_STATUS).map(([k, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${v.rot}</span><b>${d.fibras.filter(m => m.status === k).length}</b></div>`).join('')}</div>
+          <div><h4>Materiais <span class="small muted">no mês</span></h4>${Object.entries(SN.MAT_STATUS).map(([k, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${v.rot}</span><b>${matMes.filter(m => m.status === k).length}</b></div>`).join('')}</div>
+          <div><h4>Cadastro de fibra <span class="small muted">no mês</span></h4>${Object.entries(SN.FIB_STATUS).map(([k, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${v.rot}</span><b>${fibMes.filter(m => m.status === k).length}</b></div>`).join('')}</div>
         </div></div>
     </div>
     <div class="grid g2" style="margin-top:14px">
       <div class="card"><div class="card-tit"><h3>Fechamento mensal</h3><span class="muted small">portal renova a cada ciclo</span></div>
         <p class="small">Gera o extrato de atividades de <b>${SN.mesNome(f.mes)}</b> (chamados, SLA, LPU por prestador) e registra a assinatura do responsável para encaminhar ao pagamento.</p>
-        ${SN.ehGestor() ? '<button class="btn prim" id="bFechMes">Gerar extrato e assinar fechamento</button>' : '<p class="muted small">Assinatura restrita a Gestor/Gerente.</p>'}
+        ${!SN.ehGestor() ? '<p class="muted small">Assinatura restrita a Gestor/Gerente.</p>' : filtrado ? '<p class="aviso info small">O fechamento é do mês inteiro. Volte para <b>Todos os segmentos</b> e <b>Todas as empresas</b> para assinar.</p>' : '<button class="btn prim" id="bFechMes">Gerar extrato e assinar fechamento</button>'}
         <div class="tabela-wrap" style="margin-top:10px"><table class="tab small"><thead><tr><th>Ciclo</th><th>Assinado por</th><th class="num">Chamados</th><th class="num">LPU</th></tr></thead><tbody>
         ${d.fechamentos.slice().reverse().map(x => `<tr><td>${SN.mesNome(x.mes)}</td><td>${SN.esc(SN.txtAssinatura(x.assinatura))}</td><td class="num">${x.chamados}</td><td class="num">${SN.brl(x.totalLpu)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nenhum fechamento.</td></tr>'}
         </tbody></table></div></div>
@@ -248,7 +262,7 @@ SN.rota('/portal', () => {
         </ul></div>
     </div>`);
   SN.$('#pMes').onchange = e => { f.mes = e.target.value; SN.render(); };
-  SN.$('#pTipo').onchange = e => { f.tipo = e.target.value; if (f.tipo !== SN.SEGMENTO_NATUREZA) f.natureza = ''; SN.render(); };
+  SN.$$('[data-seg]').forEach(b => b.onclick = () => { f.tipo = b.dataset.seg; if (f.tipo !== SN.SEGMENTO_NATUREZA) f.natureza = ''; SN.render(); });
   SN.$('#pEmp').onchange = e => { f.emp = e.target.value; SN.render(); };
   SN.$$('[data-nat]').forEach(b => b.onclick = () => { f.natureza = b.dataset.nat; SN.render(); });
   SN.$('#kIrr').onclick = () => { const c = SN.$('#cardIrr'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
@@ -271,9 +285,9 @@ SN.rota('/portal', () => {
   SN.$('#bRelDesc').onclick = () => SN.exportar('servicos_lpu_' + f.mes, descricoes.map(x => ({ Codigo: x.cod, Descricao: x.desc, Medida: x.medida, Quantidade: x.qtd, Obras: x.obras.size, Valor: +x.valor.toFixed(2) })));
   SN.$('#bRelHh').onclick = () => SN.exportar('hora_homem_' + f.mes, colabs.map(([t, o]) => ({ Colaborador: t, Empresa: o.emp, Chamados: o.n,
     Deslocamento_h: +o.desl.toFixed(2), EmCampo_h: +o.campo.toFixed(2), HoraHomem: +o.hh.toFixed(2) })));
-  SN.$('#bRelMat').onclick = () => SN.exportar('materiais_' + f.mes, d.materiais.filter(m => SN.mesChave(m.registradoEm) === f.mes).flatMap(m => m.itens.map(i => ({ Registro: m.id,
+  SN.$('#bRelMat').onclick = () => SN.exportar('materiais_' + f.mes, matMes.flatMap(m => m.itens.map(i => ({ Registro: m.id,
     Chamado: m.chamadoId, Cliente: m.cliente, Tecnico: m.cab.tecnico, Empresa: m.cab.empresa, Codigo: i.cod, Descricao: i.desc, Qtd: i.qtd, Seriais: (i.seriais || []).join(', '), Status: SN.MAT_STATUS[m.status].rot }))));
-  SN.$('#bRelFib').onclick = () => SN.exportar('fibra_' + f.mes, d.fibras.filter(x => SN.mesChave(x.enviadoEm) === f.mes).flatMap(x => x.ceos.map(e => ({ Registro: x.id,
+  SN.$('#bRelFib').onclick = () => SN.exportar('fibra_' + f.mes, fibMes.flatMap(x => x.ceos.map(e => ({ Registro: x.id,
     Chamado: x.chamadoId, Cliente: x.cliente, Tecnico: x.cab.tecnico, CEO: e.numero, Caixa: e.tipoCaixa, LadoA: e.nomA + ' ' + e.caboA, LadoB: e.nomB + ' ' + e.caboB,
     Splitter: e.splitter, Ligacoes: e.ligacoes.length, Status: SN.FIB_STATUS[x.status].rot, CadastradoPor: x.cadastradoPor || '' }))));
   const bF = SN.$('#bFechMes');
