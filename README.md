@@ -6,7 +6,7 @@ Site: https://viiniicius-machado.github.io/sigonet-v2/
 
 É um aplicativo web (HTML, CSS e JavaScript puro, sem framework) com dois públicos:
 - a **liderança**, no computador;
-- os **técnicos** dos prestadores, no celular.
+- os **técnicos** dos prestadores, no celular. O site pode ser **instalado como aplicativo** (Android: "Instalar app"; iPhone: Compartilhar → "Adicionar à Tela de Início") e abre mesmo sem sinal.
 
 Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a ponte com o site. Nomes, CNPJs e budgets **não** ficam neste repositório: vêm da planilha, depois do login.
 
@@ -14,12 +14,13 @@ Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a p
 
 | Área | O que faz |
 |---|---|
-| **Chamados (NOC)** | Abertura da OS (origem NOC, Delivery, Elleven ou OEM), classificação pela matriz oficial (SLA e conta contábil), despacho, previsão de chegada do técnico, fila de **validação em campo**, linha do tempo (MTTD, MTTA, MTTR, SLA), RFO, anexos e PDF do atendimento. |
-| **App do técnico** | Fila de OS, aceite, deslocamento com **previsão de chegada automática** (abre Google Maps ou Waze), chegada com GPS, **pedido de validação** ao NOC/O&M, fotos com carimbo (estilo Timemark, com a logo oficial Net Turbo) e conclusão técnica. Toque na foto abre em tela cheia, com zoom para ler o carimbo. Tem também a LPU, os materiais e a fibra do atendimento. |
+| **Esteira** (chamados) | Abertura da OS (origem NOC, Delivery, Elleven ou OEM), classificação pela matriz oficial (SLA e conta contábil), despacho, previsão de chegada do técnico, fila de **validação em campo**, relatório do atendimento, anexos e PDF. Duas visões: **Quadro** (colunas por situação) e **Linha do tempo** (uma linha por técnico ao longo do dia, no estilo de um console de despacho: aguardando, deslocamento, execução, prazo, previsão de chegada e a hora atual). |
+| **App do técnico** | Fila de OS, aceite, deslocamento com **previsão de chegada automática** (abre Google Maps ou Waze), chegada com GPS, **pedido de validação** ao NOC/O&M, fotos com carimbo (estilo Timemark, com a logo oficial Net Turbo) e conclusão técnica. Toque na foto abre em tela cheia, com zoom para ler o carimbo. Tem também a LPU, os materiais, a fibra do atendimento e **Meu estoque** (o saldo do técnico e da dupla). |
 | **Gestão de LPU** | Conferência e aprovação dos itens que o prestador cobra, por conta contábil e budget. |
-| **Service Desk, Materiais e Cadastro de Fibra** | Gestões ligadas ao chamado, cada uma com seu ciclo; elas não mexem no MTTR/SLA. |
-| **Portal de Gestão** | KPIs do mês nas visões **Global, Rompimento, Massiva e Improdutivas**, com MTTD, MTTA, MTTR, SLA, **Tempo em campo**, **Espera de validação** e **IRR** (reincidência por circuito). Eficiência por técnico. Exporta para Excel. |
-| **Preventiva** | Rotas de preventiva **aérea** (KMZ, metros percorridos, postes, cordoalha, plaquetas, caixas e sobra técnica; meta mensal) e **subterrânea** (vistoria caixa a caixa, com fotos padronizadas e listas fechadas). Telas: Planejamento, Revisão (com filtros para escolher o que validar primeiro) e Dashboard, mais o app do técnico, que funciona offline. A cobrança sai pelo fluxo normal de chamado e LPU. O manual completo (`docs/PREVENTIVA.md`) fica na pasta de trabalho. |
+| **Service Desk, Materiais e Cadastro de Fibra** | Gestões ligadas ao chamado, cada uma com seu ciclo; elas não mexem no MTTR/SLA. Material e fibra aceitam "sem atividade" quando o atendimento não usou material ou não mexeu em fibra. |
+| **Estoque dos técnicos** | Importa os relatórios do Elleven (movimentações, saldo de materiais de consumo e ativos com número de série). Cada estoque do relatório é ligado ao técnico automaticamente na importação, e o app mostra ao técnico o que ele e a dupla têm. O Elleven continua sendo o estoque oficial: o SigoNet só informa a baixa. |
+| **Portal de Gestão** | KPIs do mês nas visões **Global, Rompimento, Massiva e Improdutivas**, com MTTD, MTTA, MTTR, SLA, **Tempo em campo**, **Espera de validação** e **IRR** (reincidência por circuito). Eficiência por técnico. **Financeiro da LPU**: OPEX e CAPEX (lançado, aprovado e projeção do mês contra o budget), saldo a pagar e ticket médio por prestador, projeção por conta contábil, serviços mais usados e hora-homem por colaborador. As **abas de segmento** filtram a tela inteira (KPIs, LPU, contas, materiais e fibra). Exporta para Excel. |
+| **Preventiva** | Rotas de preventiva **aérea** (KMZ, metros percorridos, postes, cordoalha, plaquetas, caixas e sobra técnica; meta mensal) e **subterrânea** (vistoria caixa a caixa, com fotos padronizadas e listas fechadas). Telas: Planejamento, Revisão (com filtros para escolher o que validar primeiro), Dashboard e **Mapa de atuação** (mapa de calor com as CS vistoriadas e o traçado das rotas aéreas), mais o app do técnico, que funciona offline e mostra o mapa da rota aérea. A **Base KML** recebe o KMZ da rede (o nome do arquivo vira o cluster; entram as pastas de CS e CEO, com prévia antes de gravar). Na aérea, os metros saem das linhas do KMZ e cada item pede o seu mínimo de fotos (câmera ou galeria). A cobrança sai pelo fluxo normal de chamado e LPU. O manual completo (`docs/PREVENTIVA.md`) fica na pasta de trabalho. |
 | **Cadastros e Acessos, Auditoria** | Empresas, técnicos, liderança e telas liberadas por pessoa; log de tudo o que foi alterado. |
 
 ## Jornada em campo do chamado
@@ -32,6 +33,8 @@ Os dados ficam numa planilha Google, e um servidor em Google Apps Script faz a p
    - demais origens → NOC (quem tem a tela Chamados).
    A resposta é **Validado** ou **Ainda com falha** (volta ao técnico com o motivo).
 5. **Concluir atendimento:** só depois de validado.
+
+**Relatório do atendimento:** causa e solução são obrigatórias, e o técnico informa se trabalhou na CEO. Com **CEO nova**, o número (ex.: 4521 ou 4521A) e o endereço de cada uma são obrigatórios; no caso "nova → nova", a CEO A e a B não podem ter o mesmo endereço. O relatório é **salvo automaticamente** enquanto o técnico escreve e quando ele sai do app; nada se perde se ele fechar o app ou o celular desligar.
 
 **Como os tempos são contados**
 - MTTR, SLA e **Tempo em campo** terminam na hora em que o técnico **pediu** a validação que foi aceita, e não na hora da resposta.
@@ -80,7 +83,9 @@ css/sigonet.css   tema
 js/nucleo.js      base comum (SN): rotas, modais, banco local, sessão
 js/servidor.js    sincronização com o Apps Script
 js/campo.js       jornada em campo: previsão de chegada, validação NOC/O&M
-js/telas-*.js     telas de cada módulo
+js/telas-*.js     telas de cada módulo (telas-esteira.js = linha do tempo)
+js/estoque*.js    estoque dos técnicos (leitura dos relatórios do Elleven)
+js/instalar.js    instalação como aplicativo; sw.js abre o site sem sinal
 js/vistoria-*.js  Preventiva: listas, regras (compartilhadas com o servidor), fila offline, câmera, PDF
 js/catalogos.js   matriz de classificação e catálogo de LPU
 js/dados.js       versão pública (sem pessoas, CNPJs nem budgets)
@@ -90,4 +95,10 @@ Este repositório recebe só a parte pública (o site). O código do servidor (A
 
 ## Publicação
 
-O conteúdo deste repositório é gerado por `node ferramentas/publicar.mjs` a partir da pasta de trabalho. O script troca o `dados.js` pela versão pública e para se algum dado sensível ficar no pacote. Não edite os arquivos daqui à mão. Depois do push, o GitHub Pages atualiza em 1 a 2 minutos.
+O conteúdo deste repositório é gerado por `node ferramentas/publicar.mjs` a partir da pasta de trabalho. O script:
+- troca o `dados.js` pela versão pública e para se algum dado sensível ficar no pacote;
+- marca os arquivos no `index.html` com a versão (`?v=` + hash do conteúdo) e grava essa versão no `sw.js`. Assim, navegador e app instalado pegam o site novo com um simples recarregar, sem ficar presos à cópia guardada.
+
+Não edite os arquivos daqui à mão. Depois do push, o GitHub Pages atualiza em 1 a 2 minutos.
+
+Antes de publicar uma mudança de tela, a pasta de trabalho tem um verificador de layout (`testes/layout/checar-layout.mjs`). Ele abre todas as telas da gestão em 1366, 1600 e 1920 px, com nomes longos de propósito, e falha se algum texto sair de card, botão ou página.
