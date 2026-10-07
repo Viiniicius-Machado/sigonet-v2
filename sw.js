@@ -3,7 +3,7 @@
 // sem rede, usa a última cópia guardada no aparelho. Só arquivos do site e das
 // bibliotecas (jsPDF, SheetJS, fonte). O servidor de dados (Apps Script) nunca
 // passa por aqui: POST e script.google.com seguem direto.
-const CACHE = 'sigonet-v2-app';
+const CACHE = 'sigonet-v2-app'; // versão do site 4b3d7d003d
 const BIBLIOTECAS = /^https:\/\/(cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -19,7 +19,9 @@ self.addEventListener('fetch', ev => {
   ev.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {
-      const resp = await fetch(req);
+      // Arquivos do site: sempre confere com o servidor (no-cache = revalida; 304 se nada mudou),
+      // para nunca abrir com a cópia de 10 minutos que o navegador guardou.
+      const resp = await (!doSite ? fetch(req) : req.mode === 'navigate' ? fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : fetch(req, { cache: 'no-cache' }));
       if (resp && (resp.ok || resp.type === 'opaque')) cache.put(req, resp.clone()).catch(() => { });
       return resp;
     } catch (e) {
