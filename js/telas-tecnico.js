@@ -604,8 +604,10 @@ SN.rota('/tec/fibra/:id', id => {
   if (!c || !SN.papelNo(c)) { SN.toast('Sem acesso.', 'erro'); return SN.navegar('#/tec'); }
   let reg = SN.db.fibras.find(x => x.chamadoId === id);
   const h = reg ? reg.cab : SN.cabecalhoDe(c, SN.papelNo(c));
-  const editavel = !reg || ['AGUARDANDO_VALIDACAO', 'CORRECAO'].includes(reg.status);
+  const editavel = !reg || ['AGUARDANDO_VALIDACAO', 'CORRECAO', 'SEM_FIBRA'].includes(reg.status);
   let ceos = reg ? JSON.parse(JSON.stringify(reg.ceos)) : [];
+  // Como em Materiais: o técnico pode informar que não houve atividade de cadastro de fibra (sem CEO, sem PDF).
+  let semFib = !!reg && (reg.status === 'SEM_FIBRA' || (!!reg.semFibra && reg.status === 'CORRECAO'));
   const caixas = CATALOGO_MATERIAIS.filter(m => /EMENDA|CEO|FOSC|TERMINA[CÇ][AÃ]O|CTO/i.test(m.d));
   const novaCeo = () => ({ numero: '', tipoCaixa: 'Nova', modelo: '', gps: '', nomA: '', caboA: '12F', nomB: '', caboB: '12F', splitter: '', ligacoes: [], obs: '' });
   if (!ceos.length) ceos.push(novaCeo());
@@ -614,10 +616,16 @@ SN.rota('/tec/fibra/:id', id => {
     ${SN.htmlCabecalho(h)}
     ${reg && reg.status === 'CORRECAO' ? `<div class="aviso erro" style="margin-bottom:10px">Correção solicitada: ${SN.esc(reg.motivo)}</div>` : ''}
     ${!editavel ? `<div class="aviso info" style="margin-bottom:10px">Status: ${SN.FIB_STATUS[reg.status].rot}.</div>` : ''}
+    ${editavel ? `<label class="card" style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;margin-bottom:12px">
+      <input type="checkbox" id="chSemFib" ${semFib ? 'checked' : ''} style="width:20px;height:20px;margin-top:2px">
+      <span><b>Não houve atividade de cadastro de fibra neste atendimento</b><br><span class="small muted">Marque quando não mexeu em CEO, fusão ou ligação de fibra (ex.: só troca de equipamento, conector ou limpeza). Fica registrado para a gestão.</span></span></label>`
+      : reg && reg.status === 'SEM_FIBRA' ? '<div class="aviso info" style="margin-bottom:10px">Informado: não houve atividade de cadastro de fibra.</div>' : ''}
+    <div id="blocoFib">
     <p class="small muted">Registre cabos, fibras e ligações realizadas. Ao salvar, é gerado um PDF anexado ao chamado. Não interfere no MTTR/SLA.</p>
     <div id="ceos"></div>
-    ${editavel ? `<button class="btn bloco" id="bMaisCeo">+ Adicionar outra CEO</button>
-    <button class="btn prim lg bloco" id="bSalvarFib" style="margin-top:10px">Salvar e gerar PDF</button>` : ''}`);
+    ${editavel ? `<button class="btn bloco" id="bMaisCeo">+ Adicionar outra CEO</button>` : ''}
+    </div>
+    ${editavel ? `<button class="btn prim lg bloco" id="bSalvarFib" style="margin-top:10px">Salvar e gerar PDF</button>` : ''}`);
   let sel = null; // { i: índice da CEO, p: ponto selecionado }
   const pintar = () => {
     SN.$('#ceos').innerHTML = ceos.map((e, i) => {
@@ -694,10 +702,21 @@ SN.rota('/tec/fibra/:id', id => {
     });
     SN.$$('[data-rmceo]').forEach(b => b.onclick = () => { ceos.splice(+b.dataset.rmceo, 1); sel = null; pintar(); });
   };
-  pintar();
+  if (!(reg && reg.status === 'SEM_FIBRA' && !editavel)) pintar(); else SN.$('#blocoFib').style.display = 'none';
   if (!editavel) return;
+  const pintarSemFib = () => { SN.$('#blocoFib').style.display = semFib ? 'none' : ''; SN.$('#bSalvarFib').textContent = semFib ? 'Salvar: sem atividade de fibra' : 'Salvar e gerar PDF'; };
+  pintarSemFib();
+  SN.$('#chSemFib').onchange = e => { semFib = e.target.checked; pintarSemFib(); };
   SN.$('#bMaisCeo').onclick = () => { ceos.push(novaCeo()); pintar(); };
   SN.$('#bSalvarFib').onclick = async () => {
+    if (semFib) { // sem CEO e sem PDF: só registra a informação
+      const novo = !reg; let novoId = null;
+      if (novo) { try { novoId = await SN.novoId('FIB'); } catch (e) { return SN.toast(e.message, 'erro'); } reg = { id: novoId, chamadoId: c.id, cab: h, cliente: c.cliente, historico: [] }; SN.db.fibras.push(reg); }
+      reg.ceos = []; reg.status = 'SEM_FIBRA'; reg.semFibra = true; reg.motivo = ''; reg.enviadoEm = SN.agora();
+      SN.hist(reg, novo ? 'Registro pelo técnico' : 'Correção pelo técnico', 'Não houve atividade de cadastro de fibra');
+      SN.hist(c, 'Informado: sem atividade de cadastro de fibra', reg.id); SN.log('FIBRA_SEM_ATIVIDADE', reg.id, c.id); SN.salvar();
+      SN.toast('Registrado: não houve atividade de cadastro de fibra neste atendimento.', 'ok'); return SN.navegar('#/tec/os/' + c.id);
+    }
     if (ceos.some(e => !e.numero.trim())) return SN.toast('Informe o número de cada CEO.', 'erro');
     if (ceos.some(e => e.tipoCaixa === 'Nova' && !e.nomA.trim())) return SN.toast('Caixa nova exige a nomenclatura do cabo (lado A).', 'erro');
     const novo = !reg;
@@ -705,7 +724,7 @@ SN.rota('/tec/fibra/:id', id => {
     let novoId = null;
     if (novo) { try { novoId = await SN.novoId('FIB'); } catch (e) { bS.disabled = false; bS.textContent = 'Salvar e gerar PDF'; return SN.toast(e.message, 'erro'); } }
     if (novo) { reg = { id: novoId, chamadoId: c.id, cab: h, cliente: c.cliente, historico: [] }; SN.db.fibras.push(reg); }
-    reg.ceos = ceos; reg.status = 'AGUARDANDO_VALIDACAO'; reg.motivo = ''; reg.enviadoEm = SN.agora();
+    reg.ceos = ceos; reg.status = 'AGUARDANDO_VALIDACAO'; reg.motivo = ''; reg.enviadoEm = SN.agora(); delete reg.semFibra;
     SN.salvar();
     const ax = await SN.anexarPdf(SN.pdfFibra(reg), `Cadastro de fibra ${reg.id}.pdf`, c.id);
     if (ax) { // PDF anexado automaticamente ao chamado

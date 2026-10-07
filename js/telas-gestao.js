@@ -618,7 +618,8 @@ SN.telaFibra = abrirId => {
     ['AGUARDANDO_VALIDACAO', 'Aguardando validação do líder', 'Encarregados e gestores conferem antes da sala técnica.'],
     ['PENDENTE_CADASTRO', 'Pendentes de cadastro no GEOGRID', 'Sala técnica replica no GEOGRID e registra quem cadastrou.'],
     ['CORRECAO', 'Com o técnico para correção', ''],
-    ['CADASTRADO', 'Cadastrados', ''], ['INCORRETO', 'Incorretos (arquivados)', '']
+    ['CADASTRADO', 'Cadastrados', ''], ['INCORRETO', 'Incorretos (arquivados)', ''],
+    ['SEM_FIBRA', 'Sem atividade de fibra (informado pelo técnico)', 'O técnico informou que não houve cadastro de fibra. Se não conferir, peça correção.']
   ];
   SN.casca('fibra', `
     <div class="cab-pagina"><div><h1>Cadastro de Fibra · evidência técnica</h1><p>Fotografia formal do que foi executado em campo. Fila própria de validação — não interfere no MTTR, SLA ou fechamento do chamado.</p></div></div>
@@ -628,7 +629,7 @@ SN.telaFibra = abrirId => {
       return `<div class="card"><div class="card-tit"><h3>${tit} <span class="badge">${l.length}</span></h3><span class="muted small">${sub}</span></div>
       ${l.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Registro</th><th>Chamado</th><th>Cliente</th><th>Técnico</th><th>CEOs</th><th>Enviado</th></tr></thead><tbody>
         ${l.map(x => `<tr class="clic" data-id="${x.id}"><td class="mono">${x.id}</td><td class="mono">${x.chamadoId}</td><td>${SN.esc(x.cliente)}</td><td>${SN.esc(x.cab.tecnico)}</td>
-          <td>${x.ceos.map(e => SN.esc(e.numero)).join(', ')}</td><td class="nowrap">${SN.dt(x.enviadoEm)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Vazio.</p>'}</div>`; }).join('')}`);
+          <td>${x.status === 'SEM_FIBRA' ? '<span class="muted">sem atividade</span>' : x.ceos.map(e => SN.esc(e.numero)).join(', ')}</td><td class="nowrap">${SN.dt(x.enviadoEm)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted small">Vazio.</p>'}</div>`; }).join('')}`);
   SN.ligarValidacao();
   SN.$$('tr[data-id]').forEach(tr => tr.onclick = () => SN.detalheFibra(tr.dataset.id));
   if (abrirId) SN.detalheFibra(abrirId);
@@ -646,11 +647,14 @@ SN.detalheFibra = id => {
     { rot: 'Incorreto', cls: 'perigo', acao: async () => { const m = await SN.pedirTexto('Marcar como incorreto', 'Motivo'); if (!m) return false; mudar('INCORRETO', 'Incorreto', m, { motivo: m }); } },
     { rot: 'Solicitar correção', acao: async () => { const m = await SN.pedirTexto('Solicitar correção ao técnico', 'O que corrigir?'); if (!m) return false; mudar('CORRECAO', 'Correção solicitada', m, { motivo: m }); } },
     { rot: 'Correto · liberar p/ GEOGRID', cls: 'prim', acao: () => mudar('PENDENTE_CADASTRO', 'Validado pelo líder', '', { validadoPor: u.nome, validadoEm: SN.agora() }) });
+  if (r.status === 'SEM_FIBRA' && SN.podeAprovar()) botoes.push( // técnico disse que não houve fibra: a gestão só contesta se não conferir
+    { rot: 'Solicitar cadastro ao técnico', cls: 'perigo', acao: async () => { const m = await SN.pedirTexto('Solicitar cadastro de fibra', 'Por que precisa do cadastro? (o técnico verá)'); if (!m) return false; mudar('CORRECAO', 'Cadastro solicitado', m, { motivo: m }); } });
   if (r.status === 'PENDENTE_CADASTRO' && (u.cargo === 'OEM' || SN.ehGestor())) botoes.push(
     { rot: 'Recusar (volta ao líder)', cls: 'perigo', acao: async () => { const m = await SN.pedirTexto('Recusar cadastro', 'Motivo (dado confuso/incompleto…)'); if (!m) return false; mudar('AGUARDANDO_VALIDACAO', 'Recusado pela sala técnica', m, { motivo: m }); } },
     { rot: 'Cadastrado no GEOGRID', cls: 'prim', acao: () => mudar('CADASTRADO', 'Cadastrado no GEOGRID', u.nome, { cadastradoPor: u.nome, cadastradoEm: SN.agora() }) });
   SN.modal({ titulo: `${r.id} · ${SN.FIB_STATUS[r.status].rot}`, largo: true, botoes, corpo: `${SN.htmlCabecalho(r.cab)}
     ${r.motivo ? `<div class="aviso alerta small">Último motivo: ${SN.esc(r.motivo)}</div>` : ''}
+    ${r.status === 'SEM_FIBRA' || (r.semFibra && !r.ceos.length) ? '<div class="aviso info small" style="margin-top:10px">O técnico informou que <b>não houve atividade de cadastro de fibra</b> neste atendimento.</div>' : ''}
     ${r.ceos.map((e, i) => `<div class="card" style="margin-top:10px"><h3>CEO ${i + 1} · Nº ${SN.esc(e.numero)} <span class="badge">${e.tipoCaixa}</span></h3>
       <p class="small">${e.modelo ? SN.esc((SN.material(e.modelo) || {}).d || e.modelo) + ' · ' : ''}A: ${SN.esc(e.nomA || '—')} ${e.caboA} · B: ${SN.esc(e.nomB || '—')} ${e.caboB}${e.splitter ? ' · splitter ' + e.splitter : ''}</p>
       ${e.local || (e.gps && e.gps.lat) ? `<p class="small">📍 ${SN.esc(e.local || '')} ${SN.gpsTxt(e.gps)}</p>` : ''}

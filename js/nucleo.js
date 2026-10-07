@@ -652,7 +652,8 @@ SN.FIB_STATUS = {
   CORRECAO:             { rot: 'Correção solicitada', cls: 'erro' },
   INCORRETO:            { rot: 'Incorreto (arquivado)', cls: 'erro' },
   PENDENTE_CADASTRO:    { rot: 'Correto · pendente GEOGRID', cls: 'info' },
-  CADASTRADO:           { rot: 'Cadastrado no GEOGRID', cls: 'ok' }
+  CADASTRADO:           { rot: 'Cadastrado no GEOGRID', cls: 'ok' },
+  SEM_FIBRA:            { rot: 'Sem cadastro de fibra', cls: 'info' } // técnico informou que não houve atividade de fibra
 };
 SN.badge = (mapa, s) => `<span class="badge ${mapa[s] ? mapa[s].cls : ''}">${SN.esc(mapa[s] ? mapa[s].rot : s)}</span>`;
 

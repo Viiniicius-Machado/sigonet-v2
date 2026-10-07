@@ -64,12 +64,15 @@
     const qn = SN.normal(filtro.q);
     const vis = linhas.filter(x => (!qn || SN.normal(x.e.nome + ' ' + (x.e.tecnicos || []).join(' ')).includes(qn)) && (!filtro.emp || (filtro.emp === '_sem' ? !(x.e.tecnicos || []).length : (x.e.tecnicos || []).some(k => k.split('|')[0] === filtro.emp))));
     const emps = [...new Set(lista.flatMap(e => (e.tecnicos || []).map(k => k.split('|')[0])))].sort();
-    SN.$('#eCorpo').innerHTML = `<div class="acoes" style="margin-bottom:8px"><input class="inp" id="eQ" placeholder="Buscar estoque ou técnico" value="${esc(filtro.q)}" style="max-width:300px">
+    const semEst = SN.db.tecnicos.filter(t => t.ativo !== false && !ER.estoqueDe(lista, t.empresa, t.nome));
+    SN.$('#eCorpo').innerHTML = `${lista.length && semEst.length ? `<div class="aviso alerta small" style="margin-bottom:8px"><b>${semEst.length} técnico(s) sem estoque vinculado</b> — no app eles veem "estoque não vinculado": ${semEst.slice(0, 8).map(t => esc(t.nome)).join(', ')}${semEst.length > 8 ? '…' : ''}. <a href="#" id="eIrVinc">Vincular agora</a></div>` : ''}
+      <div class="acoes" style="margin-bottom:8px"><input class="inp" id="eQ" placeholder="Buscar estoque ou técnico" value="${esc(filtro.q)}" style="max-width:300px">
         <select class="inp" id="eEmp" style="max-width:240px"><option value="">Todas as empresas</option>${emps.map(x => `<option ${filtro.emp === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}<option value="_sem" ${filtro.emp === '_sem' ? 'selected' : ''}>Sem técnico vinculado</option></select></div>
       <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Estoque (Elleven)</th><th>Técnicos vinculados</th><th>Relatório</th><th class="num">Produtos</th><th class="num">Usados no SigoNet</th><th class="num">Abaixo de zero</th><th class="num">Valor disponível</th><th class="num">Equipamentos</th></tr></thead><tbody>
       ${vis.map(x => `<tr class="clic" data-est="${esc(x.e.id)}"><td><b>${esc(x.e.nome)}</b></td><td class="small">${(x.e.tecnicos || []).map(k => esc(k.split('|')[1]) + ' <span class="muted">(' + esc(k.split('|')[0]) + ')</span>').join('<br>') || '<span class="muted">nenhum</span>'}</td>
         <td class="nowrap small">${dataRel(x.e)}</td><td class="num">${Object.keys(x.e.itens || {}).length}</td><td class="num">${x.usados || ''}</td>
         <td class="num">${x.neg ? `<b style="color:var(--erro)">${x.neg}</b>` : ''}</td><td class="num">${SN.brl(x.valor)}</td><td class="num">${(x.e.ativos || []).length || ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nenhum estoque.</td></tr>'}</tbody></table></div>`;
+    if (SN.$('#eIrVinc')) SN.$('#eIrVinc').onclick = ev => { ev.preventDefault(); aba = 'VINC'; SN.render(); };
     SN.$('#eQ').oninput = SN.debounce(e => { filtro.q = e.target.value; pintarSaldos(lista); SN.$('#eQ').focus(); }, 250);
     SN.$('#eEmp').onchange = e => { filtro.emp = e.target.value; pintarSaldos(lista); };
     SN.$$('[data-est]').forEach(tr => tr.onclick = () => abrirEstoque(lista.find(e => e.id === tr.dataset.est)));
@@ -88,22 +91,29 @@
     const tecs = SN.db.tecnicos.filter(t => t.ativo !== false).sort((a, b) => (a.empresa + a.nome).localeCompare(b.empresa + b.nome));
     const sug = ER.sugerirVinculos(lista, tecs);
     if (!escolhas) { escolhas = {}; tecs.forEach(t => { const e = ER.estoqueDe(lista, t.empresa, t.nome); escolhas[ER.chaveTec(t.empresa, t.nome)] = e ? e.id : ''; }); }
+    const salvo = k => { const e = ER.estoqueDe(lista, k.split('|')[0], k.split('|').slice(1).join('|')); return e ? e.id : ''; };
+    const pendentes = () => Object.keys(escolhas).filter(k => (escolhas[k] || '') !== salvo(k)).length;
     const semVinc = tecs.filter(t => !escolhas[ER.chaveTec(t.empresa, t.nome)]);
     const nSug = semVinc.filter(t => sug[ER.chaveTec(t.empresa, t.nome)]).length;
     const rotMot = { nome: 'pelo nome', apelido: 'pelo apelido', empresa: 'único estoque da empresa' };
     const opcoes = sel => `<option value="">— sem estoque —</option>` + lista.map(e => `<option value="${esc(e.id)}" ${sel === e.id ? 'selected' : ''}>${esc(e.nome)}</option>`).join('');
     SN.$('#eCorpo').innerHTML = !lista.length ? '<p class="muted">Importe um relatório primeiro.</p>' : `
       <p class="small muted">Escolha de qual estoque do Elleven sai o material de cada técnico. Um estoque pode servir vários técnicos (bolsão da equipe). O técnico só vê o estoque dele em "Meu estoque".</p>
-      <div class="acoes" style="margin-bottom:8px">${nSug ? `<button class="btn" id="vSug">Usar as ${nSug} sugestões nos técnicos sem estoque</button>` : ''}<span class="small muted">${semVinc.length} técnico(s) sem estoque</span></div>
+      <div class="acoes" style="margin-bottom:8px">${nSug ? `<button class="btn prim" id="vSug">Vincular as ${nSug} sugestões e salvar</button>` : ''}<span class="small muted">${semVinc.length} técnico(s) sem estoque</span></div>
+      <div id="vPend"></div>
       <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Empresa</th><th>Técnico</th><th>Estoque no Elleven</th><th>Sugestão</th></tr></thead><tbody>
       ${tecs.map(t => { const k = ER.chaveTec(t.empresa, t.nome), s = sug[k];
         return `<tr><td>${esc(t.empresa)}</td><td>${esc(t.nome)}</td><td><select class="inp" data-vk="${esc(k)}" style="min-width:260px">${opcoes(escolhas[k])}</select></td>
           <td class="small">${s ? `${s.id === escolhas[k] ? '✓ ' : ''}${esc(s.id)} <span class="muted">(${rotMot[s.motivo]})</span>` : '<span class="muted">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>
       <button class="btn prim lg" id="vSalvar" style="margin-top:10px">Salvar vínculos</button>`;
     if (!lista.length) return;
-    SN.$$('[data-vk]').forEach(s => s.onchange = () => { escolhas[s.dataset.vk] = s.value; });
-    if (SN.$('#vSug')) SN.$('#vSug').onclick = () => { semVinc.forEach(t => { const k = ER.chaveTec(t.empresa, t.nome); if (sug[k]) escolhas[k] = sug[k].id; }); pintarVinculos(lista); SN.toast('Sugestões aplicadas na tela. Confira e clique em Salvar.'); };
-    SN.$('#vSalvar').onclick = () => {
+    // Alteração feita na mão e ainda não salva fica avisada (o técnico só vê o estoque depois de salvar).
+    const avisarPend = () => { const n = pendentes(), el = SN.$('#vPend'); if (el) el.innerHTML = n ? `<div class="aviso alerta small" style="margin-bottom:8px"><b>${n} alteração(ões) ainda não salva(s).</b> O técnico só vê o estoque depois de clicar em <b>Salvar vínculos</b>.</div>` : ''; };
+    avisarPend();
+    SN.$$('[data-vk]').forEach(s => s.onchange = () => { escolhas[s.dataset.vk] = s.value; avisarPend(); });
+    // Sugestões: aplica e já grava (antes só preenchia a tela e era fácil sair sem salvar).
+    if (SN.$('#vSug')) SN.$('#vSug').onclick = () => { semVinc.forEach(t => { const k = ER.chaveTec(t.empresa, t.nome); if (sug[k]) escolhas[k] = sug[k].id; }); salvarVinculos(); };
+    const salvarVinculos = () => {
       let mud = 0;
       lista.forEach(e => {
         const novos = Object.keys(escolhas).filter(k => escolhas[k] === e.id).sort(), antes = (e.tecnicos || []).slice().sort();
@@ -112,8 +122,9 @@
       });
       if (!mud) return SN.toast('Nada mudou.');
       SN.log('ESTOQUE_VINCULOS', '', mud + ' estoque(s)'); SN.salvar(); escolhas = null;
-      SN.toast(`Vínculos salvos (${mud} estoque(s)).`, 'ok'); SN.render();
+      SN.toast(`Vínculos salvos (${mud} estoque(s)). Os técnicos veem o estoque ao abrir o app de novo.`, 'ok'); SN.render();
     };
+    SN.$('#vSalvar').onclick = salvarVinculos;
   };
 
   const pintarImportar = lista => {
