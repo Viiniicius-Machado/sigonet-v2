@@ -74,6 +74,7 @@
   // ═══════════════════════════ Rota ═══════════════════════════
   // Estado da tela da rota (fica em memória enquanto a rota está aberta).
   let T = null;
+  let espelhando = false; // desenhando para o Acompanhar (gestão): sem botões do técnico
   const rotaAberta = () => T && location.hash === '#/tec/vistoria/' + encodeURIComponent(T.rota.id_rota);
 
   SN.rota('/tec/vistoria/:id', async id => {
@@ -127,6 +128,8 @@
     });
     locais.forEach(l => {
       const s = slots[l.ordem];
+      // Correção local de uma CS que a revisão já aprovou não tem mais como subir: vale a aprovada.
+      if (s && s.servidor && s.servidor.status_revisao === 'APROVADA' && s.id_vistoria === l.id_vistoria && l.status_local !== 'enviada') { SN.VL.rascunhos.del(l.id_vistoria).catch(() => { }); return; }
       if (l.status_local !== 'enviada' || !s) { slots[l.ordem] = { ...l, servidor: (s && s.servidor) || l.servidor }; }
     });
     T.slots = slots;
@@ -190,6 +193,9 @@
   };
   const statusServidor = s => (s.servidor && s.servidor.status_revisao) || '';
   const editavel = s => ['rascunho', 'erro'].includes(s.status_local);
+  // Enviada e ainda sem revisão, com a rota aberta: o técnico pode corrigir e mandar de novo
+  // (o servidor aceita AGUARDANDO_REVISAO → AGUARDANDO_REVISAO e mantém o lugar na fila).
+  const podeCorrigir = s => s.status_local === 'enviada' && statusServidor(s) === 'AGUARDANDO_REVISAO' && T.rota && T.rota.status !== 'CONCLUIDA';
   const salvarSlot = async s => {
     const v = s.dados;
     if (!v.inicio) v.inicio = SN.agora();
@@ -234,7 +240,12 @@
     SN.$('#vQtdMais').onclick = () => mudarQtd(1);
     SN.$('#vQtdMenos').onclick = () => mudarQtd(-1);
     if (SN.$('#vIniciar')) SN.$('#vIniciar').onclick = () => mudarStatusRota('EM_CAMPO');
-    if (SN.$('#vConcluir')) SN.$('#vConcluir').onclick = () => mudarStatusRota('CONCLUIDA');
+    if (SN.$('#vConcluir')) SN.$('#vConcluir').onclick = () => {
+      flush();
+      const abertas = Object.values(T.slots).filter(s => s.servidor && statusServidor(s) && editavel(s)).map(s => 'CS ' + s.ordem);
+      if (abertas.length) return SN.toast(`Termine (envie de novo) ou desista da correção antes de concluir: ${abertas.join(', ')}.`, 'erro');
+      mudarStatusRota('CONCLUIDA');
+    };
     pintarFaixa(); pintarAbas(); pintarCs();
   };
   // OS (chamado Preventiva) da rota: é por ela que o prestador aponta materiais e
@@ -397,12 +408,17 @@
         <button class="btn prim bloco" id="vRefazer" style="margin-top:8px">✏️ Refazer esta CS</button></div>`;
     } else if (s.status_local === 'enviada') {
       topo = `<div class="aviso ${st === 'APROVADA' ? 'ok' : 'info'}" style="margin-bottom:10px">${st === 'APROVADA' ? '✓ Aprovada na revisão.' : '✓ Enviada. Aguardando revisão.'}
-        ${srv.enviado_em ? ' Enviada em ' + SN.dt(srv.enviado_em) + '.' : ''}</div>`;
+        ${srv.enviado_em ? ' Enviada em ' + SN.dt(srv.enviado_em) + '.' : ''}
+        ${!espelhando && podeCorrigir(s) ? '<button class="btn bloco" id="vCorrigir" style="margin-top:8px">✏️ Corrigir esta CS (posição, fotos, dados)</button><div class="small muted" style="margin-top:4px">Liberado até a revisão aprovar ou a rota ser concluída.</div>' : ''}</div>`;
     } else if (['fila', 'enviando'].includes(s.status_local)) {
       topo = '<div class="aviso info" style="margin-bottom:10px">⟳ Na fila de envio. Pode seguir para a próxima CS: o envio continua sozinho, mesmo sem sinal agora.</div>';
     } else if (s.status_local === 'erro') {
       topo = `<div class="aviso erro" style="margin-bottom:10px"><b>O servidor não aceitou:</b> ${esc(s.erro || '')}
         ${(s.erros || []).length ? '<br>' + s.erros.map(e => '• ' + esc(e.msg)).join('<br>') : ''}<br>Corrija e envie de novo.</div>`;
+    }
+    if (st === 'AGUARDANDO_REVISAO' && editavel(s) && !espelhando) {
+      topo += `<div class="aviso alerta" style="margin-bottom:10px">Corrigindo CS já enviada. A revisão continua vendo a versão anterior até você <b>enviar de novo</b>.
+        <button type="button" class="btn sm" id="vDesfazer" style="margin-top:6px">↩ Desistir da correção</button></div>`;
     }
     if (st === 'REJEITADA' && editavel(s) && srv.motivo_rejeicao) {
       topo += `<div class="aviso alerta" style="margin-bottom:10px">Refazendo CS rejeitada. Motivo: ${(srv.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ')}${srv.motivo_rejeicao_texto ? ' — ' + esc(srv.motivo_rejeicao_texto) : ''}</div>`;
@@ -522,9 +538,9 @@
   // Espelho para a gestão (acompanhamento ao vivo): a CS desenhada com o mesmo formulário
   // do técnico, só leitura. ctx = { rota, cfg, cs: {id: base}, slots: {ordem: slot}, fotosLocais }.
   SN.vst.espelhoCs = (ctx, ordem) => {
-    const antes = T; T = ctx;
+    const antes = T; T = ctx; espelhando = true;
     try { const s = ctx.slots[ordem]; return s && s.dados ? htmlCs({ ...s, status_local: s.status_local === 'enviada' ? 'enviada' : 'espelho' }, s.dados, true) : ''; }
-    finally { T = antes; }
+    finally { T = antes; espelhando = false; }
   };
   SN.vst.validarEspelho = (ctx, v) => { const antes = T; T = ctx; try { return validar(v); } finally { T = antes; } };
 
@@ -560,7 +576,7 @@
 
   // ─────────── Eventos ───────────
   const ligarCs = (el, s, v, ro) => {
-    const refazer = SN.$('#vRefazer', el);
+    const refazer = SN.$('#vRefazer', el) || SN.$('#vCorrigir', el);
     if (refazer) refazer.onclick = async () => {
       const srv = s.servidor;
       const limpo = JSON.parse(JSON.stringify(srv));
@@ -568,6 +584,14 @@
       limpo.fim = '';
       Object.assign(s, { dados: limpo, status_local: 'rascunho', erro: '', erros: [] });
       await salvarSlot(s); pintarAbas(); pintarCs();
+    };
+    const desfazer = SN.$('#vDesfazer', el);
+    if (desfazer) desfazer.onclick = async () => {
+      if (!await SN.confirmar('Desistir da correção', 'Voltar para a versão já enviada? O que você mudou agora será descartado.', 'Desistir', 'perigo')) return;
+      if (timerSalvar) { clearTimeout(timerSalvar); timerSalvar = null; }
+      await SN.VL.rascunhos.del(s.id_vistoria).catch(() => { });
+      Object.assign(s, { dados: s.servidor, status_local: 'enviada', erro: '', erros: [] });
+      SN.vst.publicarVivo(s.id_rota); pintarAbas(); pintarCs();
     };
     if (ro) return;
     const mudou = (rerender = true) => { salvarDepois(s); if (rerender) { pintarCs(); pintarAbas(); } else pintarEnvio(s, v); };
@@ -683,7 +707,7 @@
     const r = validar(v);
     if (!r.ok) { pintarEnvio(s, v); return SN.toast('Ainda falta preencher: ' + r.erros[0].msg, 'erro'); }
     const nomeCs = v.cs_nova ? 'CS nova (fora do cadastro)' : v.id_cs;
-    if (!await SN.confirmar('Enviar CS ' + s.ordem, `Enviar <b>${esc(nomeCs)}</b>? Depois de enviada ela só volta para edição se a revisão rejeitar.`, 'Enviar', 'prim')) return;
+    if (!await SN.confirmar('Enviar CS ' + s.ordem, `Enviar <b>${esc(nomeCs)}</b>? Até a revisão aprovar (e com a rota aberta), você ainda pode corrigir.`, 'Enviar', 'prim')) return;
     v.fim = SN.agora();
     // PDF de controle da CS: gerado aqui (com as miniaturas do aparelho) e enviado
     // pela mesma fila das fotos. Sem a biblioteca de PDF, a CS segue sem a ficha.

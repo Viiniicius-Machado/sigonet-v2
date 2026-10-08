@@ -173,13 +173,14 @@
 
   // Correções do revisor e reaberturas, mais recentes primeiro.
   const htmlAlteracoes = a => {
-    const h = (a.historico || []).filter(e => e.acao === 'CORRIGIDA' || e.acao === 'REABERTA').slice(-6).reverse();
+    const h = (a.historico || []).filter(e => ['CORRIGIDA', 'REABERTA', 'POSICAO_CORRIGIDA'].includes(e.acao)).slice(-6).reverse();
     if (!h.length) return '';
     const fmt = v => v === '' || v == null ? '—' : esc(String(v));
     return `<div class="aviso info small" style="margin-bottom:8px"><b>Alterações na revisão</b>${h.map(e => {
       let det = esc(e.detalhe || '');
       if (e.acao === 'CORRIGIDA') { try { det = JSON.parse(e.detalhe).map(m => `${esc(m.rot)}: <s>${fmt(m.de)}</s> → <b>${fmt(m.para)}</b>`).join(' · '); } catch (er) { } }
-      return `<div style="margin-top:4px">${SN.dt(e.ts)} · ${esc(e.usuario)} · ${e.acao === 'CORRIGIDA' ? '✏️ corrigiu' : '↺ reabriu'} — ${det}</div>`;
+      if (e.acao === 'POSICAO_CORRIGIDA') { try { const p = JSON.parse(e.detalhe); det = `Posição: <s>${fmt(p.de)}</s> → <b>${fmt(p.para)}</b> (${esc(ORIGEM_POS[p.origem] || p.origem)}) — ${esc(p.motivo)}`; } catch (er) { } }
+      return `<div style="margin-top:4px">${SN.dt(e.ts)} · ${esc(e.usuario)} · ${e.acao === 'CORRIGIDA' ? '✏️ corrigiu' : e.acao === 'POSICAO_CORRIGIDA' ? '📍 corrigiu a posição' : '↺ reabriu'} — ${det}</div>`;
     }).join('')}</div>`;
   };
   // Depois de reabrir/corrigir: recarrega e abre o item de novo com os dados do servidor.
@@ -228,6 +229,37 @@
       } }] });
   };
 
+  // Só a posição (lat/lng), em qualquer status — até com o chamado fechado. Não muda status, chamado nem LPU.
+  const ORIGEM_POS = { fotos: 'pelas fotos da CS', cadastro: 'pelo ponto do cadastro', manual: 'digitada' };
+  const corrigirPosicao = async (x, r) => {
+    const v = x.doc, num = n => n !== '' && n != null && !isNaN(Number(n));
+    const fotos = (v.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf' && num(f.lat) && num(f.lng));
+    const med = k => { const a = fotos.map(f => Number(f[k])).sort((p, q) => p - q); return a.length ? a[Math.floor(a.length / 2)] : null; };
+    let cad = null;
+    try { const lista = baseCluster[r.cluster] || (baseCluster[r.cluster] = (await SN.vst.exec('VST_CS_BASE', { cluster: r.cluster })).cs || []); cad = lista.find(c => String(c.id_cs) === String(v.id_cs) && num(c.lat)) || null; } catch (e) { }
+    const op = { fotos: fotos.length ? { lat: +med('lat').toFixed(7), lng: +med('lng').toFixed(7) } : null, cadastro: cad ? { lat: Number(cad.lat), lng: Number(cad.lng) } : null };
+    const dist = p => p && num(v.lat) ? ' · ' + SN.num(Math.round(VR.distanciaM(Number(v.lat), Number(v.lng), p.lat, p.lng))) + ' m da atual' : '';
+    const radio = (k, rot, p) => `<label style="display:block;margin:6px 0"><input type="radio" name="pOrig" value="${k}" ${p ? '' : 'disabled'}> ${rot}${p ? ` — ${p.lat}, ${p.lng}${dist(p)}` : ' (indisponível)'}</label>`;
+    const corpo = `<p class="small muted">Troca só a latitude/longitude desta CS. Status, chamado e LPU não mudam; a metragem de campo do Dashboard passa a usar a posição nova. A posição original e o motivo ficam no histórico.</p>
+      <div class="small" style="margin-bottom:8px">Atual: <b>${num(v.lat) ? v.lat + ', ' + v.lng : 'sem GPS'}</b>${v.gps_em ? ' · capturada ' + SN.dt(v.gps_em) : ''}</div>
+      ${radio('fotos', `Posição das fotos da CS (mediana de ${fotos.length})`, op.fotos)}
+      ${radio('cadastro', 'Ponto do cadastro (KMZ)', op.cadastro)}
+      <label style="display:block;margin:6px 0"><input type="radio" name="pOrig" value="manual"> Digitar</label>
+      <div class="grid g2"><div class="campo"><label>Latitude</label><input class="inp" id="pLat" inputmode="decimal"></div><div class="campo"><label>Longitude</label><input class="inp" id="pLng" inputmode="decimal"></div></div>
+      <div class="campo"><label>Motivo *</label><textarea class="inp" id="pMot" rows="2" placeholder="Ex.: técnico capturou o GPS na CS seguinte"></textarea></div>`;
+    return SN.modal({ titulo: `Corrigir posição · CS ${v.id_cs || "(fora do cadastro)"} · ${v.id_rota}`, corpo,
+      aoAbrir: f => SN.$$('[name=pOrig]', f).forEach(b => b.onchange = () => { const p = op[b.value]; if (p) { SN.$('#pLat', f).value = p.lat; SN.$('#pLng', f).value = p.lng; } }),
+      botoes: [{ rot: 'Cancelar', valor: false }, { rot: 'Salvar posição', cls: 'ok', acao: async f => {
+        const orig = (SN.$('[name=pOrig]:checked', f) || {}).value || 'manual';
+        const lat = SN.$('#pLat', f).value.trim().replace(',', '.'), lng = SN.$('#pLng', f).value.trim().replace(',', '.'), motivo = SN.$('#pMot', f).value.trim();
+        if (!num(lat) || !num(lng)) { SN.toast('Escolha uma opção ou digite latitude e longitude.', 'erro'); return false; }
+        if (!motivo) { SN.toast('Informe o motivo.', 'erro'); return false; }
+        try { await SN.vst.exec('VST_CORRIGIR_POSICAO', { id_vistoria: v.id_vistoria, lat: Number(lat), lng: Number(lng), motivo, origem: orig }); }
+        catch (e) { SN.toast(e.message, 'erro'); return false; }
+        SN.toast('Posição corrigida.', 'ok'); setTimeout(() => reabrirModal(x), 50); return true;
+      } }] });
+  };
+
   // "Distância do cadastro" = GPS que o técnico capturou na CS × ponto da CS no cadastro (KMZ).
   // Quando dá muito, este quadro mostra os dois pontos e onde as fotos foram tiradas, para o
   // revisor ver se o GPS foi capturado fora do lugar (ex.: na CS anterior) ou se o KMZ está errado.
@@ -266,7 +298,7 @@
     const a = x.doc, r = x.rota, ficha = (a.fotos || []).find(f => f.tipo_foto === 'ficha_pdf');
     const emRevisao = a.status_revisao === 'AGUARDANDO_REVISAO';
     const corpo = `<div class="small muted" style="margin-bottom:8px">${x.seg === 'AEREA' ? '🗼 Preventiva aérea' : '🕳️ Preventiva subterrânea'} · enviado em ${SN.dt(a.enviado_em)}${ficha && ficha.url ? ` · <a href="${esc(ficha.url)}" target="_blank" rel="noopener">📄 Ficha PDF de controle</a>` : ''}</div>
-      ${!emRevisao ? `<div class="aviso ${a.status_revisao === 'APROVADA' ? 'ok' : 'erro'} small" style="margin-bottom:8px">${SN.vst.badgeVistoria(a.status_revisao)} por ${esc(a.revisor || '—')} em ${SN.dt(a.data_revisao)}. Para mudar a decisão ou corrigir o preenchimento, use <b>↺ Reabrir</b>.</div>` : ''}
+      ${!emRevisao ? `<div class="aviso ${a.status_revisao === 'APROVADA' ? 'ok' : 'erro'} small" style="margin-bottom:8px">${SN.vst.badgeVistoria(a.status_revisao)} por ${esc(a.revisor || '—')} em ${SN.dt(a.data_revisao)}. Para mudar a decisão ou corrigir o preenchimento, use <b>↺ Reabrir</b>${x.seg !== 'AEREA' ? '. Só a posição errada? Use <b>📍 Corrigir posição</b> (vale mesmo com o chamado fechado)' : ''}.</div>` : ''}
       ${htmlAlteracoes(a)}
       ${x.seg === 'AEREA' ? htmlApontamento(a, r, d) : htmlCs(a, r)}
       <div class="card" id="rDecisao" style="margin-top:12px;display:none"><h4>Motivo da rejeição (pode marcar mais de um)</h4>
@@ -300,6 +332,7 @@
     SN.modal({ titulo: x.seg === 'AEREA' ? `Revisar apontamento · ${r.id_rota}` : `Revisar CS ${a.cs_nova ? '(fora do cadastro)' : a.id_cs} · ${r.id_rota}`, largo: true, corpo,
       botoes: !emRevisao ? [{ rot: 'Fechar', valor: null },
         { rot: '📄 PDF', acao: () => { baixarPdf(); return false; } },
+        ...(x.seg !== 'AEREA' && !a.importado_planilha ? [{ rot: '📍 Corrigir posição', acao: async () => (await corrigirPosicao(x, r)) ? null : false }] : []),
         { rot: '↺ Reabrir', cls: 'prim', acao: async () => (await reabrir(x)) ? null : false }] : [{ rot: 'Fechar', valor: null },
         { rot: '📄 PDF', acao: () => { baixarPdf(); return false; } },
         { rot: '✏️ Corrigir preenchimento', acao: async () => (await abrirCorrecao(x, d)) ? null : false },
