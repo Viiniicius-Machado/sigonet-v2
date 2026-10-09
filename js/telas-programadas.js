@@ -6,20 +6,25 @@
 // em PRODUCAO, fotos no Drive, revisão, chamado e LPU sugerida), mas não aparecem em
 // nenhuma tela da Preventiva (SN.vst.separar).
 //
-// Abas:
-//   Atividades     — lista, despachar / retirar despacho / editar / excluir / cancelar.
-//   Nova atividade — cidade (região automática), endereço, POP (melhoria), serviço,
-//                    prestador, datas. Despachar cria o chamado na conta do programa.
-//   Revisão        — apontamentos do técnico: aprovar / rejeitar / reabrir. Aprovado o
-//                    "Finalizado", o chamado conclui e a LPU nasce preenchida.
-//   Dashboard      — Retirada: cabo e CEO/CTO retirados por região. Melhoria: cabo
-//                    lançado por POP e cidade. Os dois: valor atingido na conta × budget.
+// Menu (como o da Preventiva): grupo "Melhoria de rede" e grupo "Retirada de cabo",
+// cada um com Planejamento, Revisão e Dashboard (mesma permissão: tela mel_/ret_planejamento).
+//   Planejamento — abas Atividades (lista, despachar / retirar despacho / editar / excluir /
+//                  cancelar) e Nova atividade (cidade → região, endereço, POP na melhoria,
+//                  serviço, prestador, datas). Despachar cria o chamado na conta do programa.
+//   Revisão      — apontamentos do técnico: aprovar / rejeitar / reabrir. Aprovado o
+//                  "Finalizado", o chamado conclui e a LPU nasce preenchida.
+//   Dashboard    — Retirada: cabo e CEO/CTO retirados por região. Melhoria: cabo
+//                  lançado por POP e cidade. Os dois: valor atingido na conta × budget.
 // Técnico: telas-programadas-tecnico.js (#/tec/prog/:id).
 (() => {
   const L = VR_LISTAS, esc = SN.esc;
   const est = {}; // estado por programa: aba, form, filtros, período
-  let seg = null, d = null;
+  let seg = null, d = null, vista = 'PLAN'; // PLAN | REV | DASH (item do menu)
   const P = () => L.programas[seg];
+  const VISTAS = { PLAN: ['planejamento', 'Planejamento'], REV: ['revisao', 'Revisão'], DASH: ['dashboard', 'Dashboard'] };
+  const base = () => P().href.replace('/planejamento', '');
+  const hrefVista = v => base() + '/' + VISTAS[v][0];
+  const idMenu = v => v === 'PLAN' ? P().tela : P().tela.replace('planejamento', VISTAS[v][0]);
   const E = () => est[seg] || (est[seg] = { aba: 'LISTA', form: null, filtro: { status: '', q: '' }, periodo: { per: 'mes', ref: '' }, dash: { per: 'mes', ref: '' }, revQ: '' });
   const hoje = () => SN.dataIsoLocal(new Date());
   const empresas = () => SN.db.empresas.filter(e => e.ativo !== false).map(e => e.nome).sort();
@@ -32,31 +37,37 @@
   const diaLocal = v => { const s = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : (v ? new Date(v) : null); };
   const noIv = (iv, v) => { if (!iv) return true; const t = diaLocal(v); return !!t && t >= iv[0] && t < iv[1]; };
 
-  const abrir = async s => {
-    seg = s;
-    const tela = P().tela;
+  const abrir = async (s, v) => {
+    seg = s; vista = v;
+    const tela = idMenu(v);
     if (!SN.vst.disponivel()) return SN.casca(tela, SN.vst.semServidorHtml.replace('A Preventiva precisa', 'Esta tela precisa'));
     SN.casca(tela, SN.carregando('Carregando as atividades…'));
     try { d = await SN.vst.carregar(); } catch (e) { return SN.casca(tela, `<div class="aviso erro">${esc(e.message)}</div>`); }
-    if (location.hash !== P().href || seg !== s) return;
+    if (location.hash !== hrefVista(v) || seg !== s || vista !== v) return;
     pintar();
   };
-  SN.rota('/mel/planejamento', () => abrir('MELHORIA'), { tela: 'mel_planejamento' });
-  SN.rota('/ret/planejamento', () => abrir('RETIRADA'), { tela: 'ret_planejamento' });
+  Object.keys(L.programas).forEach(s => Object.keys(VISTAS).forEach(v => {
+    const p = L.programas[s];
+    SN.rota(p.href.replace('#', '').replace('planejamento', VISTAS[v][0]), () => abrir(s, v), { tela: p.tela });
+  }));
   const recarregar = async () => { d = await SN.vst.carregar(true); pintar(); };
 
   const pintar = () => {
     const e = E(), pend = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO').length;
-    const abas = [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade'], ['REV', 'Revisão' + (pend ? ` (${pend})` : '')], ['DASH', 'Dashboard']];
-    SN.casca(P().tela, `
-      <div class="cab-pagina"><div><h1>${esc(P().rot)} · Planejamento</h1>
-        <p>Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico. O técnico aponta a produção com fotos; a revisão aprova e a LPU nasce preenchida.</p></div>
+    const abas = [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade']];
+    const sub = { PLAN: `Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico.`,
+      REV: `Apontamentos do técnico${pend ? ` (<b>${pend}</b> aguardando)` : ''}. Aprovado o "Finalizado", o chamado conclui e a LPU nasce preenchida.`,
+      DASH: `Produção aprovada e valor atingido na conta <b>${esc(SN.contaTxt(P().conta))}</b>.` }[vista];
+    SN.casca(idMenu(vista), `
+      <div class="cab-pagina"><div><h1>${esc(P().rot)} · ${VISTAS[vista][1]}</h1><p>${sub}</p></div>
         <button class="btn" id="pAtualizar">⟳ Atualizar</button></div>
-      <div class="abas">${abas.map(([k, r]) => `<button class="aba ${e.aba === k ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>
+      ${vista === 'PLAN' ? `<div class="abas">${abas.map(([k, r]) => `<button class="aba ${e.aba === k ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>` : ''}
       <div id="pCorpo"></div>`);
     SN.$$('[data-aba]').forEach(b => b.onclick = () => { e.aba = b.dataset.aba; if (e.aba === 'NOVA' && !e.form) e.form = nova(); pintar(); });
     SN.$('#pAtualizar').onclick = () => recarregar().catch(err => SN.toast(err.message, 'erro'));
-    ({ LISTA: pintarLista, NOVA: pintarForm, REV: pintarRevisao, DASH: pintarDash })[e.aba]();
+    if (vista === 'REV') return pintarRevisao();
+    if (vista === 'DASH') return pintarDash();
+    (e.aba === 'NOVA' ? pintarForm : pintarLista)();
   };
 
   // ═══════════════════════════ Atividades ═══════════════════════════
@@ -114,7 +125,7 @@
       await SN.vst.exec('VST_ROTA_CANCELAR', { id_rota: b.dataset.canc, motivo: mot });
       SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { e.form = JSON.parse(JSON.stringify(rotas().find(r => r.id_rota === b.dataset.ed))); e.aba = 'NOVA'; pintar(); });
-    SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.aba = 'REV'; e.revQ = b.dataset.verrev; pintar(); });
+    SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.revQ = b.dataset.verrev; SN.navegar(hrefVista('REV')); });
   };
 
   // ═══════════════════════════ Nova / editar ═══════════════════════════
@@ -135,7 +146,10 @@
       <div class="campo"><label>${retirada() ? 'O que retirar *' : 'Serviço de melhoria *'}</label><textarea class="inp" data-f="servico" placeholder="${retirada() ? 'ex.: retirar cabo 12FO desativado entre a CEO 15 e a CEO 18 (operadora X)' : 'ex.: lançar 800 m de cabo 36FO para desafogar o anel do POP'}">${esc(f.servico)}</textarea></div>
       <div class="linha-form">
         <div class="campo"><label>${retirada() ? 'Metros previstos' : 'Metros de cabo previstos'}</label><input class="inp" type="number" min="0" data-f="metros_previstos" data-num="1" value="${esc(f.metros_previstos)}"></div>
-        <div class="campo" style="flex:2"><label>Link do local (Google Maps, KMZ no Drive…)</label><input class="inp" data-f="local_url" placeholder="https://…" value="${esc(f.local_url)}"></div>
+        <div class="campo" style="flex:2"><label>Link do local (Google Maps, KMZ no Drive…) — ou anexe o KMZ</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="inp" style="flex:1;min-width:220px" data-f="local_url" placeholder="https://…" value="${esc(f.local_url)}">
+            <label class="btn">📎 Anexar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label></div>
+          ${f.local_url ? `<div class="small"><a href="${esc(f.local_url)}" target="_blank" rel="noopener">abrir ${f.kmz_nome ? esc(f.kmz_nome) : 'link'}</a>${f.kmz_metros ? ` · ${SN.num(f.kmz_metros)} m de linhas no KMZ` : ''}</div>` : ''}</div>
       </div>
       <div class="linha-form">
         <div class="campo"><label>Solicitante / área</label><input class="inp" data-f="solicitante" list="lSol" value="${esc(f.solicitante)}"><datalist id="lSol">${c.solicitantes.concat(conhecidos('solicitante')).filter((x, i, a) => a.indexOf(x) === i).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
@@ -158,6 +172,19 @@
       i.oninput = () => { f[k] = ler(); erros(); };
       i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (['prestador', 'cidade'].includes(k)) setTimeout(pintarForm, 0); else erros(); }; // depois do blur: redesenhar dentro dele quebra o DOM
     });
+    // KMZ anexado: vai para o Drive (pasta da cidade) e o link entra no campo; os metros das linhas preenchem o previsto vazio.
+    SN.$('#fKmz').onchange = async ev => {
+      const file = ev.target.files && ev.target.files[0]; if (!file) return;
+      if (!f.cidade) { ev.target.value = ''; return SN.toast('Informe a cidade antes de anexar o KMZ (ele é guardado na pasta da cidade).', 'erro'); }
+      SN.toast('Enviando KMZ para o Drive…');
+      try {
+        const dataUrl = await new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = falha; r.readAsDataURL(file); });
+        const r = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: f.cidade, segmento: seg, dataUrl });
+        f.local_url = r.url; f.kmz_nome = file.name; f.kmz_metros = r.medicao && r.medicao.metros ? Math.round(r.medicao.metros) : '';
+        if (f.kmz_metros && (f.metros_previstos === '' || f.metros_previstos == null)) f.metros_previstos = f.kmz_metros;
+        SN.toast('KMZ anexado' + (f.kmz_metros ? `: ${SN.num(f.kmz_metros)} m de linhas.` : '.'), 'ok'); pintarForm();
+      } catch (err) { ev.target.value = ''; SN.toast(err.message, 'erro'); }
+    };
     const salvar = async despachar => {
       const v = erros(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
       if (!f.id_rota && !f.chave_cliente) f.chave_cliente = SN.uid() + SN.uid(); // reenvio não duplica
@@ -293,8 +320,10 @@
     SN.ligarPeriodo(pintarDash, e.dash);
   };
 
-  // Menu lateral: um grupo próprio (fora da Preventiva).
-  SN.MENU.push({ grupo: 'Melhoria e Retirada' },
-    { tela: 'mel_planejamento', rot: 'Melhoria de rede', ico: '🛠️', href: '#/mel/planejamento' },
-    { tela: 'ret_planejamento', rot: 'Retirada de cabo', ico: '✂️', href: '#/ret/planejamento' });
+  // Menu lateral: um grupo por programa, com Planejamento, Revisão e Dashboard (como a Preventiva).
+  Object.keys(L.programas).forEach(s => { const p = L.programas[s];
+    SN.MENU.push({ grupo: p.rot },
+      { tela: p.tela, rot: 'Planejamento', ico: '🗺️', href: p.href },
+      { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela, rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
+      { id: p.tela.replace('planejamento', 'dashboard'), tela: p.tela, rot: 'Dashboard', ico: '📈', href: p.href.replace('planejamento', 'dashboard') }); });
 })();
