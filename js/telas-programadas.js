@@ -99,7 +99,7 @@
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Atividade</th><th>Onde</th><th>Serviço</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Produção</th><th></th></tr></thead><tbody>
         ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>
           <td>${esc(r.cidade || '')}<div class="small muted">${esc(r.regiao || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''}</div><div class="small muted">${esc(r.endereco || '')}</div></td>
-          <td class="small">${esc(r.servico || '')}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}</td>
+          <td class="small">${esc(r.servico || '')}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}${(r.anexos || []).length ? `<div class="muted">📎 ${r.anexos.length} anexo(s)</div>` : ''}</td>
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
           <td>${SN.vst.badgeRota(r.status)}</td>
@@ -162,7 +162,12 @@
         <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-f="data_limite" min="${esc(String(f.data_planejada || '').slice(0, 10))}" value="${esc(String(f.data_limite || '').slice(0, 10))}">
           <div class="small muted">Prazo do chamado. Em branco = o próprio dia.</div></div>
       </div>
-      <div class="campo"><label>Observação</label><textarea class="inp" data-f="observacao">${esc(f.observacao || '')}</textarea></div>
+      <div class="campo"><label>Observação <span class="muted">— cole uma imagem (Ctrl+V) aqui ou anexe imagem/PDF</span></label><textarea class="inp" data-f="observacao" id="fObs" placeholder="Texto livre. Print copiado? Clique aqui e cole (Ctrl+V).">${esc(f.observacao || '')}</textarea>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px">
+          <label class="btn sm">📎 Anexar imagem ou PDF<input type="file" id="fAnexo" accept="image/*,application/pdf" multiple hidden></label>
+          <span class="small muted" id="fAnexoInfo">${(f.anexos || []).length ? (f.anexos || []).length + ' anexo(s)' : 'Os anexos vão junto no chamado e aparecem para o técnico.'}</span></div>
+        <div id="fAnexos" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${(f.anexos || []).map((a, i) => `<span class="chip" style="gap:6px;align-items:center">${a.tipo === 'imagem' && SN.driveId(a.id) ? `<img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(SN.driveId(a.id))}&sz=w120" alt="" style="height:34px;border-radius:4px;cursor:pointer" data-verax="${i}">` : `<a href="javascript:void 0" data-verax="${i}">📄</a>`}
+          <a href="javascript:void 0" data-verax="${i}" class="small">${esc(a.nome)}</a><button type="button" class="btn sm" data-tiraax="${i}" title="Remover anexo">×</button></span>`).join('')}</div></div>
       <div id="fErros"></div>
       <div class="acoes"><button class="btn prim" id="bSalvar">💾 Salvar${editando ? '' : ' (planejada)'}</button><button class="btn ok" id="bSalvarDesp">🚀 Salvar e despachar</button><button class="btn" id="bCancelar">Cancelar</button></div></div>`;
     const erros = () => { const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
@@ -172,6 +177,31 @@
       i.oninput = () => { f[k] = ler(); erros(); };
       i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (['prestador', 'cidade'].includes(k)) setTimeout(pintarForm, 0); else erros(); }; // depois do blur: redesenhar dentro dele quebra o DOM
     });
+    // Anexos da observação: colar imagem (Ctrl+V) ou escolher imagem/PDF. Sobem para o Drive (pasta
+    // "atividades-<programa>") e vão no chamado (c.fotos) e na tela do técnico.
+    const anexar = async files => {
+      const ok = files.filter(x => /^image\//.test(x.type) || x.type === 'application/pdf');
+      if (!ok.length) return SN.toast('Só imagem ou PDF.', 'erro');
+      if (ok.some(x => x.type === 'application/pdf' && x.size > 15 * 1024 * 1024)) return SN.toast('PDF acima de 15 MB: reduza o arquivo.', 'erro');
+      f.anexos = f.anexos || [];
+      if (f.anexos.length + ok.length > 20) return SN.toast('No máximo 20 anexos por atividade.', 'erro');
+      SN.toast(`Enviando ${ok.length} anexo(s)…`);
+      try {
+        for (const x of ok) f.anexos.push(await SN.guardarArquivo(x, 'atividades-' + seg.toLowerCase()));
+        SN.toast('Anexo(s) guardado(s).', 'ok');
+      } catch (err) { SN.toast('Não foi possível anexar: ' + (err.message || err), 'erro'); }
+      pintarForm();
+    };
+    SN.$('#fAnexo').onchange = ev => anexar([...(ev.target.files || [])]);
+    SN.$('#fObs').addEventListener('paste', ev => {
+      const imgs = [...((ev.clipboardData || {}).items || [])].filter(it => it.kind === 'file' && /^image\//.test(it.type)).map(it => it.getAsFile()).filter(Boolean);
+      if (!imgs.length) return; // texto: cola normal
+      ev.preventDefault();
+      const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+      anexar(imgs.map((x, i) => new File([x], `print-${ts}${imgs.length > 1 ? '-' + (i + 1) : ''}.${(x.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: x.type })));
+    });
+    SN.$$('[data-verax]').forEach(el => el.onclick = () => SN.abrirAnexo(f.anexos[+el.dataset.verax].id));
+    SN.$$('[data-tiraax]').forEach(b => b.onclick = () => { f.anexos.splice(+b.dataset.tiraax, 1); pintarForm(); });
     // KMZ anexado: vai para o Drive (pasta da cidade) e o link entra no campo; os metros das linhas preenchem o previsto vazio.
     SN.$('#fKmz').onchange = async ev => {
       const file = ev.target.files && ev.target.files[0]; if (!file) return;
@@ -215,7 +245,7 @@
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b class="mono">${esc(a.id_rota)}</b> · ${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? '<span class="badge verde">Finalizado</span>' : '<span class="badge">Parcial</span>'}
         ${a.refeitas ? '<span class="badge alerta">Refeito após rejeição</span>' : ''}
         <div class="small muted">${esc(r.cidade || a.cidade || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''} · ${esc(r.endereco || '')} · ${esc(a.tecnico || '')} (${esc(a.prestador || '')}) · enviado ${SN.dt(a.enviado_em)}</div>
-        <div class="small">${esc(r.servico || '')}</div></div>
+        <div class="small">${esc(r.servico || '')}${(r.anexos || []).length ? ` · 📎 ${r.anexos.map((x, i) => `<a href="javascript:void 0" data-axrev="${esc(r.id_rota)}|${i}">${esc(x.nome)}</a>`).join(', ')}` : ''}</div></div>
         <div>${SN.vst.badgeVistoria(a.status_revisao)}</div></div>
       <div style="margin-top:6px">${htmlProducao(a)}</div>
       ${a.observacao ? `<div class="small" style="margin-top:4px">Obs.: ${esc(a.observacao)}</div>` : ''}
@@ -232,6 +262,7 @@
       <h3 style="margin:12px 0 8px">Aguardando revisão (${fila.length})</h3>
       ${fila.length ? fila.map(a => cartao(a, false)).join('') : '<p class="muted">Nada aguardando revisão.</p>'}
       <details style="margin-top:12px"><summary><b>Revisados (últimos ${revis.length})</b></summary><div style="margin-top:8px">${revis.map(a => cartao(a, true)).join('') || '<p class="muted">Nenhum.</p>'}</div></details>`;
+    SN.$$('[data-axrev]').forEach(el => el.onclick = () => { const [id, i] = el.dataset.axrev.split('|'); const r = rotas().find(x => x.id_rota === id); if (r) SN.abrirAnexo(r.anexos[+i].id); });
     SN.$('#rQ').oninput = SN.debounce(ev => { e.revQ = ev.target.value; pintarRevisao(); SN.$('#rQ').focus(); }, 300);
     SN.$$('[data-aprovar]').forEach(b => b.onclick = async () => { b.disabled = true;
       try { await SN.vst.exec('VST_REVISAR', { id_apontamento: b.dataset.aprovar, decisao: 'APROVADA' }); SN.toast('Apontamento aprovado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); }

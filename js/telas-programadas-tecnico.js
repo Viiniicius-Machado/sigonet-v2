@@ -79,14 +79,16 @@
           ${r.metros_previstos ? `<tr><td class="muted">Previsto</td><td>${SN.num(r.metros_previstos)} m</td></tr>` : ''}
           ${r.notificacao ? `<tr><td class="muted">Notificação</td><td>${esc(r.notificacao)}</td></tr>` : ''}
           <tr><td class="muted">Prestador</td><td>${esc(r.prestador)}${r.tecnico ? ' · ' + esc(r.tecnico) : ''}</td></tr>
-          ${r.observacao ? `<tr><td class="muted">Obs.</td><td>${esc(r.observacao)}</td></tr>` : ''}
+          ${r.observacao ? `<tr><td class="muted">Obs.</td><td style="white-space:pre-line">${esc(r.observacao)}</td></tr>` : ''}
         </tbody></table>
+        ${(r.anexos || []).length ? `<div class="small muted" style="margin-top:8px">Anexos do planejamento (toque para abrir)</div><div class="fotos" id="aAnexosPlan"></div>` : ''}
       </div>
       ${A.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: o apontamento fica guardado e sobe quando a conexão voltar.</div>' : ''}
       ${SN.vst.cartaoOs ? SN.vst.cartaoOs(r, {}) : ''}
       <div class="card" style="margin-bottom:10px"><h3>Apontamentos</h3><div id="aLista"></div></div>
       <div id="aForm"></div>`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => SN.navegar(el.dataset.os));
+    if (SN.$('#aAnexosPlan')) SN.pintarFotos(SN.$('#aAnexosPlan'), r.anexos);
     pintarLista(); pintarForm();
   };
 
