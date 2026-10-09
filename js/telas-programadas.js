@@ -1,0 +1,300 @@
+// SIGONET V2 — Melhoria de rede e Retirada de cabo (telas mel_planejamento / ret_planejamento).
+//
+// Assuntos separados da Preventiva (pedido do usuário, 2026-10-09), cada um com a sua
+// conta contábil: Melhoria → 3.1.1.2.05.0103, Retirada → 3.1.1.2.05.0102. No servidor
+// usam o mesmo motor da Preventiva (aba ROTAS com segmento MELHORIA/RETIRADA, apontamentos
+// em PRODUCAO, fotos no Drive, revisão, chamado e LPU sugerida), mas não aparecem em
+// nenhuma tela da Preventiva (SN.vst.separar).
+//
+// Abas:
+//   Atividades     — lista, despachar / retirar despacho / editar / excluir / cancelar.
+//   Nova atividade — cidade (região automática), endereço, POP (melhoria), serviço,
+//                    prestador, datas. Despachar cria o chamado na conta do programa.
+//   Revisão        — apontamentos do técnico: aprovar / rejeitar / reabrir. Aprovado o
+//                    "Finalizado", o chamado conclui e a LPU nasce preenchida.
+//   Dashboard      — Retirada: cabo e CEO/CTO retirados por região. Melhoria: cabo
+//                    lançado por POP e cidade. Os dois: valor atingido na conta × budget.
+// Técnico: telas-programadas-tecnico.js (#/tec/prog/:id).
+(() => {
+  const L = VR_LISTAS, esc = SN.esc;
+  const est = {}; // estado por programa: aba, form, filtros, período
+  let seg = null, d = null;
+  const P = () => L.programas[seg];
+  const E = () => est[seg] || (est[seg] = { aba: 'LISTA', form: null, filtro: { status: '', q: '' }, periodo: { per: 'mes', ref: '' }, dash: { per: 'mes', ref: '' }, revQ: '' });
+  const hoje = () => SN.dataIsoLocal(new Date());
+  const empresas = () => SN.db.empresas.filter(e => e.ativo !== false).map(e => e.nome).sort();
+  const tecnicosDe = emp => SN.db.tecnicos.filter(t => t.ativo !== false && t.empresa === emp).map(t => t.nome).sort();
+  const opcoes = (lista, sel, vazio) => (vazio != null ? `<option value="">${esc(vazio)}</option>` : '') + lista.map(v => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  const cfg = () => VR.normalizarConfig(d.config);
+  const rotas = () => (d.prog_rotas || []).filter(r => r.segmento === seg);
+  const aps = () => { const ids = {}; rotas().forEach(r => { ids[r.id_rota] = true; }); return (d.prog_producao || []).filter(a => ids[a.id_rota]); };
+  const retirada = () => seg === 'RETIRADA';
+  const diaLocal = v => { const s = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : (v ? new Date(v) : null); };
+  const noIv = (iv, v) => { if (!iv) return true; const t = diaLocal(v); return !!t && t >= iv[0] && t < iv[1]; };
+
+  const abrir = async s => {
+    seg = s;
+    const tela = P().tela;
+    if (!SN.vst.disponivel()) return SN.casca(tela, SN.vst.semServidorHtml.replace('A Preventiva precisa', 'Esta tela precisa'));
+    SN.casca(tela, SN.carregando('Carregando as atividades…'));
+    try { d = await SN.vst.carregar(); } catch (e) { return SN.casca(tela, `<div class="aviso erro">${esc(e.message)}</div>`); }
+    if (location.hash !== P().href || seg !== s) return;
+    pintar();
+  };
+  SN.rota('/mel/planejamento', () => abrir('MELHORIA'), { tela: 'mel_planejamento' });
+  SN.rota('/ret/planejamento', () => abrir('RETIRADA'), { tela: 'ret_planejamento' });
+  const recarregar = async () => { d = await SN.vst.carregar(true); pintar(); };
+
+  const pintar = () => {
+    const e = E(), pend = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO').length;
+    const abas = [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade'], ['REV', 'Revisão' + (pend ? ` (${pend})` : '')], ['DASH', 'Dashboard']];
+    SN.casca(P().tela, `
+      <div class="cab-pagina"><div><h1>${esc(P().rot)} · Planejamento</h1>
+        <p>Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico. O técnico aponta a produção com fotos; a revisão aprova e a LPU nasce preenchida.</p></div>
+        <button class="btn" id="pAtualizar">⟳ Atualizar</button></div>
+      <div class="abas">${abas.map(([k, r]) => `<button class="aba ${e.aba === k ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>
+      <div id="pCorpo"></div>`);
+    SN.$$('[data-aba]').forEach(b => b.onclick = () => { e.aba = b.dataset.aba; if (e.aba === 'NOVA' && !e.form) e.form = nova(); pintar(); });
+    SN.$('#pAtualizar').onclick = () => recarregar().catch(err => SN.toast(err.message, 'erro'));
+    ({ LISTA: pintarLista, NOVA: pintarForm, REV: pintarRevisao, DASH: pintarDash })[e.aba]();
+  };
+
+  // ═══════════════════════════ Atividades ═══════════════════════════
+  const producaoTxt = r => {
+    const p = VR.producaoProg(r, aps());
+    if (!p.apontamentos) return '<span class="muted">sem apontamento</span>';
+    const t = p.totais, ap = VR.producaoProg(r, aps(), { soAprovados: true }).totais;
+    const txt = retirada() ? `${SN.num(t.metros)} m · ${SN.num(t.ceo)} CEO/CTO${r.metros_previstos ? ` <span class="muted">(de ${SN.num(r.metros_previstos)} m)</span>` : ''}`
+      : `${Object.keys(t.itens).length} serviço(s) · ${SN.num(VR.caboLancado(t.itens))} m de cabo`;
+    const aguard = aps().filter(a => a.id_rota === r.id_rota && a.status_revisao === 'AGUARDANDO_REVISAO').length;
+    return `${txt}<div class="muted">${p.apontamentos} apontamento(s)${p.finalizada ? ' · finalizado' : ''}${aguard ? ` · <b>${aguard} em revisão</b>` : ''}${retirada() ? ` · aprovado ${SN.num(ap.metros)} m` : ''}</div>`;
+  };
+  const pintarLista = () => {
+    const e = E(), f = e.filtro, gestorTotal = ((SN.usuario() || {}).telas || []).includes('*');
+    const todas = f.status === 'CANCELADA' ? (d.prog_canceladas || []).filter(r => r.segmento === seg) : rotas();
+    const iv = SN.intervaloMat(e.periodo.per, e.periodo.ref || hoje());
+    const andamentoFora = f.status === 'CANCELADA' ? [] : todas.filter(r => ['DESPACHADA', 'EM_CAMPO'].includes(r.status) && !noIv(iv, r.data_planejada));
+    const q = SN.normal(f.q);
+    const vis = todas.filter(r => noIv(iv, r.data_planejada) && (!f.status || r.status === f.status)
+      && (!q || SN.normal([r.id_rota, r.cidade, r.regiao, r.pop, r.endereco, r.servico, r.prestador, r.tecnico, r.id_chamado, r.notificacao].join(' ')).includes(q)))
+      .sort((a, b) => String(b.criada_em || b.data_planejada).localeCompare(String(a.criada_em || a.data_planejada)));
+    SN.$('#pCorpo').innerHTML = `
+      <div class="card card-filtros">${SN.htmlPeriodo(e.periodo)}<div class="filtros" style="margin-top:8px">
+        <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(L.status_rota).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
+        <input class="inp busca" id="fQ" placeholder="Buscar (cidade, ${retirada() ? 'endereço' : 'POP'}, prestador, chamado…)" value="${esc(f.q)}">
+        <button class="btn prim" id="bNova">➕ Nova atividade</button></div></div>
+      ${andamentoFora.length ? `<div class="aviso info small" style="margin-bottom:10px">${andamentoFora.length} atividade(s) <b>em andamento</b> com data fora deste período (${andamentoFora.slice(0, 5).map(r => esc(r.id_rota)).join(', ')}). <button class="btn sm" id="bVerAnd">Ver em andamento</button></div>` : ''}
+      <div class="card"><div class="card-tit"><h3>Atividades (${vis.length})</h3></div>
+        ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Atividade</th><th>Onde</th><th>Serviço</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Produção</th><th></th></tr></thead><tbody>
+        ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>
+          <td>${esc(r.cidade || '')}<div class="small muted">${esc(r.regiao || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''}</div><div class="small muted">${esc(r.endereco || '')}</div></td>
+          <td class="small">${esc(r.servico || '')}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}</td>
+          <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
+          <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
+          <td>${SN.vst.badgeRota(r.status)}</td>
+          <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
+          <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
+    SN.ligarPeriodo(pintarLista, e.periodo);
+    if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
+    SN.$('#fSt').onchange = ev => { f.status = ev.target.value; pintarLista(); };
+    SN.$('#fQ').oninput = SN.debounce(ev => { f.q = ev.target.value; pintarLista(); SN.$('#fQ').focus(); }, 300);
+    SN.$('#bNova').onclick = () => { e.form = nova(); e.aba = 'NOVA'; pintar(); };
+    const acao = (sel, fn) => SN.$$(sel).forEach(b => b.onclick = async () => { b.disabled = true; try { await fn(b); } catch (err) { SN.toast(err.message, 'erro'); b.disabled = false; } });
+    acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' });
+      SN.toast(`Atividade despachada: o chamado (conta ${P().conta.slice(-4)}) está na fila do técnico.`, 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
+    acao('[data-ret]', async b => { if (!await SN.confirmar('Retirar despacho', 'A atividade volta a PLANEJADA e o chamado dela é cancelado.', 'Retirar', 'perigo')) { b.disabled = false; return; }
+      await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
+    acao('[data-ex]', async b => { if (!await SN.confirmar('Excluir atividade', 'Excluir esta atividade planejada?', 'Excluir', 'perigo')) { b.disabled = false; return; }
+      await SN.vst.exec('VST_ROTA_EXCLUIR', { id_rota: b.dataset.ex }); SN.toast('Atividade excluída.', 'ok'); await recarregar(); });
+    acao('[data-canc]', async b => {
+      const mot = await SN.pedirTexto('Cancelar atividade ' + b.dataset.canc, 'Ela sai do app do técnico e o chamado é cancelado. Motivo do cancelamento *');
+      if (!mot) { b.disabled = false; return; }
+      await SN.vst.exec('VST_ROTA_CANCELAR', { id_rota: b.dataset.canc, motivo: mot });
+      SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
+    SN.$$('[data-ed]').forEach(b => b.onclick = () => { e.form = JSON.parse(JSON.stringify(rotas().find(r => r.id_rota === b.dataset.ed))); e.aba = 'NOVA'; pintar(); });
+    SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.aba = 'REV'; e.revQ = b.dataset.verrev; pintar(); });
+  };
+
+  // ═══════════════════════════ Nova / editar ═══════════════════════════
+  const nova = () => ({ segmento: seg, cidade: '', endereco: '', pop: '', local_url: '', servico: '', solicitante: '', notificacao: '', metros_previstos: '',
+    prestador: '', tecnico: '', data_planejada: hoje(), data_limite: '', observacao: '' });
+  const conhecidos = k => [...new Set(rotas().map(r => r[k]).filter(Boolean))].sort();
+  const pintarForm = () => {
+    const e = E(), f = e.form || (e.form = nova()), c = cfg(), editando = !!f.id_rota;
+    const cidades = [...new Set(Object.values(c.regioes).flat().concat(conhecidos('cidade')))].sort();
+    SN.$('#pCorpo').innerHTML = `<div class="card">
+      <div class="aviso info small" style="margin-bottom:10px">Conta contábil do chamado: <b>${esc(SN.contaTxt(P().conta))}</b> · classificação ${esc([VR.CHAMADO_PROG[seg].tipo, VR.CHAMADO_PROG[seg].cat1, VR.CHAMADO_PROG[seg].cat2].join(' › '))} · prazo pela data (atividade planejada).</div>
+      <div class="linha-form">
+        <div class="campo"><label>Cidade *</label><input class="inp" data-f="cidade" list="lCid" value="${esc(f.cidade)}"><datalist id="lCid">${cidades.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+          ${f.cidade ? `<div class="small muted">Região: <b>${esc(VR.regiaoDaCidade(f.cidade, c))}</b></div>` : '<div class="small muted">A região sai da cidade (Preventiva → Configurações).</div>'}</div>
+        ${retirada() ? '' : `<div class="campo"><label>POP *</label><input class="inp" data-f="pop" list="lPop" value="${esc(f.pop)}" placeholder="ex.: POP CENTRO"><datalist id="lPop">${conhecidos('pop').map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>`}
+        <div class="campo" style="flex:2"><label>Endereço / local *</label><input class="inp" data-f="endereco" value="${esc(f.endereco)}" placeholder="rua, número, referência ou trecho"></div>
+      </div>
+      <div class="campo"><label>${retirada() ? 'O que retirar *' : 'Serviço de melhoria *'}</label><textarea class="inp" data-f="servico" placeholder="${retirada() ? 'ex.: retirar cabo 12FO desativado entre a CEO 15 e a CEO 18 (operadora X)' : 'ex.: lançar 800 m de cabo 36FO para desafogar o anel do POP'}">${esc(f.servico)}</textarea></div>
+      <div class="linha-form">
+        <div class="campo"><label>${retirada() ? 'Metros previstos' : 'Metros de cabo previstos'}</label><input class="inp" type="number" min="0" data-f="metros_previstos" data-num="1" value="${esc(f.metros_previstos)}"></div>
+        <div class="campo" style="flex:2"><label>Link do local (Google Maps, KMZ no Drive…)</label><input class="inp" data-f="local_url" placeholder="https://…" value="${esc(f.local_url)}"></div>
+      </div>
+      <div class="linha-form">
+        <div class="campo"><label>Solicitante / área</label><input class="inp" data-f="solicitante" list="lSol" value="${esc(f.solicitante)}"><datalist id="lSol">${c.solicitantes.concat(conhecidos('solicitante')).filter((x, i, a) => a.indexOf(x) === i).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
+        <div class="campo"><label>Notificação / Protocolo</label><input class="inp" data-f="notificacao" value="${esc(f.notificacao)}"></div>
+      </div>
+      <div class="linha-form">
+        <div class="campo"><label>Prestador (equipe) *</label><select class="inp" data-f="prestador">${opcoes(empresas(), f.prestador, 'Escolha…')}</select></div>
+        <div class="campo"><label>Técnico</label><select class="inp" data-f="tecnico">${opcoes(tecnicosDe(f.prestador), f.tecnico, f.prestador ? 'Qualquer técnico do prestador' : 'Escolha o prestador')}</select></div>
+        <div class="campo"><label>Data *</label><input class="inp" type="date" data-f="data_planejada" value="${esc(String(f.data_planejada || '').slice(0, 10))}"></div>
+        <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-f="data_limite" min="${esc(String(f.data_planejada || '').slice(0, 10))}" value="${esc(String(f.data_limite || '').slice(0, 10))}">
+          <div class="small muted">Prazo do chamado. Em branco = o próprio dia.</div></div>
+      </div>
+      <div class="campo"><label>Observação</label><textarea class="inp" data-f="observacao">${esc(f.observacao || '')}</textarea></div>
+      <div id="fErros"></div>
+      <div class="acoes"><button class="btn prim" id="bSalvar">💾 Salvar${editando ? '' : ' (planejada)'}</button><button class="btn ok" id="bSalvarDesp">🚀 Salvar e despachar</button><button class="btn" id="bCancelar">Cancelar</button></div></div>`;
+    const erros = () => { const v = VR.validarRota(f); SN.$('#fErros').innerHTML = v.ok ? '' : `<div class="aviso alerta small">${v.erros.map(esc).join('<br>')}</div>`; return v; };
+    erros();
+    SN.$$('[data-f]').forEach(i => {
+      const k = i.dataset.f, ler = () => i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value;
+      i.oninput = () => { f[k] = ler(); erros(); };
+      i.onchange = () => { f[k] = ler(); if (k === 'prestador') f.tecnico = ''; if (['prestador', 'cidade'].includes(k)) setTimeout(pintarForm, 0); else erros(); }; // depois do blur: redesenhar dentro dele quebra o DOM
+    });
+    const salvar = async despachar => {
+      const v = erros(); if (!v.ok) return SN.toast(v.erros[0], 'erro');
+      if (!f.id_rota && !f.chave_cliente) f.chave_cliente = SN.uid() + SN.uid(); // reenvio não duplica
+      const r = await SN.vst.exec('VST_ROTA_SALVAR', { rota: f });
+      if (despachar) await SN.vst.exec('VST_ROTA_STATUS', { id_rota: r.rota.id_rota, para: 'DESPACHADA' });
+      SN.toast(despachar ? `${r.rota.id_rota} despachada: o chamado está na fila do técnico.` : `${r.rota.id_rota} salva (planejada).`, 'ok');
+      if (despachar && SN.sincronizar) SN.sincronizar().catch(() => { });
+      E().form = null; E().aba = 'LISTA'; await recarregar();
+    };
+    SN.$('#bSalvar').onclick = () => salvar(false).catch(err => SN.toast(err.message, 'erro'));
+    SN.$('#bSalvarDesp').onclick = () => salvar(true).catch(err => SN.toast(err.message, 'erro'));
+    SN.$('#bCancelar').onclick = () => { e.form = null; e.aba = 'LISTA'; pintar(); };
+  };
+
+  // ═══════════════════════════ Revisão ═══════════════════════════
+  const fotoUrl = (f, w) => f.drive_id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w${w}` : '';
+  const htmlFotos = a => (L.fotos_prog[seg] || []).map(c => {
+    const fs = (a.fotos || []).filter(f => f.tipo_foto === c.tipo); if (!fs.length) return '';
+    return `<div class="small" style="margin-top:6px"><b>${esc((L.foto(c.tipo) || {}).rot || c.tipo)}</b> (${fs.length})${fs.some(f => f.origem === 'galeria') ? ' <span class="badge">da galeria</span>' : ''}</div>
+      <div class="vst-thumbs">${fs.map(f => `<div class="vst-thumb"><img src="${fotoUrl(f, 240)}" alt="" data-ver="${esc(fotoUrl(f, 1600))}"></div>`).join('')}</div>`;
+  }).join('');
+  const htmlProducao = a => retirada()
+    ? `<b>${SN.num(a.metros)} m</b> de cabo retirados · <b>${SN.num(a.ceo || 0)}</b> CEO/CTO`
+    : (VR.itensProg(a).length ? `<table class="tab small" style="margin-top:4px"><tbody>${VR.itensProg(a).map(i => { const it = SN.itemLpu(i.cod) || {};
+      return `<tr><td class="mono">${esc(i.cod)}</td><td>${esc(it.desc || '')}</td><td class="num nowrap">${SN.num(i.qtd)} ${esc(it.medida || '')}</td></tr>`; }).join('')}</tbody></table>` : '<span class="muted">sem serviço (fechamento)</span>');
+  const cartao = (a, revisada) => { const r = rotas().find(x => x.id_rota === a.id_rota) || {};
+    return `<div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b class="mono">${esc(a.id_rota)}</b> · ${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? '<span class="badge verde">Finalizado</span>' : '<span class="badge">Parcial</span>'}
+        ${a.refeitas ? '<span class="badge alerta">Refeito após rejeição</span>' : ''}
+        <div class="small muted">${esc(r.cidade || a.cidade || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''} · ${esc(r.endereco || '')} · ${esc(a.tecnico || '')} (${esc(a.prestador || '')}) · enviado ${SN.dt(a.enviado_em)}</div>
+        <div class="small">${esc(r.servico || '')}</div></div>
+        <div>${SN.vst.badgeVistoria(a.status_revisao)}</div></div>
+      <div style="margin-top:6px">${htmlProducao(a)}</div>
+      ${a.observacao ? `<div class="small" style="margin-top:4px">Obs.: ${esc(a.observacao)}</div>` : ''}
+      ${htmlFotos(a)}
+      ${a.status_revisao === 'REJEITADA' ? `<div class="aviso erro small" style="margin-top:6px">Rejeitado por ${esc(a.revisor || '')}: ${(a.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ')}${a.motivo_rejeicao_texto ? ' — ' + esc(a.motivo_rejeicao_texto) : ''}</div>` : ''}
+      <div class="acoes" style="margin-top:8px">${revisada ? `<span class="small muted">${esc(a.revisor || '')} · ${SN.dt(a.data_revisao)}</span> <button class="btn sm" data-reabrir="${esc(a.id_apontamento)}">↺ Reabrir</button>`
+        : `<button class="btn ok" data-aprovar="${esc(a.id_apontamento)}">✔ Aprovar</button><button class="btn perigo" data-rejeitar="${esc(a.id_apontamento)}">✖ Rejeitar</button>`}</div></div>`; };
+  const pintarRevisao = () => {
+    const e = E(), q = SN.normal(e.revQ), todos = aps();
+    const filtra = a => { const r = rotas().find(x => x.id_rota === a.id_rota) || {}; return !q || SN.normal([a.id_rota, a.tecnico, a.prestador, r.cidade, r.pop, r.endereco, r.id_chamado].join(' ')).includes(q); };
+    const fila = todos.filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && filtra(a)).sort((a, b) => String(a.enviado_em).localeCompare(String(b.enviado_em)));
+    const revis = todos.filter(a => ['APROVADA', 'REJEITADA'].includes(a.status_revisao) && filtra(a)).sort((a, b) => String(b.data_revisao).localeCompare(String(a.data_revisao))).slice(0, 30);
+    SN.$('#pCorpo').innerHTML = `<div class="card card-filtros"><div class="filtros"><input class="inp busca" id="rQ" placeholder="Buscar (atividade, técnico, cidade…)" value="${esc(e.revQ)}"></div></div>
+      <h3 style="margin:12px 0 8px">Aguardando revisão (${fila.length})</h3>
+      ${fila.length ? fila.map(a => cartao(a, false)).join('') : '<p class="muted">Nada aguardando revisão.</p>'}
+      <details style="margin-top:12px"><summary><b>Revisados (últimos ${revis.length})</b></summary><div style="margin-top:8px">${revis.map(a => cartao(a, true)).join('') || '<p class="muted">Nenhum.</p>'}</div></details>`;
+    SN.$('#rQ').oninput = SN.debounce(ev => { e.revQ = ev.target.value; pintarRevisao(); SN.$('#rQ').focus(); }, 300);
+    SN.$$('[data-aprovar]').forEach(b => b.onclick = async () => { b.disabled = true;
+      try { await SN.vst.exec('VST_REVISAR', { id_apontamento: b.dataset.aprovar, decisao: 'APROVADA' }); SN.toast('Apontamento aprovado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); }
+      catch (err) { b.disabled = false; SN.toast(err.message, 'erro'); } });
+    SN.$$('[data-rejeitar]').forEach(b => b.onclick = async () => {
+      const res = await SN.modal({ titulo: 'Rejeitar apontamento', corpo: `<p class="small">O técnico vê o motivo e refaz o apontamento.</p>
+        <div class="chips" id="mMot">${L.motivos_rejeicao.map(([k, r]) => `<label class="chip"><input type="checkbox" value="${k}"> ${esc(r)}</label>`).join('')}</div>
+        <div class="campo" style="margin-top:8px"><label>Explique (obrigatório em "Outro")</label><textarea class="inp" id="mTxt"></textarea></div>`,
+        botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Rejeitar', cls: 'perigo', acao: m => {
+          const motivos = SN.$$('#mMot input:checked', m).map(i => i.value), texto = SN.$('#mTxt', m).value.trim();
+          const v = VR.validarRevisao({ decisao: 'REJEITADA', motivos, motivo_texto: texto }); if (!v.ok) { SN.toast(v.erros[0], 'erro'); return false; }
+          return { motivos, texto }; } }] });
+      if (!res) return;
+      try { await SN.vst.exec('VST_REVISAR', { id_apontamento: b.dataset.rejeitar, decisao: 'REJEITADA', motivos: res.motivos, motivo_texto: res.texto }); SN.toast('Apontamento rejeitado.', 'ok'); await recarregar(); }
+      catch (err) { SN.toast(err.message, 'erro'); } });
+    SN.$$('[data-reabrir]').forEach(b => b.onclick = async () => {
+      const mot = await SN.pedirTexto('Reabrir revisão', 'Motivo (volta para "aguardando revisão"; se o chamado já tinha concluído, volta para em campo) *');
+      if (!mot) return;
+      try { await SN.vst.exec('VST_REABRIR', { id_apontamento: b.dataset.reabrir, motivo: mot }); SN.toast('Revisão reaberta.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); }
+      catch (err) { SN.toast(err.message, 'erro'); } });
+  };
+
+  // ═══════════════════════════ Dashboard ═══════════════════════════
+  // Produção: apontamentos APROVADOS com data no período (base do pagamento).
+  // Valor atingido: LPUs da conta do programa no período (lançado = tudo menos reprovada;
+  // aprovado = contabilizada / em pagamento / paga), pela data de conclusão do chamado,
+  // como no Portal. Por região/cidade/POP só entra a LPU dos chamados destas atividades.
+  const APROV = ['CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'];
+  const dataLpu = l => { const c = SN.db.chamados.find(x => x.id === l.chamadoId); return (c && c.tempos && c.tempos.conclusaoTecnica) || l.enviadoEm || l.criadoEm; };
+  const tabela = (cab, linhas) => linhas.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr>${cab.map(([t, num]) => `<th class="${num ? 'num' : ''}">${t}</th>`).join('')}</tr></thead><tbody>${linhas.join('')}</tbody></table></div>` : '<p class="muted small">Sem dados no período.</p>';
+  const pintarDash = () => {
+    const e = E(), iv = SN.intervaloMat(e.dash.per, e.dash.ref || hoje()), conta = SN.conta(P().conta) || { codigo: P().conta, nome: '', budget: 0 };
+    const rm = {}; rotas().forEach(r => { rm[r.id_rota] = r; });
+    const aprov = aps().filter(a => a.status_revisao === 'APROVADA' && rm[a.id_rota] && noIv(iv, a.data));
+    const emRev = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && rm[a.id_rota] && noIv(iv, a.data)).length;
+    const chRota = {}; rotas().forEach(r => { if (r.id_chamado) chRota[r.id_chamado] = r; });
+    const lpus = SN.db.lpus.filter(l => l.cab && l.cab.conta === conta.codigo && l.status !== 'REPROVADA' && noIv(iv, dataLpu(l)));
+    const lanc = lpus.reduce((s, l) => s + SN.valorLpu(l), 0), aprovado = lpus.filter(l => APROV.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
+    const doProg = lpus.filter(l => chRota[l.chamadoId]), outros = lanc - doProg.reduce((s, l) => s + SN.valorLpu(l), 0);
+    const budget = Number(conta.budget) || 0, pctMes = budget && e.dash.per === 'mes' ? Math.round(1000 * lanc / budget) / 10 : null;
+    // Estimado pelo aprovado na revisão (quantidade × valor de referência da LPU), útil antes de a LPU ser lançada.
+    const estimar = itens => Object.entries(itens).reduce((s, [cod, q]) => s + (Number(q) || 0) * ((SN.itemLpu(cod) || {}).valor || 0), 0);
+    const grupos = chave => { const g = {};
+      const novo = () => ({ ativ: new Set(), concl: new Set(), metros: 0, ceo: 0, itens: {}, cidades: new Set(), regioes: new Set(), valor: 0 });
+      aprov.forEach(a => { const r = rm[a.id_rota], k = chave(r) || '(sem)', o = g[k] = g[k] || novo();
+        o.ativ.add(r.id_rota); if (r.status === 'CONCLUIDA') o.concl.add(r.id_rota); o.cidades.add(r.cidade); o.regioes.add(r.regiao || '');
+        if (retirada()) { o.metros += Number(a.metros) || 0; o.ceo += Number(a.ceo) || 0; }
+        else VR.itensProg(a).forEach(i => { o.itens[i.cod] = (o.itens[i.cod] || 0) + i.qtd; }); });
+      doProg.forEach(l => { const r = chRota[l.chamadoId], k = chave(r) || '(sem)', o = g[k] = g[k] || novo(); o.valor += SN.valorLpu(l); o.cidades.add(r.cidade); o.regioes.add(r.regiao || ''); });
+      return Object.entries(g).map(([k, o]) => ({ k, ...o, cabo: VR.caboLancado(o.itens), estimado: retirada() ? estimar({ SEV0018: o.metros, SEV0019: o.ceo }) : estimar(o.itens) }))
+        .sort((a, b) => (retirada() ? b.metros - a.metros : b.cabo - a.cabo) || b.valor - a.valor); };
+    const tot = grupos(() => 'total')[0] || { metros: 0, ceo: 0, cabo: 0, ativ: new Set(), concl: new Set(), estimado: 0, itens: {} };
+    const kpi = (rot, val, sub) => `<div class="kpi"><div class="rot">${rot}</div><div class="val">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    const valorTd = o => `<td class="num nowrap">${SN.brl(o.valor)}</td><td class="num nowrap muted">${SN.brl(o.estimado)}</td>`;
+    SN.$('#pCorpo').innerHTML = `
+      <div class="card card-filtros">${SN.htmlPeriodo(e.dash)}</div>
+      <div class="kpis-fin" style="margin:12px 0">
+        ${retirada() ? kpi('Cabo retirado', SN.num(Math.round(tot.metros)) + ' m', 'aprovado na revisão') + kpi('CEO/CTO retiradas', SN.num(tot.ceo), 'aprovadas na revisão')
+          : kpi('Cabo lançado', SN.num(Math.round(tot.cabo)) + ' m', 'itens de lançamento aprovados') + kpi('POPs atendidos', SN.num(grupos(r => r.pop).filter(x => x.k !== '(sem)').length), SN.num(grupos(r => r.cidade).length) + ' cidade(s)')}
+        ${kpi('Atividades com produção', SN.num(tot.ativ.size), `${SN.num(tot.concl.size)} concluída(s)${emRev ? ' · ' + emRev + ' apontamento(s) em revisão' : ''}`)}
+        ${kpi('Valor atingido na conta', SN.brl(lanc), `aprovado ${SN.brl(aprovado)}${budget ? ` · budget ${SN.brl(budget)}${pctMes != null ? ' (' + SN.num(pctMes) + '%)' : ''}` : ''}`)}
+      </div>
+      <div class="card" style="margin-bottom:12px"><h3>Conta ${esc(SN.contaTxt(conta.codigo))}</h3>
+        ${budget && pctMes != null ? `<div class="gauge ${pctMes > 100 ? 'erro' : pctMes > 80 ? 'alerta' : ''}" style="margin:6px 0"><div style="width:${Math.min(100, pctMes)}%"></div></div>` : ''}
+        <p class="small">Lançado no período: <b>${SN.brl(lanc)}</b> · aprovado (contabilizado/pago): <b>${SN.brl(aprovado)}</b>${budget ? ` · budget mensal ${SN.brl(budget)}` : ' · conta sem budget cadastrado'}.
+          ${outros > 0.005 ? `<br><span class="muted">Desse valor, ${SN.brl(outros)} vem de outros chamados lançados nesta conta (fora das atividades desta tela).</span>` : ''}
+          <br><span class="muted">"Estimado" = quantidade aprovada × valor de referência da LPU (vale antes de a LPU ser lançada; o valor real é o da LPU).</span></p></div>
+      ${retirada() ? `
+      <div class="card" style="margin-bottom:12px"><h3>Por região</h3>
+        ${tabela([['Região'], ['Cidades'], ['Atividades', 1], ['Cabo retirado (m)', 1], ['CEO/CTO', 1], ['Valor LPU', 1], ['Estimado', 1]],
+          grupos(r => r.regiao).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.cidades].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.metros))}</td><td class="num">${SN.num(o.ceo)}</td>${valorTd(o)}</tr>`))}</div>
+      <div class="card"><h3>Por cidade</h3>
+        ${tabela([['Cidade'], ['Região'], ['Atividades', 1], ['Cabo retirado (m)', 1], ['CEO/CTO', 1], ['Valor LPU', 1], ['Estimado', 1]],
+          grupos(r => r.cidade).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.metros))}</td><td class="num">${SN.num(o.ceo)}</td>${valorTd(o)}</tr>`))}</div>`
+      : `
+      <div class="card" style="margin-bottom:12px"><h3>Por POP</h3>
+        ${tabela([['POP'], ['Cidade'], ['Região'], ['Atividades', 1], ['Cabo lançado (m)', 1], ['Valor LPU', 1], ['Estimado', 1]],
+          grupos(r => r.pop).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.cidades].filter(Boolean).map(esc).join(', ')}</td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.cabo))}</td>${valorTd(o)}</tr>`))}</div>
+      <div class="card" style="margin-bottom:12px"><h3>Por cidade</h3>
+        ${tabela([['Cidade'], ['Região'], ['POPs'], ['Atividades', 1], ['Cabo lançado (m)', 1], ['Valor LPU', 1], ['Estimado', 1]],
+          grupos(r => r.cidade).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="small">${esc([...new Set(aprov.filter(a => rm[a.id_rota].cidade === o.k).map(a => rm[a.id_rota].pop))].filter(Boolean).join(', '))}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.cabo))}</td>${valorTd(o)}</tr>`))}</div>
+      <div class="card"><h3>Serviços aprovados</h3>
+        ${tabela([['Item'], ['Serviço'], ['Quantidade', 1], ['Estimado', 1]],
+          Object.entries(tot.itens).sort((a, b) => b[1] - a[1]).map(([cod, q]) => { const it = SN.itemLpu(cod) || {};
+            return `<tr><td class="mono">${esc(cod)}</td><td>${esc(it.desc || '')}${VR.LPU_CABO_LANCADO.includes(cod) ? ' <span class="badge verde">cabo lançado</span>' : ''}</td><td class="num nowrap">${SN.num(q)} ${esc(it.medida || '')}</td><td class="num nowrap">${SN.brl(q * (it.valor || 0))}</td></tr>`; }))}</div>`}`;
+    SN.ligarPeriodo(pintarDash, e.dash);
+  };
+
+  // Menu lateral: um grupo próprio (fora da Preventiva).
+  SN.MENU.push({ grupo: 'Melhoria e Retirada' },
+    { tela: 'mel_planejamento', rot: 'Melhoria de rede', ico: '🛠️', href: '#/mel/planejamento' },
+    { tela: 'ret_planejamento', rot: 'Retirada de cabo', ico: '✂️', href: '#/ret/planejamento' });
+})();

@@ -162,7 +162,7 @@ SN.detalheLpu = id => {
   const chPrev = (SN.db.chamados.find(x => x.id === l.chamadoId) || {}).preventiva;
   const corpo = () => `
     ${SN.htmlCabecalho(l.cab)}
-    ${chPrev && chPrev.lpu_sugerida ? `<div class="aviso info small">🧭 Preventiva ${SN.esc(chPrev.id_rota)} — aprovado na revisão: <b>${SN.vst.resumoAprovado(chPrev, true)}</b>.</div>` : ''}
+    ${chPrev && chPrev.lpu_sugerida ? `<div class="aviso info small">🧭 ${SN.esc(SN.vst.nomePrev(chPrev))} ${SN.esc(chPrev.id_rota)} — aprovado na revisão: <b>${SN.vst.resumoAprovado(chPrev, true)}</b>.</div>` : ''}
     ${l.motivoReprovacao ? `<div class="aviso erro small">Última reprovação: ${SN.esc(l.motivoReprovacao)}</div>` : ''}
     ${hh ? SN.htmlHoraHomem(hh) : ''}
     <h4>Serviços</h4>

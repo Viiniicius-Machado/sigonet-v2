@@ -261,17 +261,18 @@
     // Cadastro de Fibra (fusão / emenda aberta) pelo fluxo normal do chamado.
     const fib = c ? SN.db.fibras.find(f => f.chamadoId === c.id) : null;
     const podeFib = podeMat && typeof TIPOS_COM_FIBRA !== 'undefined' && TIPOS_COM_FIBRA.includes(c.tipo);
+    const apos = r.segmento === 'AEREA' || VR.ehProg(r) ? 'após o 1º apontamento' : 'após a 1ª CS';
     const comEmenda = Object.values(slots || {}).filter(s => s.dados && s.dados.emenda_aberta === 'sim').map(s => 'CS ' + s.ordem);
     return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
         <div><b>OS ${esc(r.id_chamado)}</b><div class="small muted">Apontamentos e cobrança pelo fluxo normal</div></div>${c ? SN.badgeStatus(c.status) : ''}</div>
       <div class="modulos vst-modulos" style="margin-top:10px">
         <div class="modulo" data-os="#/tec/os/${esc(r.id_chamado)}"><span class="ico">📋</span>OS<span class="st">abrir</span></div>
         <div class="modulo ${mat ? 'feito' : ''} ${podeMat ? '' : 'bloq'}" ${podeMat ? `data-os="#/tec/mat/${esc(r.id_chamado)}/${papel}"` : ''}><span class="ico">📦</span>Materiais
-          <span class="st">${mat ? esc(SN.MAT_STATUS[mat.status].rot) : podeMat ? 'apontar uso' : 'após a 1ª CS'}</span></div>
+          <span class="st">${mat ? esc(SN.MAT_STATUS[mat.status].rot) : podeMat ? 'apontar uso' : apos}</span></div>
         <div class="modulo ${lpu ? 'feito' : ''} ${lpuLiberada && papel ? '' : 'bloq'}" ${lpuLiberada && papel ? `data-os="#/tec/lpu/${esc(r.id_chamado)}/${papel}"` : ''}><span class="ico">📄</span>LPU
           <span class="st">${lpu ? esc(SN.LPU_STATUS[lpu.status].rot) : lpuLiberada ? 'conferir e enviar' : 'após aprovação'}</span></div>
         <div class="modulo ${fib ? 'feito' : ''} ${podeFib ? '' : 'bloq'}" ${podeFib ? `data-os="#/tec/fibra/${esc(r.id_chamado)}"` : ''}><span class="ico">🧵</span>Fibra
-          <span class="st">${fib ? esc(SN.FIB_STATUS[fib.status].rot) : podeFib ? 'se houve fusão' : 'após a 1ª CS'}</span></div>
+          <span class="st">${fib ? esc(SN.FIB_STATUS[fib.status].rot) : podeFib ? 'se houve fusão' : apos}</span></div>
         ${SN.conversa && SN.conversa.disponivel() ? `<div class="modulo" data-conversa="${esc(r.id_chamado)}"><span class="ico">💬</span>Conversa<span class="st">falar com a gestão<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span></span></div>` : ''}
       </div>
       ${comEmenda.length && !fib ? `<div class="aviso alerta small" style="margin-top:8px">Emenda aberta em ${comEmenda.join(', ')}: registre o <b>Cadastro de Fibra</b> do que foi executado.</div>` : ''}</div>`;

@@ -233,6 +233,9 @@ const MATRIZ_SLA = [
   {tipo:"Medição",cat1:"Retirada Equipamento",cat2:"Retirada Não Realizada",cat3:"",cat4:"",sla:24},
   {tipo:"Medição",cat1:"Retirada Equipamento",cat2:"Retirada Pendente",cat3:"",cat4:"",sla:24},
   {tipo:"Medição",cat1:"Regularização de rede",cat2:"",cat3:"",cat4:"",sla:24},
+  // Atividades programadas (telas Melhoria / Retirada · Planejamento, 2026-10-09): prazo pela data planejada.
+  {tipo:"Melhoria",cat1:"Melhoria de Rede",cat2:"Melhoria Planejada",cat3:"",cat4:"",sla:24},
+  {tipo:"Retirada",cat1:"Retirada de Cabo",cat2:"Retirada Planejada",cat3:"",cat4:"",sla:24},
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Diurno",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Noturno",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Subterrâneo",cat3:"",cat4:"",sla:48},

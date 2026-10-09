@@ -218,7 +218,7 @@ var VR = (function () {
     var vist = {}; (vistorias || []).forEach(function (v) { if (v.id_rota === rota.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO') vist[v.id_cs] = v.status_revisao; });
     var removidas = antes.filter(function (id) { return novas.indexOf(id) < 0; }), adicionadas = novas.filter(function (id) { return antes.indexOf(id) < 0; });
     var presas = removidas.filter(function (id) { return vist[id]; });
-    if (!rota || rota.segmento === 'AEREA') erros.push('Só rota subterrânea tem CS.');
+    if (!rota || rota.segmento === 'AEREA' || R.ehProg(rota)) erros.push('Só rota subterrânea tem CS.');
     else if (['DESPACHADA', 'EM_CAMPO'].indexOf(rota.status) < 0) erros.push('Só dá para mexer nas CS de rota despachada ou em campo (esta está ' + (rota.status || '?') + ').');
     if (!novas.length) erros.push('A rota precisa de pelo menos uma CS (para tirar tudo, use Cancelar).');
     if (novas.some(function (id, i) { return novas.indexOf(id) !== i; })) erros.push('CS repetida na lista.');
@@ -474,6 +474,7 @@ var VR = (function () {
   R.validarRota = function (r) {
     r = r || {};
     if (r.segmento === 'AEREA') return R.validarRotaAerea(r);
+    if (R.ehProg(r)) return R.validarRotaProg(r);
     var erros = [];
     if (vazio(r.cidade)) erros.push('Informe a cidade.');
     if (vazio(r.cluster)) erros.push('Escolha o cluster.');
@@ -816,6 +817,7 @@ var VR = (function () {
   // Classificação do chamado pela linha da matriz oficial (todas SLA 8 h).
   R.classificacaoRota = function (rota) {
     var base = R.CHAMADO_PREVENTIVA;
+    if (R.ehProg(rota)) return R.CHAMADO_PROG[rota.segmento];
     if (!rota || rota.segmento !== 'AEREA') return base;
     var m = R.normCidade(rota.motivo);
     var cat = { tipo: 'Preventiva', cat1: 'Preventiva de Rede', cat2: 'Preventiva Rede (Externa)', slaHoras: 8, conta: base.conta };
@@ -928,6 +930,97 @@ var VR = (function () {
     return { pronto: rota.status === 'CONCLUIDA' && p.finalizada && pendentes === 0, pendentes: pendentes, totais: p.totais, lpu_sugerida: lpu };
   };
   R.LPU_AEREA = { metros: 'SEV0083', plaquetas: 'SEV0005', cordoalha: 'SEV0009', caixas: 'SEV0084' };
+
+  // ═══════════════════════ Atividades programadas: Melhoria / Retirada ═══════════════════════
+  // Pedido do usuário (2026-10-09): assuntos separados da Preventiva, cada um com a sua
+  // conta contábil. Melhoria → 3.1.1.2.05.0103 Serviços de Melhoria de REDE;
+  // Retirada → 3.1.1.2.05.0102 Serviços de Retirada. Classificação = linhas próprias da
+  // matriz (catalogos.js: tipos "Melhoria" e "Retirada"). Prazo planejado (sem SLA em horas).
+  R.ehProg = function (r) { return !!r && !!L.programas[r.segmento]; };
+  R.ehSubOuNada = function (r) { return !!r && r.segmento !== 'AEREA' && !R.ehProg(r); }; // subterrânea (rota antiga sem segmento conta)
+  R.CHAMADO_PROG = {
+    MELHORIA: { tipo: 'Melhoria', cat1: 'Melhoria de Rede', cat2: 'Melhoria Planejada', slaHoras: 24, conta: L.programas.MELHORIA.conta },
+    RETIRADA: { tipo: 'Retirada', cat1: 'Retirada de Cabo', cat2: 'Retirada Planejada', slaHoras: 24, conta: L.programas.RETIRADA.conta }
+  };
+  R.validarRotaProg = function (r) {
+    var erros = [];
+    if (!L.programas[r.segmento]) erros.push('Programa inválido.');
+    if (vazio(r.cidade)) erros.push('Informe a cidade.');
+    if (vazio(r.endereco)) erros.push('Informe o endereço / local.');
+    if (r.segmento === 'MELHORIA' && vazio(r.pop)) erros.push('Informe o POP atendido pela melhoria.');
+    if (vazio(r.servico)) erros.push(r.segmento === 'RETIRADA' ? 'Descreva o que retirar (cabo, trecho, operadora…).' : 'Descreva o serviço de melhoria.');
+    if (!vazio(r.metros_previstos) && (!numero(r.metros_previstos) || Number(r.metros_previstos) < 0)) erros.push('Metros previstos inválidos.');
+    if (vazio(r.prestador)) erros.push('Escolha o prestador (equipe).');
+    if (R.ms(r.data_planejada) == null) erros.push('Informe a data.');
+    validarLimite(r, erros);
+    if (!vazio(r.local_url) && !/^https?:\/\//i.test(String(r.local_url))) erros.push('O link do local precisa começar com http:// ou https://.');
+    return { ok: !erros.length, erros: erros };
+  };
+  var itensProg = function (a) {
+    return ((a && a.itens) || []).filter(function (i) { return i && !vazio(i.cod); }).map(function (i) { return { cod: String(i.cod).trim(), qtd: n0(i.qtd) }; });
+  };
+  R.itensProg = itensProg;
+  // Itens de LPU que contam como "cabo lançado" no Dashboard da Melhoria (todos por metro).
+  R.LPU_CABO_LANCADO = ['SEV0006', 'SEV0008', 'SEV0011', 'SEV0012', 'SEV0013', 'SEV0014', 'SEV0015', 'SEV0016', 'SEV0017'];
+  R.caboLancado = function (itens) { var s = 0; Object.keys(itens || {}).forEach(function (k) { if (R.LPU_CABO_LANCADO.indexOf(k) >= 0) s += n0(itens[k]); }); return Math.round(s * 100) / 100; };
+  R.validarApontamentoProg = function (a, seg) {
+    a = a || {}; var erros = [];
+    if (vazio(a.id_apontamento)) erros.push('Apontamento sem identificação.');
+    if (vazio(a.id_rota)) erros.push('Apontamento sem atividade.');
+    if (['parcial', 'final'].indexOf(a.tipo) < 0) erros.push('Escolha Parcial ou Finalizado.');
+    if (R.ms(a.data) == null) erros.push('Informe a data do apontamento.');
+    if (seg === 'RETIRADA') {
+      if (!numero(a.metros) || Number(a.metros) < 0) erros.push('Informe os metros de cabo retirados (0 se não retirou).');
+      if (!inteiroNaoNeg(a.ceo === '' || a.ceo == null ? 0 : a.ceo)) erros.push('Número inválido em CEO/CTO.');
+      if (a.tipo === 'parcial' && !(Number(a.metros) > 0) && !(Number(a.ceo) > 0)) erros.push('Apontamento parcial sem produção.');
+    } else if (seg === 'MELHORIA') {
+      var its = itensProg(a), cods = its.map(function (i) { return i.cod; });
+      if (its.some(function (i) { return !/^SEV\d+[a-z]?$/i.test(i.cod); })) erros.push('Item de LPU inválido.');
+      if (its.some(function (i) { return !(i.qtd > 0); })) erros.push('Informe a quantidade de cada serviço.');
+      if (cods.some(function (c, i) { return cods.indexOf(c) !== i; })) erros.push('Serviço repetido na lista.');
+      if (a.tipo === 'parcial' && !its.length) erros.push('Apontamento parcial sem serviço.');
+    } else erros.push('Atividade de tipo desconhecido.');
+    return { ok: !erros.length, erros: erros };
+  };
+  // Fotos obrigatórias por apontamento. Retirada: antes e depois (1 cada), cabo
+  // recolhido/bobina (1, se houver metros) e 1 por CEO/CTO. Melhoria: antes e depois.
+  R.fotosExigidasProg = function (a, seg) {
+    a = a || {};
+    if (seg === 'RETIRADA') return { ret_antes: 1, ret_depois: 1, ret_cabo: n0(a.metros) > 0 ? 1 : 0, ret_ceo: Math.max(0, Math.ceil(n0(a.ceo))) };
+    return { mel_antes: 1, mel_depois: 1, mel_servico: 0 };
+  };
+  R.validarFotosProg = function (a, seg) {
+    var ex = R.fotosExigidasProg(a, seg), erros = [], itens = [];
+    (L.fotos_prog[seg] || []).forEach(function (c) {
+      var tem = ((a && a.fotos) || []).filter(function (f) { return f.tipo_foto === c.tipo; }).length, rot = (L.foto(c.tipo) || {}).rot || c.tipo;
+      itens.push({ tipo: c.tipo, rot: rot, regra: c.regra, exigidas: ex[c.tipo] || 0, tem: tem });
+      if (tem < (ex[c.tipo] || 0)) erros.push(rot + ': faltam ' + (ex[c.tipo] - tem) + ' foto(s) (' + tem + ' de ' + ex[c.tipo] + ').');
+    });
+    return { ok: !erros.length, erros: erros, itens: itens };
+  };
+  // Soma da produção da atividade (opcoes.soAprovados: só o que a revisão aprovou).
+  R.producaoProg = function (rota, apontamentos, opcoes) {
+    var so = opcoes && opcoes.soAprovados;
+    var lista = (apontamentos || []).filter(function (a) { return a.id_rota === rota.id_rota && a.status_revisao !== 'REJEITADA' && (!so || a.status_revisao === 'APROVADA'); });
+    var t = { metros: 0, ceo: 0, itens: {} };
+    lista.forEach(function (a) {
+      t.metros += n0(a.metros); t.ceo += n0(a.ceo);
+      itensProg(a).forEach(function (i) { t.itens[i.cod] = Math.round(((t.itens[i.cod] || 0) + i.qtd) * 100) / 100; });
+    });
+    t.metros = Math.round(t.metros * 100) / 100;
+    var final = lista.filter(function (a) { return a.tipo === 'final'; })[0] || null;
+    var prev = n0(rota.metros_previstos);
+    return { totais: t, apontamentos: lista.length, finalizada: !!final, final: final, pct: rota.segmento === 'RETIRADA' && prev ? Math.round(1000 * t.metros / prev) / 10 : null };
+  };
+  // LPU sugerida = só o que foi aprovado. Pronto = finalizada e nada pendente de revisão.
+  R.resumoChamadoProg = function (rota, apontamentos) {
+    var daRota = (apontamentos || []).filter(function (a) { return a.id_rota === rota.id_rota; });
+    var pendentes = daRota.filter(function (a) { return a.status_revisao !== 'REJEITADA' && a.status_revisao !== 'APROVADA'; }).length;
+    var p = R.producaoProg(rota, daRota, { soAprovados: true }), lpu = {};
+    if (rota.segmento === 'RETIRADA') L.producao_retirada.forEach(function (c) { lpu[c.lpu] = p.totais[c.k]; });
+    else Object.keys(p.totais.itens).forEach(function (k) { lpu[k] = p.totais.itens[k]; });
+    return { pronto: rota.status === 'CONCLUIDA' && p.finalizada && pendentes === 0, pendentes: pendentes, totais: p.totais, lpu_sugerida: lpu };
+  };
 
   // ─────────── KPIs da aérea ───────────
   var mesDe = function (v) { var t = R.ms(v); return t == null ? '' : new Date(t).toISOString().slice(0, 7); };

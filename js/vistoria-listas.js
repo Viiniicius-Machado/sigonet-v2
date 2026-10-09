@@ -82,6 +82,14 @@ var VR_LISTAS = (function () {
     { tipo: 'aerea_plaquetas', n: 0, rot: 'Plaquetas', multipla: true },
     { tipo: 'aerea_caixas',   n: 0,  rot: 'Caixas/CEO regularizadas', multipla: true },
     { tipo: 'aerea_sobra',    n: 0,  rot: 'Sobra técnica', multipla: true },
+    // Melhoria de rede e Retirada de cabo (atividades programadas, telas próprias).
+    { tipo: 'ret_antes',      n: 0,  rot: 'Antes da retirada', multipla: true },
+    { tipo: 'ret_depois',     n: 0,  rot: 'Depois da retirada (trecho sem o cabo)', multipla: true },
+    { tipo: 'ret_cabo',       n: 0,  rot: 'Cabo recolhido / bobina', multipla: true },
+    { tipo: 'ret_ceo',        n: 0,  rot: 'CEO/CTO retiradas', multipla: true },
+    { tipo: 'mel_antes',      n: 0,  rot: 'Antes do serviço', multipla: true },
+    { tipo: 'mel_depois',     n: 0,  rot: 'Depois do serviço', multipla: true },
+    { tipo: 'mel_servico',    n: 0,  rot: 'Outras fotos do serviço', multipla: true },
     // PDF de controle (ficha da CS / do apontamento): vai pela mesma fila das fotos, não aparece como campo.
     { tipo: 'ficha_pdf',      n: 0,  rot: 'Ficha PDF de controle', pdf: true }
   ];
@@ -99,6 +107,26 @@ var VR_LISTAS = (function () {
     { k: 'caixas', rot: 'Caixas/CEO regularizadas', un: '', foto: 'aerea_caixas', regra: '1 foto por caixa/CEO' },
     { k: 'sobra', rot: 'Sobra técnica', un: '', foto: 'aerea_sobra', regra: '1 foto por sobra' }
   ];
+
+  // ─────────── Atividades programadas (fora da Preventiva) ───────────
+  // Usam o mesmo motor da Preventiva no servidor (aba ROTAS, apontamentos em
+  // PRODUCAO, fotos, revisão, chamado e LPU), mas têm telas e permissões próprias
+  // e não aparecem em nenhuma tela da Preventiva. Cada uma tem a sua conta contábil.
+  L.programas = {
+    MELHORIA: { rot: 'Melhoria de rede', curto: 'Melhoria', tela: 'mel_planejamento', href: '#/mel/planejamento', pref: 'MEL', conta: '3.1.1.2.05.0103' },
+    RETIRADA: { rot: 'Retirada de cabo', curto: 'Retirada', tela: 'ret_planejamento', href: '#/ret/planejamento', pref: 'RET', conta: '3.1.1.2.05.0102' }
+  };
+  // Retirada: o que o técnico aponta e o item de LPU de cada quantidade.
+  L.producao_retirada = [
+    { k: 'metros', rot: 'Cabo retirado (m)', un: 'm', lpu: 'SEV0018' },
+    { k: 'ceo', rot: 'CEO/CTO retiradas', un: '', lpu: 'SEV0019' }
+  ];
+  // Fotos de cada apontamento (regra em VR.fotosExigidasProg).
+  L.fotos_prog = {
+    RETIRADA: [{ tipo: 'ret_antes', regra: 'mínimo 1' }, { tipo: 'ret_depois', regra: 'mínimo 1' },
+      { tipo: 'ret_cabo', regra: '1 foto quando houver metros' }, { tipo: 'ret_ceo', regra: '1 foto por CEO/CTO' }],
+    MELHORIA: [{ tipo: 'mel_antes', regra: 'mínimo 1' }, { tipo: 'mel_depois', regra: 'mínimo 1' }, { tipo: 'mel_servico', regra: 'opcional' }]
+  };
 
   // ─────────── Revisão ───────────
   L.motivos_rejeicao = [['foto_faltando', 'Foto obrigatória faltando'], ['foto_ilegivel', 'Foto ilegível ou escura'],

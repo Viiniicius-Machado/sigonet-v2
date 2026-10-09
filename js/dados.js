@@ -36,7 +36,7 @@ const SEED_CONTAS = [] /* versão pública: vem da planilha do servidor */;
 const CONTA_PADRAO_POR_TIPO = {
   'Manutenção': '3.1.1.2.05.0008', 'Preventiva': '3.1.1.2.05.0101', 'Implantação': '3.1.1.2.05.0005',
   'Transmissão': '3.1.1.2.05.0103', 'GTD': '3.1.1.2.05.0006', 'Pós Vendas': '3.1.1.2.05.0006',
-  'Medição': '3.1.1.2.05.0102'
+  'Medição': '3.1.1.2.05.0102', 'Melhoria': '3.1.1.2.05.0103', 'Retirada': '3.1.1.2.05.0102'
 };
 
 // ── Contratos fixos (referência para o Service Desk) ───────────────────────
@@ -74,6 +74,6 @@ const MOTIVOS_DISPONIBILIDADE = {
 };
 
 // Tipos de Solicitação em que o botão Cadastro de Fibra aparece para o técnico.
-const TIPOS_COM_FIBRA = ['Manutenção', 'Transmissão', 'Implantação', 'Preventiva'];
+const TIPOS_COM_FIBRA = ['Manutenção', 'Transmissão', 'Implantação', 'Preventiva', 'Melhoria'];
 const TIPOS_CABO = ['01F', '02F', '04F', '06F', '12F', '24F', '36F', '48F', '72F', '144F'];
 const SPLITTERS = ['1x2', '1x4', '1x8', '1x16'];

@@ -126,9 +126,9 @@ SN.rota('/tec/os/:id', id => {
       </tbody></table>
     </div>
     ${c.status === 'DEVOLVIDO' ? `<div class="aviso erro" style="margin-bottom:10px">NOC devolveu: ${SN.esc(c.motivoDevolucao)}</div>` : ''}
-    ${prev ? `<div class="aviso info" style="margin-bottom:10px">🧭 Esta OS é a rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. O trabalho é feito na rota; a OS conclui sozinha quando tudo for aprovado na revisão.
+    ${prev ? `<div class="aviso info" style="margin-bottom:10px">🧭 Esta OS é a ${SN.vst.progDe(prev) ? 'atividade' : 'rota'} de <b>${SN.esc(SN.vst.nomePrev(prev))} ${SN.esc(prev.id_rota)}</b>. O trabalho é apontado ${SN.vst.progDe(prev) ? 'na atividade' : 'na rota'}; a OS conclui sozinha quando tudo for aprovado na revisão.
       ${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}
-      <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('#/tec/vistoria/${encodeURIComponent(prev.id_rota)}')">Abrir rota ${SN.esc(prev.id_rota)}</button></div>` : ''}
+      <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('${SN.vst.hrefPrev(prev)}')">${SN.vst.progDe(prev) ? 'Abrir atividade' : 'Abrir rota'} ${SN.esc(prev.id_rota)}</button></div>` : ''}
     ${titular && c.status === 'EM_DESLOCAMENTO' ? (() => { const pi = SN.previsaoInfo(c), nav = SN.appNavegar();
       return `<div class="card" style="margin-bottom:10px"><h3>🚗 A caminho</h3>
         ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)</div>`
@@ -172,7 +172,7 @@ SN.rota('/tec/os/:id', id => {
     ${libera ? `<div class="card" style="margin-top:12px"><h3>Apontamentos</h3>
       <p class="small muted">Cada um tem vida própria: salvar fecha a tela e segue para a gestão, sem prender o chamado.</p>
       <div class="modulos">
-        ${prev && !prev.lpu_sugerida && !lpu ? `<div class="modulo bloq" title="Na Preventiva a LPU libera quando todas as CS forem aprovadas"><span class="ico">📄</span>LPU<span class="st">após aprovação das CS</span></div>`
+        ${prev && !prev.lpu_sugerida && !lpu ? `<div class="modulo bloq" title="A LPU libera quando a revisão aprovar tudo"><span class="ico">📄</span>LPU<span class="st">${SN.vst.progDe(prev) ? 'após aprovação da revisão' : 'após aprovação das CS'}</span></div>`
           : SN.podeLpu(c, papel) ? `<div class="modulo ${lpu ? 'feito' : ''}" data-go="#/tec/lpu/${c.id}/${papel}"><span class="ico">📄</span>LPU<span class="st">${lpu ? SN.LPU_STATUS[lpu.status].rot : 'Apontar serviços'}</span></div>`
           : `<div class="modulo bloq" title="A LPU da sua empresa é feita pelo responsável"><span class="ico">📄</span>LPU<span class="st">pelo responsável</span></div>`}
         <div class="modulo ${mat ? 'feito' : ''}" data-go="#/tec/mat/${c.id}/${papel}"><span class="ico">📦</span>Materiais<span class="st">${mat ? SN.MAT_STATUS[mat.status].rot : 'Apontar uso'}</span></div>
@@ -384,7 +384,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   let l = SN.db.lpus.find(x => x.chamadoId === id && x.papel === papel);
   // Preventiva: só depois que todas as CS da rota forem aprovadas (só aprovada é paga).
   const prev = c.preventiva && c.preventiva.id_rota ? c.preventiva : null;
-  if (prev && !prev.lpu_sugerida && !l) { SN.toast('A LPU da Preventiva libera quando todas as CS da rota forem aprovadas.', 'erro'); return SN.navegar('#/tec/os/' + id); }
+  if (prev && !prev.lpu_sugerida && !l) { SN.toast(SN.vst.progDe(prev) ? 'A LPU libera quando a revisão aprovar a atividade.' : 'A LPU da Preventiva libera quando todas as CS da rota forem aprovadas.', 'erro'); return SN.navegar('#/tec/os/' + id); }
   const h = l ? l.cab : SN.cabecalhoDe(c, papel);
   const emp = SN.empresa(h.empresa), vinc = emp.vinculo;
   const editavel = !l || ['AGUARDANDO_LIDER', 'REPROVADA'].includes(l.status);
@@ -410,7 +410,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     ${l && l.status === 'REPROVADA' ? `<div class="aviso erro" style="margin-bottom:10px">Reprovada: ${SN.esc(l.motivoReprovacao)}</div>` : ''}
     ${l && !editavel ? `<div class="aviso info" style="margin-bottom:10px">Status: ${SN.LPU_STATUS[l.status].rot}. Já está com a gestão — não pode mais ser editada.</div>` : ''}
     <div class="aviso info small" style="margin-bottom:10px">Aqui você registra apenas <b>o que foi feito (volume)</b>. O valor financeiro é tratado pela gestão.</div>
-    ${prev && prev.lpu_sugerida ? `<div class="aviso ok small" style="margin-bottom:10px">🧭 Preventiva ${SN.esc(prev.id_rota)}: quantidades calculadas do que foi <b>aprovado</b> na revisão —
+    ${prev && prev.lpu_sugerida ? `<div class="aviso ok small" style="margin-bottom:10px">🧭 ${SN.esc(SN.vst.nomePrev(prev))} ${SN.esc(prev.id_rota)}: quantidades calculadas do que foi <b>aprovado</b> na revisão —
       ${SN.vst.resumoAprovado(prev)}. Confira, assine e envie.
       ${foraDaConta.length ? `<br><b>Atenção:</b> ${foraDaConta.join(', ')} não está na conta desta OS — avise a gestão.` : ''}</div>` : ''}
     ${vinc === 'CLT' ? SN.htmlHoraHomem(hh) : ''}

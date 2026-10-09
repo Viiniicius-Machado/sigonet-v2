@@ -11,7 +11,8 @@ SN.vst = {};
 
 // Telas liberáveis em Cadastros e Acessos (quem tem "Todas" já vê).
 Object.assign(SN.TELAS || (SN.TELAS = {}), {
-  vst_planejamento: 'Preventiva · Planejamento', vst_revisao: 'Preventiva · Revisão', vst_dashboard: 'Preventiva · Dashboard'
+  vst_planejamento: 'Preventiva · Planejamento', vst_revisao: 'Preventiva · Revisão', vst_dashboard: 'Preventiva · Dashboard',
+  mel_planejamento: 'Melhoria de rede · Planejamento', ret_planejamento: 'Retirada de cabo · Planejamento'
 });
 SN.vst.MENU = [
   { grupo: 'Preventiva' },
@@ -94,7 +95,7 @@ SN.vst.carregar = async forcar => {
 const carregarDoServidor = async (u, chave) => {
   const gravAntes = SN.vst.gravacoes;
   try {
-    const r = await SN.vst.exec('VST_CARREGAR');
+    const r = SN.vst.separar(await SN.vst.exec('VST_CARREGAR'));
     r.offline = false; r.carregadoEm = SN.agora(); r.chave = chave;
     SN.vst.dados = r; SN.vst.cargaTs = SN.vst.gravacoes === gravAntes ? Date.now() : 0; // gravou no meio: não reaproveita
     SN.VL.meta.set(chave, r).catch(() => { });
@@ -104,14 +105,26 @@ const carregarDoServidor = async (u, chave) => {
     if (!e.rede) throw e;
     const c = await SN.VL.meta.get(chave).catch(() => null);
     if (!c) throw e;
-    c.offline = true; SN.vst.dados = c; return c;
+    SN.vst.separar(c); c.offline = true; SN.vst.dados = c; return c;
   }
+};
+// Melhoria de rede e Retirada de cabo usam o mesmo motor no servidor, mas são assuntos
+// separados: saem de rotas/producao/canceladas (que as telas da Preventiva usam) e
+// ficam em prog_rotas / prog_producao / prog_canceladas (telas-programadas*.js).
+SN.vst.separar = r => {
+  if (!r || r.prog_rotas) return r;
+  const eh = x => VR.ehProg(x), ids = {};
+  r.prog_rotas = (r.rotas || []).filter(eh); r.rotas = (r.rotas || []).filter(x => !eh(x));
+  r.prog_canceladas = (r.canceladas || []).filter(eh); if (r.canceladas) r.canceladas = r.canceladas.filter(x => !eh(x));
+  r.prog_rotas.concat(r.prog_canceladas).forEach(x => { ids[x.id_rota] = true; });
+  r.prog_producao = (r.producao || []).filter(a => ids[a.id_rota]); r.producao = (r.producao || []).filter(a => !ids[a.id_rota]);
+  return r;
 };
 
 // Liderança com tela da Preventiva: já busca a carga em segundo plano logo depois de
 // entrar, para o primeiro clique no menu abrir sem esperar o servidor.
 SN.vst.preaquecer = () => {
-  if (!SN.vst.disponivel() || !SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela))) return;
+  if (!SN.vst.disponivel() || !(SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela)) || SN.temTela('mel_planejamento') || SN.temTela('ret_planejamento'))) return;
   const quem = (SN.sessao() || {}).token;
   setTimeout(() => { // só se a mesma pessoa ainda estiver logada (saiu ou trocou de usuário: não busca)
     if (!quem || (SN.sessao() || {}).token !== quem) return;
@@ -124,6 +137,8 @@ SN.vst.preaquecer = () => {
 SN.vst.resumoAprovado = (prev, comItens) => {
   if (!prev || !prev.lpu_sugerida) return '';
   const it = cod => comItens ? ` (${cod})` : '';
+  if (prev.segmento === 'RETIRADA') { const t = prev.producao || {}; return `${SN.num(t.metros)} m de cabo retirados${it('SEV0018')} · ${SN.num(t.ceo)} CEO/CTO retiradas${it('SEV0019')}`; }
+  if (prev.segmento === 'MELHORIA') return Object.entries(prev.lpu_sugerida).map(([cod, q]) => `${SN.num(q)} × ${SN.esc((SN.itemLpu(cod) || {}).desc || cod)}${it(cod)}`).join(' · ') || 'nenhum serviço aprovado';
   if (prev.segmento === 'AEREA') {
     const t = prev.producao || {};
     return `${SN.num(t.metros)} m percorridos${it('SEV0083')} · ${SN.num(t.postes)} postes equipados · ${SN.num(t.cordoalha)} m de cordoalha${it('SEV0009')} · `
@@ -131,6 +146,11 @@ SN.vst.resumoAprovado = (prev, comItens) => {
   }
   return `${prev.cs_abertas} CS abertas${it('SEV0022b')} · ${prev.cs_nao_abertas} não abertas${it('SEV0076')} · ${SN.num(prev.metros)} m${it('SEV0083')}`;
 };
+
+// Chamado ligado a uma rota (c.preventiva): nome do assunto e tela do técnico.
+SN.vst.progDe = prev => prev && VR_LISTAS.programas[prev.segmento] || null;
+SN.vst.nomePrev = prev => { const p = SN.vst.progDe(prev); return p ? p.rot : 'Preventiva'; };
+SN.vst.hrefPrev = prev => (SN.vst.progDe(prev) ? '#/tec/prog/' : '#/tec/vistoria/') + encodeURIComponent(prev.id_rota);
 
 // Data de um dia ('AAAA-MM-DD') sem fuso: SN.data leria como meia-noite UTC e,
 // no Brasil, mostraria o dia anterior.
@@ -162,7 +182,7 @@ SN.vst.conferirRotas = () => {
   let ts = 0; try { ts = Number(localStorage.getItem(CHAVE_TEM() + '|ts') || 0); } catch (e) { }
   if (Date.now() - ts < 5 * 60000) return;
   try { localStorage.setItem(CHAVE_TEM() + '|ts', String(Date.now())); } catch (e) { }
-  SN.vst.exec('VST_CARREGAR').then(r => SN.vst.marcarTemRotas(r.rotas.length > 0)).catch(() => { });
+  SN.vst.exec('VST_CARREGAR').then(r => SN.vst.marcarTemRotas(SN.vst.separar(r).rotas.length > 0)).catch(() => { });
 };
 // Chamado pela tabbar do técnico (telas-tecnico.js).
 SN.vst.abaTec = ativo => {
