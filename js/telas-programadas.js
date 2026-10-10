@@ -24,7 +24,8 @@
   const VISTAS = { PLAN: ['planejamento', 'Planejamento'], REV: ['revisao', 'Revisão'], DASH: ['dashboard', 'Dashboard'] };
   const base = () => P().href.replace('/planejamento', '');
   const hrefVista = v => base() + '/' + VISTAS[v][0];
-  const idMenu = v => v === 'PLAN' ? P().tela : P().tela.replace('planejamento', VISTAS[v][0]);
+  const idMenuDe = (p, v) => v === 'PLAN' ? p.tela : p.tela.replace('planejamento', VISTAS[v][0]);
+  const idMenu = v => idMenuDe(P(), v);
   const E = () => est[seg] || (est[seg] = { aba: 'LISTA', form: null, filtro: { status: '', q: '' }, periodo: { per: 'mes', ref: '' }, dash: { per: 'mes', ref: '' }, revQ: '' });
   const hoje = () => SN.dataIsoLocal(new Date());
   const empresas = () => SN.db.empresas.filter(e => e.ativo !== false).map(e => e.nome).sort();
@@ -48,7 +49,7 @@
   };
   Object.keys(L.programas).forEach(s => Object.keys(VISTAS).forEach(v => {
     const p = L.programas[s];
-    SN.rota(p.href.replace('#', '').replace('planejamento', VISTAS[v][0]), () => abrir(s, v), { tela: p.tela });
+    SN.rota(p.href.replace('#', '').replace('planejamento', VISTAS[v][0]), () => abrir(s, v), { tela: v === 'REV' ? idMenuDe(p, v) : p.tela });
   }));
   const recarregar = async () => { d = await SN.vst.carregar(true); pintar(); };
 
@@ -104,7 +105,7 @@
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
           <td>${SN.vst.badgeRota(r.status)}</td>
           <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
-          <td class="nowrap">${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
+          <td class="nowrap">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
             : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
     SN.ligarPeriodo(pintarLista, e.periodo);
@@ -126,6 +127,7 @@
       SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { e.form = JSON.parse(JSON.stringify(rotas().find(r => r.id_rota === b.dataset.ed))); e.aba = 'NOVA'; pintar(); });
     SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.revQ = b.dataset.verrev; SN.navegar(hrefVista('REV')); });
+    SN.$$('[data-vivo]').forEach(b => b.onclick = () => { const h = location.hash; SN.vst.abrirAoVivo(b.dataset.vivo).then(() => { if (location.hash === h) return recarregar(); }).catch(() => { }); });
   };
 
   // ═══════════════════════════ Nova / editar ═══════════════════════════
@@ -355,6 +357,6 @@
   Object.keys(L.programas).forEach(s => { const p = L.programas[s];
     SN.MENU.push({ grupo: p.rot },
       { tela: p.tela, rot: 'Planejamento', ico: '🗺️', href: p.href },
-      { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela, rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
+      { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela.replace('planejamento', 'revisao'), rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
       { id: p.tela.replace('planejamento', 'dashboard'), tela: p.tela, rot: 'Dashboard', ico: '📈', href: p.href.replace('planejamento', 'dashboard') }); });
 })();

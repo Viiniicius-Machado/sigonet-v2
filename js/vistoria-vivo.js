@@ -49,7 +49,7 @@
   };
   // Batimento: com a rota aberta, atualiza a posição de tempos em tempos (mesmo sem digitar).
   setInterval(() => {
-    const m = /^#\/tec\/(vistoria|aerea)\/(.+)$/.exec(location.hash);
+    const m = /^#\/tec\/(vistoria|aerea|prog)\/(.+)$/.exec(location.hash);
     if (m && document.visibilityState === 'visible') SN.vst.publicarVivo(decodeURIComponent(m[2]));
   }, BATIMENTO);
 
@@ -146,15 +146,42 @@
           || (vivos.length ? '' : '<tr><td colspan="12" class="muted">Nenhum apontamento ainda.</td></tr>')}</tbody></table></div>`;
     };
 
+    // Melhoria / Retirada: apontamentos (rascunho do aparelho + enviados) com o que foi feito e as fotos.
+    const pintarProg = () => {
+      const r = A.rota, retirada = r.segmento === 'RETIRADA';
+      const srv = A.producao.slice().sort((a, b) => String(a.data).localeCompare(String(b.data)));
+      const vivos = [];
+      A.vivo.forEach(t => (t.rascunhos || []).filter(x => !x.ordem && x.dados && !srv.some(a => a.id_apontamento === x.id && a.status_revisao !== 'REJEITADA'))
+        .forEach(x => vivos.push({ ...x.dados, _vivo: x.status_local, _tec: t.tecnico, _at: x.atualizado, _fotosAparelho: (x.fotos_aparelho || []).length })));
+      const feito = a => retirada ? `${SN.num(a.metros || 0)} m de cabo · ${SN.num(a.ceo || 0)} CEO/CTO`
+        : (VR.itensProg(a).map(i => `${SN.num(i.qtd)} × ${esc((SN.itemLpu(i.cod) || {}).desc || i.cod)}`).join('<br>') || '<span class="muted">nenhum serviço ainda</span>');
+      const linha = (a, st) => {
+        const fotos = (a.fotos || []).map(f => A.fotos[f.id_foto] || f).filter(f => f.drive_id);
+        const falta = a._vivo ? VR.validarApontamentoProg(a, r.segmento).erros.concat(VR.validarFotosProg(a, r.segmento).erros) : [];
+        return `<tr><td class="nowrap">${a.data ? SN.vst.dia(a.data) : '—'}${a._tec ? `<div class="small muted">${esc(a._tec)} · ${haQuanto(a._at)}</div>` : ''}</td>
+          <td>${a.tipo === 'final' ? 'Finalizado' : a.tipo === 'parcial' ? 'Parcial' : '<span class="muted">—</span>'}</td>
+          <td class="small">${feito(a)}</td><td>${st}${a._vivo ? `<div class="small ${falta.length ? '' : 'muted'}">${falta.length ? 'falta ' + falta.length + ': ' + falta.slice(0, 3).map(esc).join(' · ') + (falta.length > 3 ? '…' : '') : '✓ pronto para enviar'}</div>` : ''}</td>
+          <td class="small">${esc(a.observacao || '')}<div class="vst-thumbs">${fotos.map(f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`).join('')}
+          ${a._fotosAparelho ? `<span class="small muted">⏳ ${a._fotosAparelho} foto(s) subindo</span>` : ''}</div></td></tr>`;
+      };
+      const p = VR.producaoProg(r, A.producao);
+      const tot = 'Já enviado: ' + (retirada ? `${SN.num(p.totais.metros)} m de cabo · ${SN.num(p.totais.ceo)} CEO/CTO${r.metros_previstos ? ` (de ${SN.num(r.metros_previstos)} m${p.pct != null ? ', ' + p.pct + '%' : ''})` : ''}`
+        : `${Object.keys(p.totais.itens).length} serviço(s) · ${SN.num(VR.caboLancado(p.totais.itens))} m de cabo`);
+      return `<div class="small" style="margin-bottom:8px">${tot}</div>
+        <div class="tabela-wrap"><table class="tab"><thead><tr><th>Data</th><th>Tipo</th><th>${retirada ? 'Retirado' : 'Serviços'}</th><th>Situação</th><th>Obs. e fotos</th></tr></thead><tbody>
+        ${vivos.map(a => linha(a, SN.badge(STATUS_VIVO, a._vivo))).join('')}${srv.map(a => linha(a, SN.vst.badgeVistoria(a.status_revisao))).join('')
+          || (vivos.length ? '' : '<tr><td colspan="5" class="muted">Nenhum apontamento ainda.</td></tr>')}</tbody></table></div>`;
+    };
+
     const pintar = (forcar) => {
       const el = corpo(); if (!el || !A.rota) return;
-      const r = A.rota, aerea = r.segmento === 'AEREA';
-      const ctx = aerea ? null : montarCtx();
+      const r = A.rota, aerea = r.segmento === 'AEREA', prog = VR.ehProg(r);
+      const ctx = aerea || prog ? null : montarCtx();
       const assin = JSON.stringify([A.carimbo, A.vivo.map(t => t.ts), A.aba]);
       if (!forcar && assin === A.assin) { pintarCab(); return; } // nada mudou: não redesenha (não perde a rolagem)
       A.assin = assin;
       const rolagem = SN.$('.av-cs', el) ? SN.$('.av-cs', el).scrollTop : 0;
-      el.innerHTML = `<div id="avCab"></div>${aerea ? pintarAerea() : pintarSub(ctx)}`;
+      el.innerHTML = `<div id="avCab"></div>${prog ? pintarProg() : aerea ? pintarAerea() : pintarSub(ctx)}`;
       pintarCab();
       if (SN.$('.av-cs', el)) SN.$('.av-cs', el).scrollTop = rolagem;
       SN.$$('[data-av-aba]', el).forEach(b => b.onclick = () => { A.aba = Number(b.dataset.avAba); pintar(true); });
@@ -164,9 +191,9 @@
       const r = A.rota, t = A.vivo.slice().sort((a, b) => String(b.ts).localeCompare(String(a.ts)))[0];
       const ativo = t && Date.now() - new Date(t.ts).getTime() < 5 * 60000;
       el.innerHTML = `<div class="av-cab">
-        <div><span class="mono">${esc(r.id_rota)}</span> ${SN.vst.badgeRota(r.status)} · ${esc(r.cidade || '')} ${r.segmento === 'AEREA' ? '· ' + esc(r.motivo || '') : '· Cluster ' + esc(r.cluster || '')}
+        <div><span class="mono">${esc(r.id_rota)}</span> ${SN.vst.badgeRota(r.status)} · ${esc(r.cidade || '')} ${VR.ehProg(r) ? (r.pop ? '· ' + (/^POP\b/i.test(r.pop) ? '' : 'POP ') + esc(r.pop) : '') + ' · ' + esc(r.servico || '') : r.segmento === 'AEREA' ? '· ' + esc(r.motivo || '') : '· Cluster ' + esc(r.cluster || '')}
           <div class="small muted">${esc(r.prestador || '')} · ${esc(r.tecnico || 'qualquer técnico do prestador')}${r.id_chamado ? ' · chamado ' + esc(r.id_chamado) : ''}</div></div>
-        <div class="small right"><span class="av-ponto ${ativo ? 'on' : ''}"></span>${t ? `<b>${esc(t.tecnico)}</b> ${ativo ? 'no app' : 'visto'} ${haQuanto(t.ts)}` : 'O técnico ainda não abriu a rota no app'}
+        <div class="small right"><span class="av-ponto ${ativo ? 'on' : ''}"></span>${t ? `<b>${esc(t.tecnico)}</b> ${ativo ? 'no app' : 'visto'} ${haQuanto(t.ts)}` : (VR.ehProg(r) ? 'O técnico ainda não abriu a atividade no app' : 'O técnico ainda não abriu a rota no app')}
           ${t && t.gps ? `<br><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${t.gps.lat},${t.gps.lng}">${SN.conversa ? SN.conversa.ico('local') : ''}posição do técnico${t.gps.precisao ? ' (±' + t.gps.precisao + ' m)' : ''}</a>` : ''}
           ${A.erro ? `<br><span style="color:var(--alerta)">${esc(A.erro)}</span>` : ''}</div></div>`;
     };
@@ -193,10 +220,11 @@
       if (aberta) timer = setTimeout(buscar, document.visibilityState === 'visible' ? 8000 : 30000);
     };
 
-    await SN.modal({ titulo: 'Acompanhar rota ' + id_rota + ' · ao vivo', largo: true,
+    const ehProg = /^(MEL|RET)-/.test(id_rota);
+    await SN.modal({ titulo: (ehProg ? 'Acompanhar atividade ' : 'Acompanhar rota ') + id_rota + ' · ao vivo', largo: true,
       corpo: `<div class="av-grade"><div class="av-esq" id="avCorpo">${SN.carregando('Buscando o que o técnico já preencheu…')}</div>
         <div class="av-dir" id="avConversa">${SN.conversa && SN.conversa.disponivel() ? '' : '<p class="muted small">Conversa indisponível.</p>'}</div></div>
-        <p class="small muted" style="margin:8px 0 0">Mostra o rascunho do aparelho do técnico (atualizado alguns segundos depois de cada alteração, quando há sinal) e as fotos que já subiram. O registro oficial continua sendo a CS enviada e revisada.</p>`,
+        <p class="small muted" style="margin:8px 0 0">Mostra o rascunho do aparelho do técnico (atualizado alguns segundos depois de cada alteração, quando há sinal) e as fotos que já subiram. O registro oficial continua sendo ${ehProg ? 'o apontamento enviado e revisado' : 'a CS enviada e revisada'}.</p>`,
       botoes: [{ rot: 'Fechar', valor: null }],
       aoAbrir: f => { SN.$('.modal', f).classList.add('av-modal'); buscar(); } });
     aberta = false; clearTimeout(timer);

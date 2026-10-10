@@ -22,11 +22,11 @@
   // Chamado de corretiva (não Preventiva) precisa de validação para concluir.
   SN.exigeValidacao = c => !!c && !SN.ehPlanejada(c);
   SN.validado = c => !!(c && c.validacao && c.validacao.status === 'VALIDADA');
-  // Quem pode responder: OEM → cargo OEM, Gerente, Gestor ou Encarregado; NOC → quem tem a tela Chamados.
+  // Quem pode responder: OEM → cargo OEM, Gerente, Gestor ou Encarregado; NOC → quem tem a tela Esteira ou é Gerente/Gestor/Encarregado.
   SN.podeValidar = c => {
     const u = SN.usuario(); if (!u || u.tipo !== 'lideranca') return false;
     if (SN.validadorDe(c) === 'OEM') return u.cargo === 'OEM' || SN.podeAprovar(); // O&M: cargo OEM, Gerente, Gestor ou Encarregado
-    return SN.temTela('chamados');
+    return SN.temTela('chamados') || SN.podeAprovar();
   };
   SN.aguardandoValidacao = c => !!(c && c.validacao && c.validacao.status === 'PEDIDA' && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status));
   SN.pedirValidacao = (c, obs) => {

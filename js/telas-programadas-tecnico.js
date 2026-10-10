@@ -30,6 +30,7 @@
     catch (e) { A = null; return SN.cascaTec('fila', `<div class="aviso erro">Não foi possível usar o armazenamento deste aparelho (${esc(e.message || e)}).</div>`); }
     SN.VF.ligarGps(); ligarOuvinte(); pintar();
     if (SN.conversa && A.rota.id_chamado) SN.conversa.flutuante(A.rota.id_chamado);
+    SN.vst.publicarVivo(A.rota.id_rota);
     if (!d.offline) SN.vst.carregar().then(nd => { if (!aberta()) return; A.dados = nd; const r = (nd.prog_rotas || []).find(x => x.id_rota === id); if (r) A.rota = r; pintar(); }).catch(() => { });
   }, { familia: 'tecnico' });
 
@@ -120,7 +121,7 @@
   const salvarRascunho = () => {
     const f = A.form; clearTimeout(timer);
     timer = setTimeout(() => { if (!f || f._enviado || A.form !== f) return;
-      SN.VL.salvarApontamento({ id_apontamento: f.id_apontamento, id_rota: A.rota.id_rota, status_local: 'rascunho', dados: f }); }, 300);
+      SN.VL.salvarApontamento({ id_apontamento: f.id_apontamento, id_rota: A.rota.id_rota, status_local: 'rascunho', dados: f }).then(() => SN.vst.publicarVivo(A.rota.id_rota)); }, 300); // gestão acompanha ao vivo
   };
   const validar = () => {
     const v = VR.validarApontamentoProg(A.form, A.rota.segmento), vf = VR.validarFotosProg(A.form, A.rota.segmento);
@@ -221,7 +222,7 @@
     if (a.itens) a.itens = VR.itensProg(a);
     await SN.VL.enfileirarApontamento({ id_apontamento: a.id_apontamento, id_rota: A.rota.id_rota, dados: a });
     A.form = null;
-    await recarregarLocais();
+    await recarregarLocais(); SN.vst.publicarVivo(A.rota.id_rota);
     SN.toast(final ? 'Atividade finalizada: apontamento na fila de envio.' : 'Apontamento na fila de envio.', 'ok');
     pintar();
   };

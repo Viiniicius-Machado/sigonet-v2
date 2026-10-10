@@ -718,7 +718,11 @@ SN.usuario = () => {
   const t = SN.db.tecnicos.find(x => x.nome === s.nome && x.empresa === s.empresa && x.ativo);
   return t ? { ...t, tipo: 'tecnico', cargo: 'Técnico' } : null;
 };
-SN.temTela = tela => { const u = SN.usuario(); return !!u && u.tipo === 'lideranca' && (u.telas.includes('*') || u.telas.includes(tela)); };
+SN.temTela = tela => { const u = SN.usuario(); return !!u && u.tipo === 'lideranca' && (u.telas.includes('*') || u.telas.includes(tela)
+  || (u.cargo === 'Encarregado' && SN.TELAS_ENCARREGADO.includes(tela)) // encarregado revisa as obras pelo cargo
+  || (/^(mel|ret)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento')))); }; // quem planeja o programa também revisa
+// Revisão das obras (Preventiva, Melhoria, Retirada): todo Encarregado tem, sem marcar no Portal.
+SN.TELAS_ENCARREGADO = ['vst_revisao', 'mel_revisao', 'ret_revisao'];
 SN.podeAprovar = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor', 'Encarregado'].includes(u.cargo); };
 SN.ehGestor = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor'].includes(u.cargo); };
 

@@ -346,7 +346,7 @@ SN.rota('/cadastros', () => {
       <td class="num">${d.tecnicos.filter(t => t.empresa === e.nome && t.ativo).length}</td><td>${e.ativo !== false ? '✔' : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
   if (aba === 'lideranca') html = `<div class="card"><div class="card-tit"><h3>Liderança e operação</h3><button class="btn prim" data-novo="lid">+ Pessoa</button></div>
     <div class="aviso info small" style="margin-bottom:10px">Modelo de acesso: <b>Nome + PIN</b> (definido aqui) <b>+ Complemento</b> pessoal criado no 1º acesso (guardado só como hash).
-      As <b>telas</b> definem o que cada um abre; o <b>cargo</b> libera ações: Gerente/Gestor tudo · Encarregado aprova LPU e valida fibra · OEM atua na sala técnica (GEOGRID/materiais/service desk).</div>
+      As <b>telas</b> definem o que cada um abre; o <b>cargo</b> libera ações: Gerente/Gestor tudo · Encarregado aprova LPU, valida fibra e chamados e revisa as obras (Preventiva, Melhoria, Retirada) sem precisar marcar telas · OEM atua na sala técnica (GEOGRID/materiais/service desk).</div>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Nome</th><th>Cargo</th><th>Telas liberadas</th><th>1º acesso</th><th>Último acesso</th><th>Ativo</th></tr></thead><tbody>
     ${d.lideranca.map(l => `<tr class="clic" data-lid="${l.id}"><td><b>${SN.esc(l.nome)}</b>${l.nomeCompleto ? `<div class="small muted">${SN.esc(l.nomeCompleto)}</div>` : ''}</td><td>${SN.esc(l.cargo)}</td>
       <td class="small">${l.telas.includes('*') ? '<span class="badge verde">Todas</span>' : l.telas.map(t => SN.TELAS[t] || t).join(', ')}</td>
