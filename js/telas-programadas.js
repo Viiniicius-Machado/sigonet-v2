@@ -35,6 +35,7 @@
   const rotas = () => (d.prog_rotas || []).filter(r => r.segmento === seg);
   const aps = () => { const ids = {}; rotas().forEach(r => { ids[r.id_rota] = true; }); return (d.prog_producao || []).filter(a => ids[a.id_rota]); };
   const retirada = () => seg === 'RETIRADA';
+  const popTxt = p => (/^POP\b/i.test(p) ? '' : 'POP ') + p; // o cadastro às vezes já traz "POP" no nome
   const diaLocal = v => { const s = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : (v ? new Date(v) : null); };
   const noIv = (iv, v) => { if (!iv) return true; const t = diaLocal(v); return !!t && t >= iv[0] && t < iv[1]; };
 
@@ -99,14 +100,14 @@
       <div class="card"><div class="card-tit"><h3>Atividades (${vis.length})</h3></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Atividade</th><th>Onde</th><th>Serviço</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Produção</th><th></th></tr></thead><tbody>
         ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>
-          <td>${esc(r.cidade || '')}<div class="small muted">${esc(r.regiao || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''}</div><div class="small muted">${esc(r.endereco || '')}</div></td>
+          <td>${esc(r.cidade || '')}<div class="small muted">${esc(r.regiao || '')}${r.pop ? ' · ' + esc(popTxt(r.pop)) : ''}</div><div class="small muted">${esc(r.endereco || '')}</div></td>
           <td class="small">${esc(r.servico || '')}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}${(r.anexos || []).length ? `<div class="muted">📎 ${r.anexos.length} anexo(s)</div>` : ''}</td>
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
           <td>${SN.vst.badgeRota(r.status)}</td>
           <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
-          <td class="nowrap">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}</td></tr>`).join('')}
+          <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="A equipe mandou os apontamentos mas não o &quot;Finalizado&quot;">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}${!['PLANEJADA', 'CANCELADA'].includes(r.status) ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da atividade em PDF">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha de cada apontamento (com fotos)">Baixar tudo</button>` : ''}</div></td></tr>`).join('')}
         </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
     SN.ligarPeriodo(pintarLista, e.periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
@@ -120,6 +121,20 @@
       await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-ex]', async b => { if (!await SN.confirmar('Excluir atividade', 'Excluir esta atividade planejada?', 'Excluir', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_EXCLUIR', { id_rota: b.dataset.ex }); SN.toast('Atividade excluída.', 'ok'); await recarregar(); });
+    acao('[data-concl]', async b => {
+      const r = rotas().find(x => x.id_rota === b.dataset.concl), pc = VR.podeConcluirProg(r, aps());
+      if (!pc.ok) { b.disabled = false; return SN.modal({ titulo: 'Ainda não dá para concluir ' + r.id_rota, corpo: `<p>${pc.erros.map(esc).join('<br>')}</p>` }); }
+      const p = VR.producaoProg(r, aps()), feito = retirada() ? `${SN.num(p.totais.metros)} m de cabo · ${SN.num(p.totais.ceo)} CEO/CTO` : `${Object.keys(p.totais.itens).length} serviço(s) · ${SN.num(VR.caboLancado(p.totais.itens))} m de cabo`;
+      const mot = await SN.modal({ titulo: 'Concluir ' + r.id_rota + ' pela gestão',
+        corpo: `<p>A equipe enviou <b>${p.apontamentos}</b> apontamento(s) (${feito}) mas não o "Finalizado". A atividade fica <b>Concluída</b> como se o técnico tivesse enviado o "Finalizado"; ele não aponta mais nesta atividade.</p>
+          <p class="small">${pc.aguardando ? `<b>${pc.aguardando} apontamento(s) ainda aguardam revisão:</b> o chamado conclui (e a LPU libera) quando forem aprovados.` : 'Todos os apontamentos já estão aprovados: o chamado conclui agora e a LPU libera.'}</p>
+          <div class="campo"><label>Motivo *</label><textarea class="inp" id="mTxt" placeholder="ex.: equipe terminou e não enviou o Finalizado"></textarea></div>`,
+        botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Concluir pela gestão', cls: 'ok', acao: m => { const v = SN.$('#mTxt', m).value.trim(); if (!v) { SN.toast('Informe o motivo.', 'erro'); return false; } return v; } }],
+        aoAbrir: m => SN.$('#mTxt', m).focus() });
+      if (!mot) { b.disabled = false; return; }
+      const res = await SN.vst.exec('VST_ROTA_CONCLUIR_GESTAO', { id_rota: r.id_rota, motivo: mot });
+      SN.toast(res.chamado_concluido ? `Atividade ${r.id_rota} concluída: o chamado concluiu e a LPU liberou.` : `Atividade ${r.id_rota} concluída. O chamado conclui quando todos os apontamentos forem aprovados na Revisão.`, 'ok');
+      if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-canc]', async b => {
       const mot = await SN.pedirTexto('Cancelar atividade ' + b.dataset.canc, 'Ela sai do app do técnico e o chamado é cancelado. Motivo do cancelamento *');
       if (!mot) { b.disabled = false; return; }
@@ -127,7 +142,62 @@
       SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { e.form = JSON.parse(JSON.stringify(rotas().find(r => r.id_rota === b.dataset.ed))); e.aba = 'NOVA'; pintar(); });
     SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.revQ = b.dataset.verrev; SN.navegar(hrefVista('REV')); });
+    // PDF da atividade: o gestor decide se a conversa entra (completa / resumo / não), como na Preventiva.
+    SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.pdf); if (!r) return;
+      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoProg(r, aps(), cv));
+      else SN.abrirPdfDepois(() => SN.vst.pdfResumoProg(r, aps())); });
+    SN.$$('[data-zip]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.zip); if (r) baixarTudo(r, b); });
     SN.$$('[data-vivo]').forEach(b => b.onclick = () => { const h = location.hash; SN.vst.abrirAoVivo(b.dataset.vivo).then(() => { if (location.hash === h) return recarregar(); }).catch(() => { }); });
+  };
+
+  // ═══════════════════════════ Baixar tudo (.zip) ═══════════════════════════
+  // Resumo da atividade + ficha de cada apontamento com as fotos, um PDF por apontamento
+  // (como na Preventiva). Opcional: as fotos originais em JPG. As fotos vêm do Drive pelo servidor.
+  const carregarJsZip = () => window.JSZip ? Promise.resolve() : new Promise((ok, falha) => {
+    const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = ok; s.onerror = () => falha(new Error('Não foi possível carregar o compactador (sem internet?).')); document.head.appendChild(s); });
+  const nomeArq = t => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 90);
+  const bytesDe = dataUrl => { const bin = atob(String(dataUrl).split(',')[1] || ''), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+  const baixarTudo = async (r, bt) => {
+    const todos = aps().filter(a => a.id_rota === r.id_rota);
+    const itens = todos.filter(a => a.status_revisao && a.status_revisao !== 'RASCUNHO').sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.enviado_em || '').localeCompare(String(b.enviado_em || '')));
+    const nFotos = itens.reduce((s, x) => s + (x.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf').length, 0);
+    const op = await SN.modal({ titulo: 'Baixar tudo · ' + r.id_rota,
+      corpo: `<p>Vai gerar um arquivo <b>.zip</b> com:</p><ul class="small"><li>o resumo da atividade (PDF);</li><li>a ficha de cada apontamento com as fotos: <b>${itens.length}</b> PDF(s), ${nFotos} foto(s).</li></ul>
+        <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="zFotos"> Incluir também as fotos originais em JPG (arquivo maior)</label>
+        <p class="small muted">Leva alguns segundos por apontamento. Não feche a página até o download começar.</p>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Gerar .zip', cls: 'prim', acao: m => ({ fotos: SN.$('#zFotos', m).checked }) }] });
+    if (!op) return;
+    const rotulo = bt.textContent; bt.disabled = true;
+    const passo = t => { bt.textContent = t; };
+    try {
+      passo('Preparando…'); await carregarJsZip();
+      if (!window.jspdf) throw new Error('Gerador de PDF indisponível (sem internet?).');
+      const zip = new JSZip(), pasta = zip.folder(nomeArq(`${r.id_rota} - ${r.cidade || ''} ${r.pop || ''}`));
+      const resumo = await SN.vst.pdfResumoProg(r, todos);
+      if (resumo) pasta.file('00 - Resumo da atividade.pdf', resumo.output('arraybuffer'));
+      const acumulado = VR.producaoProg(r, todos).totais;
+      let feitos = 0, semFoto = 0;
+      for (const x of itens) {
+        feitos++; passo(`Gerando ${feitos}/${itens.length}…`);
+        const fotos = (x.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), b64 = {};
+        for (let i = 0; i < fotos.length; i += 20) {
+          try { (await SN.vst.exec('VST_FOTOS_B64', { ids: fotos.slice(i, i + 20).map(f => f.id_foto) })).fotos.forEach(f => { if (f.dataUrl) b64[f.id_foto] = f.dataUrl; }); } catch (e) { }
+        }
+        semFoto += fotos.filter(f => !b64[f.id_foto]).length;
+        const locais = {}; Object.entries(b64).forEach(([id, u]) => { locais[id] = { thumb: u }; });
+        const nome = `${String(feitos).padStart(2, '0')} - ${SN.vst.dia(x.data).replace(/\//g, '-')} ${x.tipo === 'final' ? 'final' : 'parcial'}${x.status_revisao === 'REJEITADA' ? ' (rejeitado)' : ''}`;
+        const url = await SN.vst.pdfApontamentoProg(x, r, acumulado, locais);
+        if (url) pasta.file(nomeArq(nome) + '.pdf', bytesDe(url));
+        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
+      }
+      passo('Compactando…');
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nomeArq(`${r.id_rota} - completo`) + '.zip';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      SN.toast(`${r.id_rota}: ${itens.length + 1} PDF(s) no .zip (${(blob.size / 1048576).toFixed(1)} MB)${semFoto ? ` · ${semFoto} foto(s) não vieram do Drive` : ''}.`, semFoto ? 'alerta' : 'ok');
+    } catch (e) { SN.toast(e.message || String(e), 'erro'); }
+    finally { bt.disabled = false; bt.textContent = rotulo; }
   };
 
   // ═══════════════════════════ Nova / editar ═══════════════════════════
@@ -246,7 +316,7 @@
     return `<div class="card" style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b class="mono">${esc(a.id_rota)}</b> · ${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? '<span class="badge verde">Finalizado</span>' : '<span class="badge">Parcial</span>'}
         ${a.refeitas ? '<span class="badge alerta">Refeito após rejeição</span>' : ''}
-        <div class="small muted">${esc(r.cidade || a.cidade || '')}${r.pop ? ' · POP ' + esc(r.pop) : ''} · ${esc(r.endereco || '')} · ${esc(a.tecnico || '')} (${esc(a.prestador || '')}) · enviado ${SN.dt(a.enviado_em)}</div>
+        <div class="small muted">${esc(r.cidade || a.cidade || '')}${r.pop ? ' · ' + esc(popTxt(r.pop)) : ''} · ${esc(r.endereco || '')} · ${esc(a.tecnico || '')} (${esc(a.prestador || '')}) · enviado ${SN.dt(a.enviado_em)}</div>
         <div class="small">${esc(r.servico || '')}${(r.anexos || []).length ? ` · 📎 ${r.anexos.map((x, i) => `<a href="javascript:void 0" data-axrev="${esc(r.id_rota)}|${i}">${esc(x.nome)}</a>`).join(', ')}` : ''}</div></div>
         <div>${SN.vst.badgeVistoria(a.status_revisao)}</div></div>
       <div style="margin-top:6px">${htmlProducao(a)}</div>

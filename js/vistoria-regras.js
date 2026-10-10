@@ -1019,7 +1019,18 @@ var VR = (function () {
     var p = R.producaoProg(rota, daRota, { soAprovados: true }), lpu = {};
     if (rota.segmento === 'RETIRADA') L.producao_retirada.forEach(function (c) { lpu[c.lpu] = p.totais[c.k]; });
     else Object.keys(p.totais.itens).forEach(function (k) { lpu[k] = p.totais.itens[k]; });
-    return { pronto: rota.status === 'CONCLUIDA' && p.finalizada && pendentes === 0, pendentes: pendentes, totais: p.totais, lpu_sugerida: lpu };
+    // Concluída pela gestão (sem "Finalizado"): apontamento rejeitado segura até ser refeito e aprovado.
+    var gestao = !!rota.concluida_pela_gestao && !daRota.some(function (a) { return a.status_revisao === 'REJEITADA'; });
+    return { pronto: rota.status === 'CONCLUIDA' && (p.finalizada || gestao) && pendentes === 0, pendentes: pendentes, totais: p.totais, lpu_sugerida: lpu };
+  };
+  // Concluir pela gestão: a equipe mandou os parciais mas não o "Finalizado".
+  R.podeConcluirProg = function (rota, apontamentos) {
+    var daRota = (apontamentos || []).filter(function (a) { return a.id_rota === rota.id_rota; }), erros = [];
+    var rejeitados = daRota.filter(function (a) { return a.status_revisao === 'REJEITADA'; }).length;
+    if (rota.status !== 'EM_CAMPO') erros.push('Só atividade em campo pode ser concluída pela gestão (esta está ' + rota.status + ').');
+    if (!daRota.some(function (a) { return a.status_revisao !== 'REJEITADA'; })) erros.push('Nenhum apontamento enviado: sem produção não há o que concluir.');
+    if (rejeitados) erros.push(rejeitados + ' apontamento(s) rejeitado(s): o técnico precisa refazer e enviar de novo.');
+    return { ok: !erros.length, erros: erros, aguardando: daRota.filter(function (a) { return a.status_revisao === 'AGUARDANDO_REVISAO'; }).length };
   };
 
   // ─────────── KPIs da aérea ───────────

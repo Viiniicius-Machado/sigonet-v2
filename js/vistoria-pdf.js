@@ -235,6 +235,86 @@ SN.vst = SN.vst || {};
     return doc;
   };
 
+  // ─────────── Melhoria de rede / Retirada de cabo ───────────
+  const progDe = rota => L.programas[rota.segmento] || { rot: rota.segmento, conta: '' };
+  const feitoProg = (a, rota) => rota.segmento === 'RETIRADA'
+    ? `${SN.num(Number(a.metros) || 0)} m de cabo · ${SN.num(Number(a.ceo) || 0)} CEO/CTO`
+    : VR.itensProg(a).map(i => `${SN.num(i.qtd)} × ${(SN.itemLpu(i.cod) || {}).desc || i.cod} (${i.cod})`).join('; ') || '—';
+  const dadosAtividade = (doc, rota) => {
+    const p = progDe(rota);
+    doc.secao('Atividade');
+    doc.linha('Atividade / status', `${rota.id_rota} · ${stRota(rota.status)}`);
+    doc.linha('Conta', SN.contaTxt ? SN.contaTxt(p.conta) : p.conta);
+    doc.linha('Onde', `${rota.cidade || ''}${rota.regiao ? ' · ' + rota.regiao : ''}${rota.pop ? ' · ' + (/^POP\b/i.test(rota.pop) ? '' : 'POP ') + rota.pop : ''}`);
+    doc.linha('Endereço', rota.endereco || '—');
+    if (rota.local_url) doc.linha('Link do local', rota.local_url);
+    doc.linha(rota.segmento === 'RETIRADA' ? 'O que retirar' : 'Serviço', rota.servico || '—');
+    if (rota.solicitante) doc.linha('Solicitante', rota.solicitante);
+    if (rota.notificacao) doc.linha('Notificação / Protocolo', rota.notificacao);
+    if (Number(rota.metros_previstos)) doc.linha('Metros previstos', SN.num(rota.metros_previstos) + ' m');
+    doc.linha('Prestador / técnico', `${rota.prestador || '—'} · ${rota.tecnico || 'qualquer técnico do prestador'}`);
+    doc.linha('Data', `${SN.vst.dia(rota.data_planejada)}${rota.data_limite ? ' · até ' + SN.vst.dia(rota.data_limite) : ''}`);
+    if (rota.id_chamado) doc.linha('Chamado', rota.id_chamado);
+    if (rota.observacao) doc.linha('Observação', rota.observacao);
+  };
+
+  // Resumo de UMA atividade: dados, andamento, produção aprovada, LPU e valor, apontamentos.
+  SN.vst.pdfResumoProg = async (rota, apontamentos, conversa) => {
+    const p = progDe(rota), ret = rota.segmento === 'RETIRADA';
+    const doc = SN.novoPdf(`${p.rot} · Resumo da atividade ${rota.id_rota}`); if (!doc) return null;
+    dadosAtividade(doc, rota);
+    const aps = (apontamentos || []).filter(a => a.id_rota === rota.id_rota).sort((a, b) => String(a.data).localeCompare(String(b.data)));
+    const r = VR.resumoChamadoProg(rota, aps), tudo = VR.producaoProg(rota, aps);
+    doc.secao('Andamento');
+    doc.linha('Apontamentos', `${aps.length} (${aps.filter(a => a.status_revisao === 'APROVADA').length} aprovados · ${r.pendentes} aguardando revisão · ${aps.filter(a => a.status_revisao === 'REJEITADA').length} rejeitados)`);
+    doc.linha('Finalizada pela equipe', tudo.finalizada ? 'Sim' : 'Não');
+    if (rota.concluida_pela_gestao) doc.linha('Concluída pela gestão', `${rota.concluida_pela_gestao.por} em ${SN.dt(rota.concluida_pela_gestao.em)} — ${rota.concluida_pela_gestao.motivo}`);
+    if (tudo.pct != null) doc.linha('% dos metros previstos', tudo.pct + '%');
+    doc.linha('Pronta para LPU', r.pronto ? 'Sim — tudo aprovado' : 'Não');
+    doc.secao('Produção aprovada (base de pagamento)');
+    if (ret) L.producao_retirada.forEach(c => doc.linha(c.rot, SN.num(Number(r.totais[c.k]) || 0)));
+    else doc.linha('Cabo lançado', SN.num(VR.caboLancado(r.totais.itens)) + ' m');
+    doc.linha('LPU gerada', lpuTxt(r.lpu_sugerida));
+    const valor = Object.entries(r.lpu_sugerida || {}).reduce((s, [cod, q]) => s + (Number(q) || 0) * (((SN.itemLpu && SN.itemLpu(cod)) || {}).valor || 0), 0);
+    if (valor) doc.linha('Valor estimado (LPU)', SN.brl(valor));
+    doc.secao('Apontamentos');
+    tabela(doc, ['Data', 'Tipo', ret ? 'Retirado' : 'Serviços', 'Técnico', 'Revisão', 'Revisor'],
+      aps.map(a => [SN.vst.dia(a.data), a.tipo === 'final' ? 'Finalizado' : 'Parcial', feitoProg(a, rota), a.tecnico || '', stRev(a.status_revisao), a.revisor || '']),
+      [20, 20, 64, 30, 28, 28]);
+    if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
+    SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · atividade ${rota.id_rota}`);
+    return doc;
+  };
+
+  // Ficha de um apontamento: atividade, o que foi feito no dia, acumulado e as fotos por tipo.
+  SN.vst.pdfApontamentoProg = async (a, rota, acumulado, fotosLocais) => {
+    const p = progDe(rota), ret = rota.segmento === 'RETIRADA';
+    const doc = SN.novoPdf(`${p.rot} · ${a.tipo === 'final' ? 'Apontamento final' : 'Apontamento parcial'} · ${rota.id_rota}`); if (!doc) return null;
+    dadosAtividade(doc, rota);
+    doc.secao(`Apontamento (${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'}) · ${SN.vst.dia(a.data)}`);
+    doc.linha('Técnico', a.tecnico || '—');
+    doc.linha('Revisão', `${stRev(a.status_revisao)}${a.revisor ? ' · ' + a.revisor + (a.data_revisao ? ' em ' + SN.dt(a.data_revisao) : '') : ''}`);
+    if (a.status_revisao === 'REJEITADA') doc.linha('Motivo', `${(a.motivo_rejeicao || []).map(m => rot('motivos_rejeicao', m)).join(', ')}${a.motivo_rejeicao_texto ? ' — ' + a.motivo_rejeicao_texto : ''}`);
+    if (ret) L.producao_retirada.forEach(c => doc.linha(`${c.rot} (${c.lpu})`, SN.num(Number(a[c.k]) || 0)));
+    else VR.itensProg(a).forEach(i => { const it = SN.itemLpu(i.cod) || {}; doc.linha(i.cod, `${SN.num(i.qtd)} ${it.medida || ''} · ${it.desc || ''}`); });
+    if (a.observacao) doc.linha('Observação', a.observacao);
+    if (acumulado) {
+      doc.secao('Acumulado da atividade (sem os rejeitados)');
+      if (ret) L.producao_retirada.forEach(c => doc.linha(c.rot, SN.num(Number(acumulado[c.k]) || 0)));
+      else { doc.linha('Serviços', lpuTxt(acumulado.itens)); doc.linha('Cabo lançado', SN.num(VR.caboLancado(acumulado.itens)) + ' m'); }
+    }
+    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
+    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    for (const x of VR.validarFotosProg(a, rota.segmento).itens) {
+      const doTipo = fotos.filter(f => f.tipo_foto === x.tipo);
+      if (!doTipo.length && !x.exigidas) continue;
+      doc.secao(`Fotos · ${x.rot} (${doTipo.length}${x.exigidas ? ' de ' + x.exigidas + ' exigida(s)' : ''})`);
+      if (doTipo.length) await SN.vst.pdfGradeFotos(doc, doTipo.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
+    }
+    SN.vst.pdfRodape(doc, `Ficha gerada em ${SN.dt(SN.agora())} · apontamento ${a.id_apontamento}`);
+    return SN.pdfDataUrl(doc);
+  };
+
   // Relatório da diretoria: aérea do mês escolhido + diligência subterrânea (acumulado, só aprovadas).
   SN.vst.pdfDiretoria = async (d, config, mes, hojeIso) => {
     const doc = SN.novoPdf(`Preventiva · Relatório da diretoria · ${SN.mesNome(mes)}`); if (!doc) return null;
