@@ -74,7 +74,8 @@
     SN.$('#fAb').onchange = e => { st.soAbertas = e.target.checked; repintar(); };
     SN.$('#fQ').oninput = SN.debounce(e => { st.q = e.target.value; repintar(); SN.$('#fQ').focus(); }, 300);
   };
-  const badgeReg = r => `${SN.badge(C.STATUS, r.status)}${r.resultado ? ` <span class="badge ${r.resultado === 'IMPRODUTIVA' ? 'erro' : 'ok'}">${esc(C.RESULTADOS[r.resultado].rot)}</span>` : ''}${r.massiva ? ' <span class="badge erro">massiva</span>' : ''}`;
+  const redeTxt = r => r.rede ? (r.rede.tem ? ` <span class="badge ok" title="${esc((r.rede.cabos || []).join(', '))}">rede nossa · ${SN.num(r.rede.metros)} m</span>` : ' <span class="badge">sem rede nossa</span>') : '';
+  const badgeReg = r => `${SN.badge(C.STATUS, r.status)}${redeTxt(r)}${r.resultado ? ` <span class="badge ${r.resultado === 'IMPRODUTIVA' ? 'erro' : 'ok'}">${esc(C.RESULTADOS[r.resultado].rot)}</span>` : ''}${r.massiva ? ' <span class="badge erro">massiva</span>' : ''}`;
   const acoesReg = r => `<button class="btn sm ${r.id_chamado ? '' : 'prim'}" data-desp="${esc(r.id)}">${r.id_chamado ? 'Chamado ' + esc(r.id_chamado) : 'Despachar'}</button>
     <button class="btn sm" data-res="${esc(r.id)}">${r.resultado ? 'Resultado ✓' : 'Resultado'}</button><button class="btn sm" data-ed="${esc(r.id)}">Editar</button>`;
   const ligarAcoes = (raiz, repintar) => {
@@ -291,9 +292,11 @@
   // ═══════════════════════════ Importar ═══════════════════════════
   const pintarImportar = () => {
     SN.$('#cpCorpo').innerHTML = `<div class="grid g2">
-      <div class="card"><h3>📩 Notificações recebidas (PDF ou Excel)</h3>
-        <p class="small">Arraste aqui os arquivos que chegaram por e-mail. O SigoNet lê o tema (troca de poste, limpeza, reordenamento…), o número, a data e a hora, a cidade, o endereço e as coordenadas; você confere e ele coloca no mapa e na Esteira.</p>
-        <label class="cp-solta" id="zNot"><input type="file" id="fNot" accept=".pdf,.xlsx,.xls,.csv,application/pdf" multiple hidden><span>Solte os arquivos aqui<br><span class="small muted">ou clique para escolher (PDF, XLSX, CSV)</span></span></label></div>
+      <div class="card"><h3>📩 E-mail da CPFL</h3>
+        <p class="small">Abra o e-mail no Outlook, selecione tudo (Ctrl+A), copie (Ctrl+C) e cole aqui (Ctrl+V) — com o assunto, se puder. O SigoNet entende o tema, o número, a data, as ruas (ou a tabela da programação semanal), localiza cada rua e confere se <b>passa na nossa rede</b> (GeoGrid). O que tiver rede vai para a Esteira.</p>
+        <textarea class="inp" id="tEmail" rows="7" placeholder="Cole aqui o e-mail inteiro (Ctrl+V)"></textarea>
+        <div class="acoes" style="margin-top:6px"><button class="btn prim" id="bLerEmail">🔎 Ler e conferir a rede</button></div>
+        <label class="cp-solta" id="zNot" style="min-height:90px"><input type="file" id="fNot" accept=".pdf,.xlsx,.xls,.csv,.eml,.txt,.html,.htm,application/pdf,message/rfc822" multiple hidden><span>…ou solte aqui o e-mail salvo (.eml), o PDF ou o Excel<br><span class="small muted">no Outlook: arraste o e-mail para a área de trabalho, ou "Salvar como"</span></span></label></div>
       <div class="card"><h3>🗂️ Base histórica (planilha)</h3>
         <p class="small">A planilha online da sala técnica ("TROCA DE POSTES", aba NOTIFICAÇÕES). Importar de novo atualiza: o que já foi editado no SigoNet é preservado.</p>
         <label class="cp-solta" id="zHist"><input type="file" id="fHist" accept=".xlsx,.xls" hidden><span>Solte a planilha aqui<br><span class="small muted">ou clique para escolher</span></span></label>
@@ -303,6 +306,170 @@
       z.ondrop = e => { e.preventDefault(); z.classList.remove('sobre'); const fs = [...(e.dataTransfer.files || [])]; if (fs.length) fn(fs).catch(err => SN.toast(err.message || String(err), 'erro')); };
       SN.$('#' + inp).onchange = e => { const fs = [...(e.target.files || [])]; e.target.value = ''; if (fs.length) fn(fs).catch(err => SN.toast(err.message || String(err), 'erro')); }; };
     zona('zNot', 'fNot', importarNotificacoes); zona('zHist', 'fHist', fs => importarHistorico(fs[0]));
+    // Colar do Outlook: se vier HTML (tabela da programação), vira texto com as colunas separadas por tabulação.
+    SN.$('#tEmail').addEventListener('paste', ev => { const h = ev.clipboardData && ev.clipboardData.getData('text/html'); if (!h) return; ev.preventDefault(); SN.$('#tEmail').value = htmlParaTexto(h); });
+    SN.$('#bLerEmail').onclick = () => { const t = SN.$('#tEmail').value.trim(); if (!t) return SN.toast('Cole o e-mail primeiro.', 'erro');
+      lerTextos([{ texto: t, fonte: 'e-mail colado' }]).catch(err => SN.toast(err.message || String(err), 'erro')); };
+  };
+  const htmlParaTexto = h => {
+    const d = new DOMParser().parseFromString(h, 'text/html');
+    d.querySelectorAll('script,style').forEach(x => x.remove());
+    d.querySelectorAll('td,th').forEach(x => x.append('\t')); d.querySelectorAll('tr,p,div,br,li,h1,h2,h3,h4').forEach(x => x.append('\n'));
+    return (d.body ? d.body.textContent : '').replace(/ /g, ' ').replace(/[ ]{2,}/g, ' ').replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n').trim();
+  };
+  // .eml: cabeçalho (assunto) + corpo (texto ou HTML; quoted-printable/base64; utf-8/latin1).
+  const lerEml = bruto => {
+    const dec2047 = v => String(v || '').replace(/=\?([^?]+)\?([BQ])\?([^?]*)\?=/gi, (x, cs, enc, txt) => { try {
+      const bytes = enc.toUpperCase() === 'B' ? Uint8Array.from(atob(txt), c => c.charCodeAt(0)) : Uint8Array.from(txt.replace(/_/g, ' ').replace(/=([0-9A-F]{2})/gi, (y, hx) => String.fromCharCode(parseInt(hx, 16))), c => c.charCodeAt(0));
+      return new TextDecoder(cs).decode(bytes); } catch (e) { return txt; } });
+    const parte = txt => { const i = txt.search(/\r?\n\r?\n/); return { cab: i < 0 ? txt : txt.slice(0, i), corpo: i < 0 ? '' : txt.slice(i).replace(/^\r?\n\r?\n/, '') }; };
+    const campo = (cab, k) => { const m = new RegExp('^' + k + ':\\s*((?:.*)(?:\\r?\\n[ \\t].*)*)', 'im').exec(cab); return m ? m[1].replace(/\r?\n[ \t]+/g, ' ').trim() : ''; };
+    const decodifica = (cab, corpo) => {
+      const te = campo(cab, 'Content-Transfer-Encoding').toLowerCase(), cs = (/charset="?([^";\s]+)/i.exec(campo(cab, 'Content-Type')) || [])[1] || 'utf-8';
+      let bytes;
+      if (te === 'base64') bytes = Uint8Array.from(atob(corpo.replace(/\s+/g, '')), c => c.charCodeAt(0));
+      else if (te === 'quoted-printable') bytes = Uint8Array.from(corpo.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (y, hx) => String.fromCharCode(parseInt(hx, 16))), c => c.charCodeAt(0));
+      else return corpo;
+      try { return new TextDecoder(cs).decode(bytes); } catch (e) { return new TextDecoder('utf-8').decode(bytes); } };
+    const achar = (cab, corpo, prof) => { // procura text/plain e text/html nas partes
+      const ct = campo(cab, 'Content-Type'), bd = (/boundary="?([^";]+)"?/i.exec(ct) || [])[1], out = {};
+      if (/multipart\//i.test(ct) && bd && prof < 5) {
+        corpo.split('--' + bd).slice(1).forEach(pt => { if (/^--/.test(pt)) return; const x = parte(pt.replace(/^\r?\n/, '')), r = achar(x.cab, x.corpo, prof + 1); out.plain = out.plain || r.plain; out.html = out.html || r.html; });
+      } else if (/text\/html/i.test(ct)) out.html = decodifica(cab, corpo); else if (!ct || /text\/plain/i.test(ct)) out.plain = decodifica(cab, corpo);
+      return out; };
+    const x = parte(bruto), assunto = dec2047(campo(x.cab, 'Subject')), r = achar(x.cab, x.corpo, 0);
+    return 'Assunto: ' + assunto + '\n\n' + (r.html ? htmlParaTexto(r.html) : r.plain || '');
+  };
+  const importarNotificacoes = async files => {
+    const textos = [], linhasExcel = [];
+    const fim = SN.cobrirCarregando('Lendo os arquivos…');
+    try {
+      for (const f of files) {
+        if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') textos.push({ texto: await textoPdf(f), fonte: f.name, arquivo: f });
+        else if (/\.(eml)$/i.test(f.name) || f.type === 'message/rfc822') textos.push({ texto: lerEml(await f.text()), fonte: f.name, arquivo: f });
+        else if (/\.(html?)$/i.test(f.name)) textos.push({ texto: htmlParaTexto(await f.text()), fonte: f.name, arquivo: f });
+        else if (/\.txt$/i.test(f.name)) textos.push({ texto: await f.text(), fonte: f.name, arquivo: f });
+        else {
+          const abas = await lerPlanilhaArquivo(f);
+          for (const a of abas) {
+            const cab = (a.linhas[0] || []).map(C.norm);
+            if (cab.includes('NOTIFICACAO') && cab.includes('DATA')) { C.lerPlanilha(a.linhas).forEach(r => linhasExcel.push({ ...r, arquivo: f, fonte: f.name + ' · ' + a.nome })); continue; }
+            // Planilha qualquer (ex.: a programação semanal exportada): vira texto com tabulação e passa pela mesma leitura do e-mail.
+            textos.push({ texto: a.linhas.map(l => l.map(v => v instanceof Date ? v.toLocaleDateString('pt-BR') : String(v)).join('\t')).join('\n'), fonte: f.name + ' · ' + a.nome, arquivo: f });
+          }
+        }
+      }
+    } finally { fim(); }
+    await lerTextos(textos, linhasExcel);
+  };
+  // Texto(s) → notificações → localizar ruas → conferir na rede → conferência.
+  const lerTextos = async (textos, extras) => {
+    const cids = cidadesConhecidas(), cands = (extras || []).slice();
+    textos.forEach(t => { let l = C.extrairEmail(t.texto, { cidades: cids }); if (!l.length || (l.length === 1 && !l[0].data && !l[0].endereco)) l = [C.extrair(t.texto, { cidades: cids })];
+      l.forEach(r => cands.push({ ...r, arquivo: t.arquivo, fonte: t.fonte, trecho: t.texto.replace(/\s+/g, ' ').slice(0, 300) })); });
+    if (!cands.length) return SN.toast('Não achei notificação (data, número ou endereço).', 'erro');
+    await conferirRede(cands);
+    conferir(cands);
+  };
+  // ─────────── Localizar a rua e conferir se passa na nossa rede ───────────
+  const ABREV = [[/^R\.\s*/i, 'Rua '], [/^AV\.?\s*/i, 'Avenida '], [/^ESTR\.?\s*/i, 'Estrada '], [/^ROD\.?\s*/i, 'Rodovia '], [/^TV\.\s*/i, 'Travessa '], [/^AL\.\s*/i, 'Alameda '], [/^P[ÇC]A\.?\s*/i, 'Praça '],
+    [/\bGEN\.\s*/gi, 'General '], [/\bCAP\.\s*/gi, 'Capitão '], [/\bCEL\.\s*/gi, 'Coronel '], [/\bDR\.\s*/gi, 'Doutor '], [/\bPROF\.\s*/gi, 'Professor '], [/\bSTA\.\s*/gi, 'Santa '], [/\bSTO\.\s*/gi, 'Santo '], [/\bENG\.\s*/gi, 'Engenheiro '], [/\bMAL\.\s*/gi, 'Marechal '], [/\bPRES\.\s*/gi, 'Presidente ']];
+  const ruaPorExtenso = r => { let x = String(r || '').replace(/,.*$/, '').replace(/\s+-\s+.*$/, '').trim(); ABREV.forEach(([re, v]) => { x = x.replace(re, v); }); return x.replace(/\s+/g, ' ').trim(); };
+  const geoCache = {};
+  const localizarRua = async (rua, cidade) => {
+    const k = SN.normal(rua + '|' + cidade); if (geoCache[k] !== undefined) return geoCache[k];
+    // 1º com o tipo da via ("Rua …"); se não achar, só o nome — a notificação às vezes escreve "R." numa avenida.
+    const nome = ruaPorExtenso(rua), semTipo = nome.replace(/^(Rua|Avenida|Estrada|Rodovia|Travessa|Alameda|Praça)\s+/i, '');
+    const buscar = async rr => { const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&polygon_geojson=1&limit=8&countrycodes=br&street=' + encodeURIComponent(rr) + '&city=' + encodeURIComponent(cidade))).json();
+      await new Promise(ok => setTimeout(ok, 1100)); return r; }; // limite do serviço: 1 consulta por segundo
+    let res = null;
+    try {
+      let l = await buscar(nome); if (!l.length && semTipo !== nome) l = await buscar(semTipo);
+      const trechos = [];
+      l.filter(x => x.category === 'highway' || x.class === 'highway').forEach(x => { const g = x.geojson || {};
+        if (g.type === 'LineString') trechos.push(g.coordinates.map(c => [c[1], c[0]]));
+        else if (g.type === 'MultiLineString') g.coordinates.forEach(cs => trechos.push(cs.map(c => [c[1], c[0]]))); });
+      if (trechos.length) res = { trechos, nome: l[0].display_name };
+      else if (l[0]) res = { trechos: [[[Number(l[0].lat), Number(l[0].lon)]]], nome: l[0].display_name, aprox: true };
+    } catch (e) { res = null; }
+    return (geoCache[k] = res);
+  };
+  const conferirRede = async cands => {
+    const ind = SN.rede ? await SN.rede.indice().catch(() => null) : null, fim = SN.cobrirCarregando('Conferindo na nossa rede…'), passo = t => { const p = document.querySelector('.carregando-sobre p'); if (p) p.textContent = t; };
+    try {
+      for (let i = 0; i < cands.length; i++) {
+        const c = cands[i], cid = ind && window.REDE ? REDE.acharCidade(ind, c.cidade) : null;
+        if (!ind) { c.redeTxt = 'rede GeoGrid não importada'; continue; }
+        if (!cid) { c.foraArea = true; c.redeTxt = 'fora da nossa área (sem rede nesta cidade)'; continue; }
+        passo(`Conferindo ${i + 1}/${cands.length}: ${c.endereco || c.cidade}…`);
+        let trechos = (c.pontos || []).length ? [c.pontos] : null;
+        if (!trechos && c.endereco) { const g = await localizarRua(c.endereco, c.cidade); if (g) { trechos = g.trechos; c.ruaAprox = !!g.aprox; } }
+        if (!trechos) { c.redeTxt = c.endereco ? 'rua não localizada — confira no mapa' : 'sem endereço'; continue; }
+        const d = await SN.rede.cidade(cid.cidade), r = C.naRede(trechos, d, REDE);
+        c.rede = r && { tem: r.tem, metros: r.metros, ruaM: r.ruaM, cabos: r.cabos.slice(0, 5), caixas: r.caixas.length };
+        if (!(c.pontos || []).length) c.pontos = trechos.reduce((a, t) => a.length >= 40 ? a : a.concat(t.slice(0, 40 - a.length)), []).map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
+        c.pontos = c.pontos.length > 1 && trechos.length > 1 ? [c.pontos[0]] : c.pontos; // vários trechos da rua: guarda só o 1º ponto (o mapa mostra o marcador)
+        c.redeTxt = !r ? '' : r.tem ? `✔ ${SN.num(r.metros)} m de cabo nosso${r.caixas.length ? ` · ${r.caixas.length} caixa(s)` : ''}${c.ruaAprox ? ' (rua aproximada)' : ''}` : `✖ sem rede nossa${c.ruaAprox ? ' (rua aproximada)' : ` em ${SN.num(r.ruaM)} m de rua`}`;
+      }
+    } finally { fim(); }
+  };
+  // Conferência: cada notificação lida, editável, antes de entrar no SigoNet e na Esteira.
+  const conferir = async cands => {
+    const tem = c => !!(c.rede && c.rede.tem);
+    const linha = (c, i) => `<tr data-i="${i}" class="${c.foraArea ? 'muted' : ''}"><td><input type="checkbox" data-k="ok" ${c.foraArea ? '' : 'checked'}></td>
+      <td><input type="checkbox" data-k="ch" ${tem(c) ? 'checked' : ''} title="Colocar na Esteira"></td>
+      <td class="small" style="min-width:170px">${c.redeTxt ? `<span style="color:${tem(c) ? 'var(--ok,#15803d)' : c.foraArea ? 'inherit' : '#b45309'}">${esc(c.redeTxt)}</span>` : ''}${c.rede && c.rede.cabos.length ? `<div class="muted">${c.rede.cabos.map(esc).join(', ')}</div>` : ''}</td>
+      <td><select class="inp" data-k="tipo">${Object.entries(C.TIPOS).map(([k, v]) => `<option value="${k}" ${c.tipo === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select></td>
+      <td><input class="inp" data-k="numero" value="${esc(c.numero)}" style="width:110px"></td>
+      <td><input class="inp" type="date" data-k="data" value="${esc(c.data)}"></td><td><input class="inp" type="time" data-k="hora" value="${esc(c.hora)}"></td>
+      <td><input class="inp" data-k="cidade" value="${esc(c.cidade)}" style="width:120px"></td><td><input class="inp" data-k="endereco" value="${esc(c.endereco)}"></td>
+      <td><input class="inp" data-k="coord" value="${esc((c.pontos || []).length === 1 ? c.pontos[0].join(', ') : (c.pontos || []).length ? c.pontos.length + ' pontos da rua' : '')}" placeholder="lat, lng"></td>
+      <td class="small muted" title="${esc(c.trecho || '')}">${esc(c.fonte || '')}${c.postes ? ' · ' + c.postes + ' postes' : ''}${c.acao_cpfl ? ' · ' + esc(c.acao_cpfl) : ''}</td></tr>`;
+    const nTem = cands.filter(tem).length, nFora = cands.filter(c => c.foraArea).length;
+    const res = await SN.modal({ titulo: `Conferir ${cands.length} notificação(ões)`, largo: true,
+      corpo: `<p class="small"><b>${nTem}</b> com rede nossa (marcadas para a Esteira) · <b>${cands.length - nTem - nFora}</b> sem rede nossa ou a conferir · <b>${nFora}</b> fora da nossa área (desmarcadas).
+        Passe o mouse no arquivo para ver o trecho lido. "Pontos da rua" = traçado da rua usado na conferência.</p>
+        <div class="tabela-wrap"><table class="tab small cp-conf"><thead><tr><th title="Guardar no SigoNet">Guardar</th><th title="Abrir chamado na Esteira">Esteira</th><th>Nossa rede</th><th>Tipo</th><th>Notificação</th><th>Data</th><th>Hora</th><th>Cidade</th><th>Endereço</th><th>Coordenadas</th><th>Origem</th></tr></thead><tbody>${cands.map(linha).join('')}</tbody></table></div>
+        <div class="acoes" style="margin-top:8px"><button class="btn sm" id="cResumo" type="button">📋 Copiar resumo (tem / não tem rede) para responder o e-mail</button></div>`,
+      aoAbrir: m => { SN.$('#cResumo', m).onclick = () => { const txt = resumoRede(cands); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => SN.toast('Resumo copiado: cole na resposta do e-mail.', 'ok'), () => SN.pedirTexto('Resumo para o e-mail', 'Copie o texto abaixo', false)); }; },
+      botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Guardar', cls: 'prim', acao: m => {
+        const out = SN.$$('tbody tr', m).map(tr => { const g = k => SN.$(`[data-k="${k}"]`, tr); return { i: +tr.dataset.i, ok: g('ok').checked, ch: g('ch').checked, tipo: g('tipo').value, numero: g('numero').value.trim(), data: g('data').value, hora: g('hora').value,
+          cidade: g('cidade').value.trim(), endereco: g('endereco').value.trim(), coord: g('coord').value }; }).filter(x => x.ok);
+        if (out.some(x => !x.data || !x.cidade)) { SN.toast('Cada notificação marcada precisa de data e cidade.', 'erro'); return false; }
+        return { linhas: out }; } }] });
+    if (!res) return;
+    const fim = SN.cobrirCarregando('Guardando…'), anexos = new Map();
+    try {
+      let inc = 0, ch = 0;
+      for (const x of res.linhas) {
+        const c = cands[x.i];
+        if (c.arquivo && !anexos.has(c.arquivo)) { try { anexos.set(c.arquivo, await SN.guardarDataUrl(await dataUrlDe(c.arquivo), c.arquivo.name, 'arquivo', 'cpfl')); } catch (e) { anexos.set(c.arquivo, null); } }
+        const ax = c.arquivo ? anexos.get(c.arquivo) : null;
+        const lidos = /pontos da rua/.test(x.coord) ? c.pontos : C.pontosDe(x.coord);
+        const reg = { tipo: x.tipo, numero: x.numero, data: x.data, hora: x.hora, cidade: x.cidade, endereco: x.endereco, bairro: c.bairro || '', pontos: lidos || [], prazo: c.prazo || '', data_fim: c.data_fim || '',
+          status: c.status || 'PLANEJADO', equipe: c.equipe || '', resultado: c.resultado || '', postes: c.postes || '', acao_cpfl: c.acao_cpfl || '', obs: c.obs || '',
+          rede: c.rede || null, origem: /\.pdf$/i.test(c.fonte || '') ? 'PDF' : /e-mail|\.eml/i.test(c.fonte || '') ? 'EMAIL' : 'EXCEL', anexos: ax ? [ax] : [] };
+        reg.id = c.seq || c.origem_formato === 'COMUNICADO' ? C.chaveRua(reg) : C.chave(reg);
+        const antes = lista().find(r => r.id === reg.id);
+        mesclar([reg], reg.origem); if (!antes) inc++;
+        const r = lista().find(y => y.id === reg.id);
+        if (ax && !(r.anexos || []).some(a => a.id === ax.id)) r.anexos = (r.anexos || []).concat([ax]);
+        if (c.rede) r.rede = c.rede;
+        if (x.ch && !r.id_chamado && r.status === 'PLANEJADO') { await novoChamado(r); ch++; }
+      }
+      SN.log('CPFL_NOTIFICACOES', '', `${res.linhas.length} lidas · ${inc} novas · ${ch} chamados`); SN.salvar();
+      SN.toast(`${inc} notificação(ões) nova(s)${ch ? ` · ${ch} chamado(s) na Esteira` : ''}.`, 'ok');
+      st.aba = 'MAPA'; st.per = 'tudo'; pintar();
+    } finally { fim(); }
+  };
+  // Texto para responder o e-mail: o que passa e o que não passa na nossa rede.
+  const resumoRede = cands => {
+    const lin = c => `- ${c.numero ? 'Nota ' + c.numero + ' · ' : ''}${c.endereco || '(sem endereço)'}${c.bairro ? ' – ' + c.bairro : ''} / ${c.cidade || ''}${c.data ? ' · ' + dia(c.data) : ''}${c.hora ? ' ' + c.hora : ''}`;
+    const tem = cands.filter(c => c.rede && c.rede.tem), nao = cands.filter(c => c.rede && !c.rede.tem), fora = cands.filter(c => c.foraArea), conf = cands.filter(c => !c.rede && !c.foraArea);
+    return ['Prezados,', '', 'Segue a verificação da Net Turbo para as intervenções informadas:', '',
+      `COM REDE NET TURBO (${tem.length}) — acompanharemos:`, ...(tem.length ? tem.map(c => lin(c) + ` (${c.rede.metros} m de cabo${c.rede.caixas ? ', ' + c.rede.caixas + ' caixa(s) de emenda' : ''})`) : ['- nenhuma']), '',
+      `SEM REDE NET TURBO (${nao.length + fora.length}):`, ...(nao.length + fora.length ? nao.concat(fora).map(lin) : ['- nenhuma']),
+      ...(conf.length ? ['', `A CONFERIR (${conf.length}) — endereço não localizado:`, ...conf.map(lin)] : []), '', 'Atenciosamente,', 'Net Turbo — Operação e Manutenção'].join('\n');
   };
   const lerPlanilhaArquivo = async file => {
     if (!window.XLSX) throw new Error('Leitor de Excel indisponível (sem internet?).');
@@ -356,69 +523,6 @@
     return out.join('\n');
   };
   const dataUrlDe = file => new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = falha; r.readAsDataURL(file); });
-  const importarNotificacoes = async files => {
-    const fim = SN.cobrirCarregando('Lendo as notificações…'), cands = [], cids = cidadesConhecidas();
-    try {
-      for (const f of files) {
-        if (/\.pdf$/i.test(f.name) || f.type === 'application/pdf') {
-          const txt = await textoPdf(f), r = C.extrair(txt, { cidades: cids });
-          cands.push({ ...r, arquivo: f, fonte: f.name, trecho: txt.replace(/\s+/g, ' ').slice(0, 300) });
-        } else {
-          const abas = await lerPlanilhaArquivo(f);
-          for (const a of abas) {
-            const cab = (a.linhas[0] || []).map(C.norm);
-            if (cab.includes('NOTIFICACAO') && cab.includes('DATA')) { C.lerPlanilha(a.linhas).forEach(r => cands.push({ ...r, arquivo: f, fonte: f.name + ' · ' + a.nome })); continue; }
-            a.linhas.forEach((l, i) => { const txt = l.map(v => v instanceof Date ? v.toLocaleDateString('pt-BR') : String(v)).join(' | ');
-              if (txt.replace(/[|\s]/g, '').length < 8) return; const r = C.extrair(txt, { cidades: cids });
-              if (r.data && (r.numero || r.pontos.length || r.endereco)) cands.push({ ...r, arquivo: f, fonte: f.name + ' · ' + a.nome + ' linha ' + (i + 1), trecho: txt.slice(0, 200) }); });
-          }
-        }
-      }
-    } finally { fim(); }
-    if (!cands.length) return SN.toast('Não achei notificação nos arquivos (data, número ou endereço).', 'erro');
-    conferir(cands);
-  };
-  // Conferência: cada notificação lida, editável, antes de entrar no SigoNet e na Esteira.
-  const conferir = async cands => {
-    const linha = (c, i) => `<tr data-i="${i}"><td><input type="checkbox" data-k="ok" checked></td>
-      <td><select class="inp" data-k="tipo">${Object.entries(C.TIPOS).map(([k, v]) => `<option value="${k}" ${c.tipo === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select></td>
-      <td><input class="inp" data-k="numero" value="${esc(c.numero)}" style="width:110px"></td>
-      <td><input class="inp" type="date" data-k="data" value="${esc(c.data)}"></td><td><input class="inp" type="time" data-k="hora" value="${esc(c.hora)}"></td>
-      <td><input class="inp" data-k="cidade" value="${esc(c.cidade)}" style="width:120px"></td><td><input class="inp" data-k="endereco" value="${esc(c.endereco)}"></td>
-      <td><input class="inp" data-k="coord" value="${esc((c.pontos || []).map(p => p.join(', ')).join(' / '))}" placeholder="lat, lng"></td>
-      <td class="small muted" title="${esc(c.trecho || '')}">${esc(c.fonte)}</td></tr>`;
-    const res = await SN.modal({ titulo: `Conferir ${cands.length} notificação(ões)`, largo: true,
-      corpo: `<p class="small">Confira o que foi lido (passe o mouse no arquivo para ver o trecho). Sem coordenada, entra na lista "sem localização" para marcar no mapa.</p>
-        <div class="tabela-wrap"><table class="tab small cp-conf"><thead><tr><th></th><th>Tipo</th><th>Notificação</th><th>Data</th><th>Hora</th><th>Cidade</th><th>Endereço</th><th>Coordenadas</th><th>Arquivo</th></tr></thead><tbody>${cands.map(linha).join('')}</tbody></table></div>
-        <label class="small" style="display:flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" id="cCh" checked> Abrir os chamados na Esteira (não atribuídos, prazo na hora agendada)</label>`,
-      botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Adicionar', cls: 'prim', acao: m => {
-        const out = SN.$$('tbody tr', m).map(tr => { const g = k => SN.$(`[data-k="${k}"]`, tr); return { i: +tr.dataset.i, ok: g('ok').checked, tipo: g('tipo').value, numero: g('numero').value.trim(), data: g('data').value, hora: g('hora').value,
-          cidade: g('cidade').value.trim(), endereco: g('endereco').value.trim(), coord: g('coord').value }; }).filter(x => x.ok);
-        if (out.some(x => !x.data || !x.cidade)) { SN.toast('Cada notificação marcada precisa de data e cidade.', 'erro'); return false; }
-        return { linhas: out, chamado: SN.$('#cCh', m).checked }; } }] });
-    if (!res) return;
-    const fim = SN.cobrirCarregando('Guardando…'), anexos = new Map();
-    try {
-      let inc = 0, ch = 0;
-      for (const x of res.linhas) {
-        const c = cands[x.i];
-        if (c.arquivo && !anexos.has(c.arquivo)) { try { anexos.set(c.arquivo, await SN.guardarDataUrl(await dataUrlDe(c.arquivo), c.arquivo.name, 'arquivo', 'cpfl')); } catch (e) { anexos.set(c.arquivo, null); } }
-        const ax = anexos.get(c.arquivo);
-        const reg = { tipo: x.tipo, numero: x.numero, data: x.data, hora: x.hora, cidade: x.cidade, endereco: x.endereco, pontos: C.pontosDe(x.coord), prazo: c.prazo || '', status: c.status || 'PLANEJADO',
-          equipe: c.equipe || '', resultado: c.resultado || '', postes: c.postes || '', origem: /\.pdf$/i.test(c.fonte) ? 'PDF' : 'EXCEL', anexos: ax ? [ax] : [] };
-        reg.id = C.chave(reg);
-        const antes = lista().find(r => r.id === reg.id);
-        mesclar([reg], reg.origem); if (!antes) inc++;
-        const r = lista().find(y => y.id === reg.id);
-        if (ax && !(r.anexos || []).some(a => a.id === ax.id)) r.anexos = (r.anexos || []).concat([ax]);
-        if (res.chamado && !r.id_chamado && r.status === 'PLANEJADO') { await novoChamado(r); ch++; }
-      }
-      SN.log('CPFL_NOTIFICACOES', '', `${res.linhas.length} lidas · ${inc} novas · ${ch} chamados`); SN.salvar();
-      SN.toast(`${inc} notificação(ões) nova(s)${ch ? ` · ${ch} chamado(s) na Esteira` : ''}.`, 'ok');
-      st.aba = 'MAPA'; st.per = 'tudo'; pintar();
-    } finally { fim(); }
-  };
-
   // Menu (Operação, depois da Esteira) e nome da tela em Cadastros e Acessos.
   SN.TELAS.cpfl = 'Acompanhamentos CPFL (troca de poste, limpeza…)';
   const i = SN.MENU.findIndex(m => m.tela === 'chamados');

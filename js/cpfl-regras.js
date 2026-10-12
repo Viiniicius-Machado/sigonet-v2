@@ -156,6 +156,103 @@
     return r;
   };
 
+  // ─────────── E-mails da CPFL (vários formatos) ───────────
+  // Vistos em 2026-10-12 (prints do Outlook):
+  //  (a) "LIMPEZA DE CABOS TELECOM - 00000/2026/DJM": "no dia 28/09/2026 … nos seguintes endereços:"
+  //      e uma linha por rua "R. Exemplo – Bairro / Cidade – SP" (sem coordenada);
+  //  (b) "Projeto de Reordenamento de <cidade> - dd/mm/aaaa": "Início previsto: às 9:00", "Local de atuação: …",
+  //      "Ponto de encontro: …";
+  //  (c) "[Report Ocupação] Programação equipes de Regularização de Cabos … da semana": tabela com
+  //      nota, cidade, "59 postes", ação, data início, data fim, endereço de referência.
+  // Devolve uma LISTA de notificações (um e-mail pode ter várias ruas ou várias linhas).
+  var RUA = /^\s*(R\.|RUA|AV\.?|AVENIDA|ESTR\.?|ESTRADA|ROD\.?|RODOVIA|TRAVESSA|TV\.|ALAMEDA|AL\.|PRA[ÇC]A|P[ÇC]A\.?|VIELA|LARGO)\s/i;
+  // "R. Exemplo – Bairro / Cidade – SP" → rua, bairro, cidade.
+  C.lerLinhaEndereco = function (linha) {
+    var l = String(linha || '').replace(/\s+/g, ' ').replace(/[–—]/g, '-').trim(), cidade = '', bairro = '', rua = l;
+    var m = /^(.*?)\s*\/\s*([^\/]+?)(?:\s*-\s*[A-Z]{2})?\s*$/.exec(l);
+    if (m) { rua = m[1]; cidade = m[2].trim(); }
+    var b = /^(.*?)\s+-\s+(.+)$/.exec(rua); if (b) { rua = b[1]; bairro = b[2]; }
+    return { rua: rua.replace(/[,.;\s]+$/, '').trim(), bairro: bairro.trim(), cidade: cidade };
+  };
+  // Linha da tabela "Report Ocupação": 7700000 Cidade 69 postes Regularização 05/10/2026 09/10/2026 Endereço…
+  var LINHA_REPORT = /(\d{6,8})\s+([A-Za-zÀ-ÿ'.\- ]{3,40}?)\s+(\d{1,4})\s*postes?[ \t]+([A-Za-zÀ-ÿ]+)[ \t]*(\d{1,2}\/\d{1,2}\/\d{4})?[ \t]*(\d{1,2}\/\d{1,2}\/\d{4})?[ \t]*([^\n]*?)(?=[ \t]+\d{6,8}[ \t]+[A-Za-zÀ-ÿ]|\n|$)/g;
+  C.extrairEmail = function (texto, opts) {
+    var o = opts || {}, s = String(texto || '').replace(/\r/g, ''), t = norm(s), out = [];
+    var assunto = ((/(?:^|\n)\s*(?:ASSUNTO|SUBJECT)\s*:\s*([^\n]+)/i.exec(s) || [])[1] || o.assunto || s.split('\n').filter(function (l) { return l.trim(); })[0] || '').trim();
+    // (c) tabela de programação semanal
+    var linhas = []; s.split('\n').forEach(function (l) { var x = l.replace(/\t+/g, ' ').replace(/\s+/g, ' ').trim(); if (x) linhas.push(x); });
+    var corpo = linhas.join('\n'), m, achou = [];
+    LINHA_REPORT.lastIndex = 0;
+    while ((m = LINHA_REPORT.exec(corpo))) achou.push(m);
+    if (achou.length >= 2 || (achou.length && /QTD_?POSTES|REPORT OCUPA|PROGRAMACAO EQUIPES/.test(t))) {
+      achou.forEach(function (m) {
+        var ini = C.dataDe(m[5]), fim = C.dataDe(m[6]);
+        out.push({ tipo: 'REGULARIZACAO', numero: m[1], cidade: m[2].trim(), postes: Number(m[3]), acao_cpfl: m[4], data: ini || fim || '', data_fim: fim, hora: '',
+          endereco: (m[7] || '').replace(/\s+-\s+SP\b.*$/i, '').replace(/,\s*\d{5}-?\d{3}\s*$/, '').trim(), bairro: '', pontos: [], origem_formato: 'REPORT' });
+      });
+      return out;
+    }
+    // (a)/(b) comunicado com data e ruas
+    var tipo = C.tipoDe(assunto + ' ' + s);
+    var num = (/(\d{3,6}\s*\/\s*\d{4})(?:\s*\/\s*[A-Z]{2,5})?/.exec(norm(assunto)) || [])[1] || (/\b(\d{7,8})\b/.exec(norm(assunto)) || [])[1] || '';
+    num = num.replace(/\s+/g, '');
+    var dt = /(?:NO DIA|DIA|DATA[^:\n]{0,20}:?)\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/.exec(t) || /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t) || /(\d{1,2}-\d{1,2}-\d{4})/.exec(norm(assunto));
+    var data = dt ? C.dataDe(dt[1].replace(/-/g, '/')) : '';
+    var hr = /(?:INICIO PREVISTO|INICIO|HORARIO)\s*:?\s*(?:AS\s*)?(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t) || /\bAS\s+(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t);
+    var hora = hr ? C.horaDe(hr[1] + ':' + hr[2]) : '';
+    var cidadeAssunto = '', cids = o.cidades || [];
+    cids.forEach(function (c) { if (norm(c).length > 3 && norm(assunto).indexOf(norm(c)) >= 0) cidadeAssunto = c; });
+    var ruas = [], linhasOrig = s.split('\n');
+    // depois de "seguintes endereços": cada linha que começa com R./Av./Rua…
+    var iEnd = -1; linhasOrig.forEach(function (l, i) { if (iEnd < 0 && /SEGUINTES ENDERECOS|ENDERECOS ABAIXO|NOS ENDERECOS/.test(norm(l))) iEnd = i; });
+    if (iEnd >= 0) {
+      for (var i = iEnd + 1; i < linhasOrig.length && ruas.length < 30; i++) { var l = linhasOrig[i].trim(); if (!l) continue; if (RUA.test(l)) ruas.push(C.lerLinhaEndereco(l)); else if (ruas.length) break; }
+    }
+    var achaCampo = function (re) { var x = null; linhasOrig.some(function (l) { var n = norm(l); if (re.test(n)) { x = l.slice(l.indexOf(':') + 1).trim(); return true; } return false; }); return x; };
+    var local = achaCampo(/^LOCAL D[AE] (ATUACAO|EXECUCAO|INTERVENCAO)\s*:/);
+    if (!ruas.length && local) ruas.push(C.lerLinhaEndereco(local));
+    if (!ruas.length) { var r1 = C.extrair(s, o); if (r1.endereco) ruas.push({ rua: r1.endereco, bairro: '', cidade: r1.cidade }); }
+    var encontro = achaCampo(/^PONTO DE ENCONTRO\s*:/) || '';
+    (ruas.length ? ruas : [{ rua: '', bairro: '', cidade: '' }]).forEach(function (r, i) {
+      var cid = r.cidade || cidadeAssunto || C.extrair(s, o).cidade;
+      cids.forEach(function (c) { if (norm(c) === norm(cid)) cid = c; });
+      out.push({ tipo: tipo === 'OUTRO' ? 'LIMPEZA' : tipo, numero: num, data: data, hora: hora, cidade: cid, endereco: r.rua, bairro: r.bairro, pontos: C.pontosDe(s, true),
+        obs: encontro ? 'Ponto de encontro: ' + encontro : '', assunto: assunto, origem_formato: 'COMUNICADO', seq: ruas.length > 1 ? i + 1 : 0 });
+    });
+    return out;
+  };
+  // Chave quando um e-mail tem várias ruas: número + data + rua.
+  C.chaveRua = function (r) { return C.chave(r) + (r.endereco ? '-' + norm(r.endereco).replace(/[^A-Z0-9]/g, '').slice(0, 24) : ''); };
+
+  // ─────────── A notificação passa na nossa rede? ───────────
+  // trechos = geometria da rua (lista de trechos [[lat,lng]…]) ou só o ponto; rede = dados da cidade
+  // (rede-regras.js, expandidos); R = funções da rede. Amostra a rua a cada ~10 m e soma o trecho em
+  // que há cabo nosso a até "raio" metros; conta as caixas a 30 m da rua.
+  C.naRede = function (trechos, rede, R, raio) {
+    raio = raio || 20;
+    if (!rede || !R) return null;
+    var res = { metros: 0, cabos: {}, caixas: [], ruaM: 0 };
+    (trechos || []).forEach(function (pts) {
+      if (pts.length === 1) { var c1 = R.caboMaisPerto(rede, pts[0][0], pts[0][1]); if (c1.cabo && c1.d <= Math.max(raio, 50)) { res.metros += 1; res.cabos[c1.cabo.n] = 1; } return; }
+      for (var i = 1; i < pts.length; i++) {
+        var a = pts[i - 1], b = pts[i], d = R.dist(a, b), n = Math.max(1, Math.ceil(d / 10));
+        for (var k = 0; k < n; k++) {
+          var f = (k + 0.5) / n, p = [a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])], seg = d / n;
+          res.ruaM += seg;
+          var cb = R.caboMaisPerto(rede, p[0], p[1]);
+          if (cb.cabo && cb.d <= raio) { res.metros += seg; res.cabos[cb.cabo.n] = (res.cabos[cb.cabo.n] || 0) + seg; }
+        }
+      }
+    });
+    var perto = function (c) { return (trechos || []).some(function (pts) { if (pts.length === 1) return R.dist(pts[0], [c.lat, c.lng]) <= 30;
+      for (var i = 1; i < pts.length; i++) if (R.distSeg([c.lat, c.lng], pts[i - 1], pts[i]) <= 30) return true; return false; }); };
+    rede.caixas.forEach(function (c) { if (perto(c)) res.caixas.push(c.n); });
+    res.metros = Math.round(res.metros); res.ruaM = Math.round(res.ruaM);
+    res.cabos = Object.keys(res.cabos).sort(function (x, y) { return res.cabos[y] - res.cabos[x]; });
+    res.tem = res.metros > 0 || res.caixas.length > 0;
+    return res;
+  };
+
   // ─────────── Painel do mês (como o "PAINEL MENSAL" da planilha) ───────────
   // iv = [inicio, fim) em "aaaa-mm-dd". Recebidas = notificações com data no período.
   C.painel = function (regs, ini, fim) {
