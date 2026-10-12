@@ -640,3 +640,7 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 .cp-conf select.inp{min-width:150px}
 .cp-conf [data-k="endereco"]{min-width:220px}
 .cp-conf [data-k="coord"]{min-width:180px}
+.cp-rt-it{display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borda);cursor:pointer}
+.cp-rt-it input{margin-top:3px}
+.cp-num{width:26px;height:26px;border-radius:50%;background:#2563eb;color:#fff;font:700 12px/26px Arial;text-align:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.cp-num.erro{background:#dc2626}

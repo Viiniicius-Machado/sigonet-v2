@@ -43,7 +43,7 @@
   // ═══════════════════════════ Tela ═══════════════════════════
   SN.rota('/cpfl', () => pintar(), { tela: TELA });
   const pintar = () => {
-    const abas = [['MAPA', 'Mapa'], ['LISTA', 'Lista'], ['PAINEL', 'Painel do mês'], ['IMPORTAR', 'Importar']];
+    const abas = [['MAPA', 'Mapa'], ['ROTAS', 'Rotas'], ['LISTA', 'Lista'], ['PAINEL', 'Painel do mês'], ['IMPORTAR', 'Importar']];
     const semLocal = lista().filter(r => !(r.pontos || []).length && r.status === 'PLANEJADO' && r.data >= hoje()).length;
     SN.casca('cpfl', `
       <div class="cab-pagina"><div><h1>Acompanhamentos CPFL</h1><p>Troca de poste, limpeza de cabo, reordenamento e demais serviços da concessionária na nossa rede. Risco para ${C.MIN_CLIENTES_MASSIVA} ou mais clientes = massiva: a Manutenção acompanha.</p></div>
@@ -57,7 +57,7 @@
     SN.$('#bNovoAg').onclick = () => editar(null);
     if (SN.$('#bConfEmail')) SN.$('#bConfEmail').onclick = () => conferirEmails().then(pintar);
     if (SN.$('#bConfTec')) SN.$('#bConfTec').onclick = () => confirmarTecnicos().then(pintar);
-    ({ MAPA: pintarMapa, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
+    ({ MAPA: pintarMapa, ROTAS: pintarRotas, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
     verificarAuto().catch(() => { });
   };
   const filtrosHtml = (comPeriodo) => `<div class="card card-filtros"><div class="filtros">
@@ -372,6 +372,127 @@
       <div class="card" style="margin-top:12px"><h3>Pendentes no mês (sem ação) · ${pend.length}</h3>${tab(['Data', 'Notificação', 'Tipo', 'Cidade', 'Status', ''], pend.slice(0, 200).map(r => `<tr><td>${dia(r.data)}</td><td class="mono">${esc(numTxt(r))}</td><td>${esc(tipoRot(r.tipo))}</td><td>${esc(r.cidade || '')}</td><td>${SN.badge(C.STATUS, r.status)}</td><td><div class="acoes" style="gap:6px;min-width:230px">${acoesReg(r)}</div></td></tr>`))}</div>`;
     SN.$('#fMes').onchange = e => { if (e.target.value) { st.ref = e.target.value + '-01'; pintarPainel(); } };
     ligarAcoes(SN.$('#cpCorpo'), pintarPainel);
+  };
+
+  // ═══════════════════════════ Rotas ═══════════════════════════
+  // Rota do dia (como a ordem das CS na Preventiva, mas respeitando a hora marcada pela CPFL) e
+  // atrasados em blocos por proximidade para replanejar. Regras em cpfl-regras.js (C.montarRota…).
+  const rt = { data: '', diasAtraso: 30, sel: {}, rota: null, raioKm: 3 };
+  const abertoAgend = r => r.status === 'PLANEJADO' && !r.resultado && (r.pontos || []).length && !(chamadoDe(r) && ['CONCLUIDO_TECNICO', 'FECHADO', 'CANCELADO'].includes(chamadoDe(r).status));
+  const atrasados = () => { const hj = hoje(), lim = somaDias(hj, -rt.diasAtraso); return lista().filter(r => abertoAgend(r) && r.data < hj && r.data >= lim); };
+  const doDia = d => lista().filter(r => r.data === d && abertoAgend(r));
+  const pt = r => r.pontos[0];
+  const pintarRotas = () => {
+    const d = rt.data || hoje(), dia0 = doDia(d), at = atrasados();
+    // atrasados a até 3 km de algum serviço do dia (candidatos a encaixe)
+    const perto = at.filter(a => !dia0.includes(a) && dia0.some(x => C.distM(pt(a), pt(x)) <= rt.raioKm * 1000));
+    if (!rt.sel.__dia || rt.sel.__dia !== d) { rt.sel = { __dia: d }; dia0.forEach(r => { rt.sel[r.id] = true; }); rt.rota = null; }
+    const semLocal = lista().filter(r => r.data === d && r.status === 'PLANEJADO' && !r.resultado && !(r.pontos || []).length);
+    const linha = (r, atras) => `<label class="cp-rt-it"><input type="checkbox" data-rsel="${esc(r.id)}" ${rt.sel[r.id] ? 'checked' : ''}>
+      <span><b>${r.hora ? esc(r.hora) : 'sem hora'}</b> · ${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>${atras ? ` <span class="badge alerta">atrasado de ${dia(r.data)}</span>` : ''}${redeTxt(r)}
+        <span class="small muted" style="display:block">${esc(r.cidade || '')}${r.endereco ? ' · ' + esc(r.endereco) : ''}${r.id_chamado ? ' · ' + esc(r.id_chamado) : ''}</span></span></label>`;
+    const blocos = C.blocosAtrasados(at.map(r => ({ id: r.id, ponto: pt(r), tipo: r.tipo, data: r.data })), { raioKm: rt.raioKm });
+    const agendaFutura = lista().filter(r => r.data >= hoje() && r.data <= somaDias(hoje(), 14) && abertoAgend(r)).map(r => ({ id: r.id, data: r.data, ponto: pt(r) }));
+    SN.$('#cpCorpo').innerHTML = `<div class="cp-grade">
+      <div class="card" style="min-width:0"><div class="card-tit"><h3>🧭 Rota do dia</h3>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap"><button class="btn sm" data-rmov="-1">◀</button><input class="inp" type="date" id="rtData" value="${esc(d)}" style="width:150px"><button class="btn sm" data-rmov="1">▶</button></div></div>
+        <p class="small muted">Saída no 1º agendamento · ${C.TEMPO_LOCAL.TROCA_POSTE} min por troca de poste, ${C.TEMPO_LOCAL.LIMPEZA} min por limpeza/reordenamento · hora marcada pela CPFL fica fixa; atrasados e sem hora entram nos intervalos, sempre o mais perto.</p>
+        <div id="rtLista">${dia0.map(r => linha(r, false)).join('') || '<p class="muted small">Nenhum agendamento aberto com localização neste dia.</p>'}
+          ${perto.length ? `<h4 style="margin:10px 0 4px">Atrasados perto destes serviços (até ${rt.raioKm} km)</h4>${perto.map(r => linha(r, true)).join('')}` : ''}
+          ${semLocal.length ? `<p class="small" style="color:#b45309">${semLocal.length} agendamento(s) do dia sem localização (fora da rota): marque no mapa pela Lista.</p>` : ''}</div>
+        <div class="acoes" style="margin-top:8px"><button class="btn prim" id="bMontar">Montar rota</button></div>
+        <div id="rtRes"></div></div>
+      <div class="card cp-lado"><h3>⏰ Atrasados (${at.length})</h3>
+        <div class="filtros" style="margin-bottom:6px"><label class="small">Últimos</label><select class="inp" id="rtDias" style="max-width:120px">${[15, 30, 60, 120].map(n => `<option ${n === rt.diasAtraso ? 'selected' : ''} value="${n}">${n} dias</option>`).join('')}</select></div>
+        <p class="small muted">Passaram da data sem resultado. Agrupados por proximidade (cada bloco cabe num dia).</p>
+        ${blocos.map((b, i) => { const enc = C.encaixeSugerido(b, agendaFutura, { raioKm: 5 }), regs = b.itens.map(x => lista().find(r => r.id === x.id)), cids = [...new Set(regs.map(r => r.cidade))];
+          return `<div class="cp-item"><b>Bloco ${i + 1}</b> · ${b.itens.length} serviço(s) · ~${Math.round(b.minutos / 60 * 10) / 10} h · ${esc(cids.join(', '))}
+            <div class="small muted">mais antigo ${dia(b.maisAntigo)}${enc ? ` · <span style="color:var(--ok,#15803d)">encaixe sugerido: ${dia(enc.data)} (serviço a ${SN.num(enc.dist)} m)</span>` : ''}</div>
+            <div class="acoes" style="gap:6px;margin-top:4px">${enc ? `<button class="btn sm prim" data-encx="${i}" data-dia="${enc.data}">Encaixar em ${dia(enc.data)}</button>` : ''}<button class="btn sm" data-blocodia="${i}">Escolher dia…</button></div></div>`; }).join('') || '<p class="muted small">Nenhum atrasado no período. 👍</p>'}</div></div>`;
+    SN.$$('[data-rmov]').forEach(b => b.onclick = () => { rt.data = somaDias(d, +b.dataset.rmov); pintarRotas(); });
+    SN.$('#rtData').onchange = e => { rt.data = e.target.value; pintarRotas(); };
+    SN.$('#rtDias').onchange = e => { rt.diasAtraso = +e.target.value; pintarRotas(); };
+    SN.$$('[data-rsel]').forEach(c => c.onchange = () => { rt.sel[c.dataset.rsel] = c.checked; rt.rota = null; SN.$('#rtRes').innerHTML = ''; });
+    SN.$('#bMontar').onclick = () => montarRotaTela(d).catch(e => SN.toast(e.message, 'erro'));
+    const levarPara = async (i, dataNova) => { const b = blocos[i], regs = b.itens.map(x => lista().find(r => r.id === x.id));
+      if (!await SN.confirmar('Encaixar ' + regs.length + ' atrasado(s)', `Remarcar para <b>${dia(dataNova)}</b> e abrir a rota desse dia com eles marcados?<br><span class="small muted">${regs.map(r => esc(numTxt(r)) + ' · ' + esc(r.endereco || r.cidade)).join('<br>')}</span>`, 'Encaixar', 'prim')) return;
+      regs.forEach(r => { if (!r.data_original) r.data_original = r.data; hist(r, 'REAGENDADO', dia(r.data) + ' → ' + dia(dataNova)); r.data = dataNova; r.editado = true;
+        const c = chamadoDe(r); if (c && ['NAO_ATRIBUIDO', 'ATRIBUIDO', 'ACEITO'].includes(c.status)) { c.prazoLimite = new Date(dataNova + 'T' + (r.hora || '23:59') + ':00').toISOString(); SN.hist(c, 'Reagendado (CPFL)', dia(dataNova)); } });
+      SN.salvar(); rt.data = dataNova; rt.sel = { __dia: dataNova }; doDia(dataNova).forEach(r => { rt.sel[r.id] = true; }); pintarRotas(); SN.toast(regs.length + ' atrasado(s) encaixado(s) em ' + dia(dataNova) + '.', 'ok'); };
+    SN.$$('[data-encx]').forEach(b => b.onclick = () => levarPara(+b.dataset.encx, b.dataset.dia));
+    SN.$$('[data-blocodia]').forEach(b => b.onclick = async () => { const v = await SN.modal({ titulo: 'Escolher o dia', corpo: `<input class="inp" type="date" id="mDia" min="${hoje()}" value="${hoje()}">`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Usar este dia', cls: 'prim', acao: m => SN.$('#mDia', m).value || false }] }); if (v) levarPara(+b.dataset.blocodia, v); });
+  };
+  // Tempo de deslocamento pelas ruas (OSRM table, carro); sem resposta, estimativa pela distância.
+  const matrizTempos = async pts => {
+    try {
+      const r = await (await fetch('https://router.project-osrm.org/table/v1/driving/' + pts.map(p => p[1] + ',' + p[0]).join(';') + '?annotations=duration', { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })).json();
+      if (r.code === 'Ok' && r.durations) return { m: r.durations.map(l => l.map(s => s == null ? null : Math.round(s / 60) + 5)), ruas: true };
+    } catch (e) { }
+    return { m: null, ruas: false };
+  };
+  const montarRotaTela = async d => {
+    const regs = lista().filter(r => rt.sel[r.id] && (r.pontos || []).length);
+    if (!regs.length) return SN.toast('Marque os serviços da rota.', 'erro');
+    if (regs.length > 25) return SN.toast('No máximo 25 serviços numa rota.', 'erro');
+    const fim = SN.cobrirCarregando('Calculando a rota pelas ruas…');
+    let mt; try { mt = await matrizTempos(regs.map(pt)); } finally { fim(); }
+    const itens = regs.map(r => ({ id: r.id, ponto: pt(r), tipo: r.tipo, hora: r.data === d ? r.hora : '' })); // atrasado encaixado: sem hora fixa
+    const res = C.montarRota(itens, { tempo: mt.m ? (i, j) => (mt.m[i][j] == null ? C.tempoEstimado(itens[i].ponto, itens[j].ponto) : (i === j ? 0 : mt.m[i][j])) : null });
+    rt.rota = { data: d, res, regs, ruas: mt.ruas };
+    pintarResultadoRota();
+  };
+  const pintarResultadoRota = () => {
+    const el = SN.$('#rtRes'); if (!el || !rt.rota) return;
+    const { res, regs, ruas, data } = rt.rota, porId = Object.fromEntries(regs.map(r => [r.id, r]));
+    const gmaps = 'https://www.google.com/maps/dir/' + res.seq.map(x => pt(porId[x.id]).join(',')).join('/');
+    el.innerHTML = `<div class="aviso ${res.conflitos ? 'alerta' : 'ok'} small" style="margin-top:10px">${res.seq.length} parada(s) · término previsto <b>${res.termino}</b> · ${SN.num(res.km, 1)} km · ${res.deslocMin} min de deslocamento ${ruas ? '(tempo pelas ruas)' : '(estimado pela distância)'}${res.conflitos ? ` · <b>${res.conflitos} conflito(s) de horário</b>` : ''}${res.naoCouberam.length ? ` · ${res.naoCouberam.length} não couberam no dia` : ''}</div>
+      <div class="tabela-wrap"><table class="tab small"><thead><tr><th>#</th><th>Chegada</th><th>Início</th><th>Serviço</th><th>Onde</th><th class="num">Desloc.</th></tr></thead><tbody>
+      ${res.seq.map(x => { const r = porId[x.id]; return `<tr${x.conflito ? ' style="background:#fef2f2"' : ''}><td><b>${x.ordem}</b></td><td class="nowrap">${x.chegada}</td>
+        <td class="nowrap">${x.inicio}${x.horaMarcada ? ` <span class="badge">marcado ${x.horaMarcada}</span>` : ''}${x.conflito ? ` <span class="badge erro">${x.atrasoMin} min atrasado</span>` : ''}${x.espera > 15 ? ` <span class="muted">(espera ${x.espera} min)</span>` : ''}</td>
+        <td>${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>${r.data !== data ? ' <span class="badge alerta">atrasado</span>' : ''}</td><td>${esc(r.cidade || '')}<div class="muted">${esc(r.endereco || '')}</div></td><td class="num">${x.deslocMin} min</td></tr>`; }).join('')}</tbody></table></div>
+      ${res.conflitos ? `<p class="small" style="color:#b45309">Uma equipe só não cumpre todos os horários marcados. Desmarque os que estão em vermelho, despache esta rota e monte uma 2ª rota com eles para outra equipe.</p>` : ''}
+      ${res.naoCouberam.length ? `<p class="small" style="color:#b45309">Não couberam no dia: ${res.naoCouberam.map(id => esc(numTxt(porId[id]))).join(', ')}</p>` : ''}
+      <div id="rtMapa" class="prj-mapa" style="height:360px;min-height:0;margin-top:8px"></div>
+      <div class="acoes" style="margin-top:8px"><a class="btn" href="${esc(gmaps)}" target="_blank" rel="noopener">🗺 Abrir a rota no Google Maps</a><button class="btn ok" id="bDespRota">🚀 Despachar esta rota</button></div>`;
+    SN.$('#bDespRota').onclick = () => despacharRota().catch(e => SN.toast(e.message, 'erro'));
+    carregarLeaflet().then(() => { const L = window.L, m = SN.$('#rtMapa'); if (!m) return;
+      const mp = L.map(m, { zoomAnimation: false }); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mp);
+      const pts = res.seq.map(x => pt(porId[x.id]));
+      L.polyline(pts, { color: '#2563eb', weight: 4, opacity: 0.8, dashArray: '8 6' }).addTo(mp);
+      res.seq.forEach((x, k) => L.marker(pts[k], { icon: L.divIcon({ className: 'prj-ico', html: `<div class="cp-num ${x.conflito ? 'erro' : ''}">${x.ordem}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(mp)
+        .bindTooltip(`${x.ordem} · ${x.inicio} · ${esc(tipoRot(porId[x.id].tipo))} ${esc(numTxt(porId[x.id]))}`));
+      mp.fitBounds(L.latLngBounds(pts).pad(0.2), { animate: false, maxZoom: 16 }); }).catch(() => { });
+  };
+  // Despacha a rota inteira: conta + técnico; cria/atualiza os chamados com a ordem e a hora prevista.
+  const despacharRota = async () => {
+    const { res, regs, data } = rt.rota, porId = Object.fromEntries(regs.map(r => [r.id, r]));
+    const porEmp = {}; SN.tecnicosDespacho().forEach(t => (porEmp[t.empresa] = porEmp[t.empresa] || []).push(t));
+    const ocupado = res.seq.map(x => chamadoDe(porId[x.id])).filter(c => c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status));
+    if (ocupado.length) return SN.toast(`${ocupado.map(c => c.id).join(', ')} já está(ão) em andamento: tire da rota.`, 'erro');
+    const v = await SN.modal({ titulo: `Despachar rota de ${dia(data)} · ${res.seq.length} parada(s)`,
+      corpo: `<div class="campo"><label>Conta contábil *</label><select class="inp" id="mConta">${contasOpts(CONTA)}</select></div>
+        <div class="campo"><label>Técnico (equipe) *</label><select class="inp" id="mTec"><option value="">Selecione…</option>${Object.keys(porEmp).sort().map(e => `<optgroup label="${esc(e)}">${porEmp[e].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => `<option value="${esc(t.nome)}" ${SN.indisponivel(t.nome) ? 'disabled' : ''}>${esc(SN.nomeExibicao(t.nome))} · ${SN.cargaAberta(t.nome)} OS${SN.indisponivel(t.nome) ? ' · indisponível' : ''}</option>`).join('')}</optgroup>`).join('')}</select></div>
+        <p class="small muted">Cada parada vira (ou continua) um chamado na Esteira, com a ordem e a hora prevista. No celular, o técnico vê a "Rota do dia" na sequência, com navegação, e informa o resultado em cada parada.${res.seq.some(x => porId[x.id].data !== data) ? ' Os atrasados da rota são remarcados para ' + dia(data) + '.' : ''}</p>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Despachar', cls: 'ok', acao: m => { const tec = SN.$('#mTec', m).value; if (!tec) { SN.toast('Escolha o técnico.', 'erro'); return false; } return { tec, conta: SN.$('#mConta', m).value }; } }] });
+    if (!v) return;
+    const t = SN.tecnico(v.tec), idRota = 'RT-' + data.replace(/-/g, '') + '-' + SN.uid().slice(-4).toUpperCase(), fim = SN.cobrirCarregando('Despachando…');
+    try {
+      for (const x of res.seq) {
+        const r = porId[x.id];
+        if (r.data !== data) { if (!r.data_original) r.data_original = r.data; hist(r, 'REAGENDADO', dia(r.data) + ' → ' + dia(data) + ' (rota)'); r.data = data; }
+        let c = chamadoDe(r); if (!c) c = await novoChamado(r, { conta: v.conta }); else if (c.conta !== v.conta) { SN.hist(c, 'Conta contábil', SN.contaTxt(c.conta) + ' → ' + SN.contaTxt(v.conta)); c.conta = v.conta; }
+        c.rota = { id: idRota, data, ordem: x.ordem, total: res.seq.length, prevista: x.inicio, lat: pt(r)[0], lng: pt(r)[1] };
+        c.prazoLimite = new Date(data + 'T' + (x.horaMarcada || x.saida) + ':00').toISOString();
+        const anterior = c.tecnico; c.tecnico = t.nome; c.empresa = t.empresa; if (!c.tempos.atribuicao) c.tempos.atribuicao = SN.agora();
+        if (anterior && anterior !== t.nome) { ['aceite', 'deslocamento', 'chegada'].forEach(k => delete c.tempos[k]); c.status = 'ATRIBUIDO'; } else if (c.status === 'NAO_ATRIBUIDO') c.status = 'ATRIBUIDO';
+        SN.hist(c, anterior && anterior !== t.nome ? 'Reatribuição' : 'Despacho', `${t.nome} (${t.empresa}) · rota ${idRota}, parada ${x.ordem}/${res.seq.length}, prevista ${x.inicio}`);
+        SN.int.ellevenStatus(c, 'Atribuída');
+        r.rota = { id: idRota, ordem: x.ordem }; r.editado = true; hist(r, 'ROTA', `${idRota} · parada ${x.ordem} · ${t.nome}`);
+      }
+      SN.log('CPFL_ROTA', idRota, `${res.seq.length} paradas · ${t.nome}`); SN.salvar();
+      SN.toast(`Rota ${idRota} despachada para ${t.nome}: ${res.seq.length} parada(s).`, 'ok'); rt.rota = null; pintar();
+    } finally { fim(); }
   };
 
   // ═══════════════════════════ Importar ═══════════════════════════

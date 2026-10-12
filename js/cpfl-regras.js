@@ -273,6 +273,82 @@
       .concat(['', 'Atenciosamente,', 'Net Turbo — Operação e Manutenção (mensagem automática do SigoNet)']).join('\n');
   };
 
+  // ─────────── Rota do dia (decisões do usuário em 2026-10-12) ───────────
+  // Sai do 1º agendamento; tempo no local: 60 min troca de poste, 90 min limpeza/reordenamento.
+  // Agendamento COM hora fica fixo (a CPFL marca o horário); SEM hora ou ATRASADO é flexível e entra
+  // nos intervalos entre os fixos, sempre o mais perto que ainda dá tempo. Conflito = chegar depois
+  // da hora marcada (com tolerância).
+  C.TEMPO_LOCAL = { TROCA_POSTE: 60, LIMPEZA: 90, REORDENAMENTO: 90, IRREGULARIDADE: 60, REGULARIZACAO: 90, OUTRO: 60 };
+  var minDe = function (h) { var m = /^(\d{1,2}):(\d{2})/.exec(String(h || '')); return m ? Number(m[1]) * 60 + Number(m[2]) : null; };
+  var hhmm = function (m) { m = Math.round(m); return dois(Math.floor(m / 60) % 24) + ':' + dois(m % 60); };
+  C.minDe = minDe; C.hhmm = hhmm;
+  // Distância em linha reta (m) e tempo estimado de carro na cidade (min), quando não há matriz de ruas.
+  var distM = function (a, b) { var r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLng = (b[1] - a[1]) * r, h = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2); return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(h))); };
+  C.distM = distM;
+  C.tempoEstimado = function (a, b) { return Math.round(5 + distM(a, b) * 1.35 / 1000 / 30 * 60); }; // 1,35× a reta, 30 km/h, +5 min para estacionar
+  // itens: [{ id, ponto:[lat,lng], hora:'HH:MM'|'' , tipo, fixo? }]. opts: { tempo(i,j) → min (índices em itens), inicio:'08:00', fim:'18:00', tolerancia: 15, duracao(item) }.
+  C.montarRota = function (itens, opts) {
+    var o = opts || {}, tol = o.tolerancia == null ? 15 : o.tolerancia, fimDia = minDe(o.fim || '18:00');
+    var dur = o.duracao || function (it) { return C.TEMPO_LOCAL[it.tipo] || 60; };
+    var tempo = o.tempo || function (i, j) { return C.tempoEstimado(itens[i].ponto, itens[j].ponto); };
+    var idx = itens.map(function (x, i) { return i; });
+    var fixos = idx.filter(function (i) { return itens[i].fixo !== false && minDe(itens[i].hora) != null; }).sort(function (a, b) { return minDe(itens[a].hora) - minDe(itens[b].hora); });
+    var livres = idx.filter(function (i) { return fixos.indexOf(i) < 0; });
+    var seq = [], pos = null, t = null, naoCouberam = [];
+    var perto = function (de, lista) { var m = -1, dm = Infinity; lista.forEach(function (j) { var d = de == null ? 0 : tempo(de, j); if (d < dm) { dm = d; m = j; } }); return m; };
+    var ir = function (j, horaMarcada) {
+      var desloc = pos == null ? 0 : tempo(pos, j), chegada = t == null ? (horaMarcada != null ? horaMarcada : minDe(o.inicio || '08:00')) : t + desloc;
+      var inicio = horaMarcada != null ? Math.max(chegada, horaMarcada) : chegada, atraso = horaMarcada != null ? Math.max(0, chegada - horaMarcada) : 0;
+      seq.push({ id: itens[j].id, i: j, ordem: seq.length + 1, deslocMin: desloc, chegada: hhmm(chegada), inicio: hhmm(inicio), saida: hhmm(inicio + dur(itens[j])), espera: Math.max(0, inicio - chegada),
+        horaMarcada: horaMarcada != null ? hhmm(horaMarcada) : '', atrasoMin: atraso, conflito: atraso > tol, fixo: horaMarcada != null });
+      pos = j; t = inicio + dur(itens[j]);
+    };
+    // Começa pelo 1º agendamento: o 1º fixo; sem fixos, o livre mais "à ponta" (o que tem o vizinho mais longe).
+    if (!fixos.length && livres.length) { var ini = livres[0], maior = -1; livres.forEach(function (i) { var s2 = livres.reduce(function (s, j) { return s + (i === j ? 0 : tempo(i, j)); }, 0); if (s2 > maior) { maior = s2; ini = i; } }); livres.splice(livres.indexOf(ini), 1); ir(ini, null); }
+    fixos.forEach(function (f) {
+      var hf = minDe(itens[f].hora);
+      // encaixa livres antes deste fixo enquanto der tempo de chegar nele na hora
+      for (var guarda = 0; guarda < 50 && livres.length && t != null; guarda++) {
+        var c = perto(pos, livres.filter(function (j) { return t + tempo(pos, j) + dur(itens[j]) + tempo(j, f) <= hf + tol; }));
+        if (c < 0) break; livres.splice(livres.indexOf(c), 1); ir(c, null);
+      }
+      ir(f, hf);
+    });
+    // depois do último fixo: os livres que restam, do mais perto para o mais longe, até o fim do dia
+    while (livres.length) {
+      var c2 = perto(pos, livres); livres.splice(livres.indexOf(c2), 1);
+      if (t != null && t + (pos == null ? 0 : tempo(pos, c2)) + dur(itens[c2]) > fimDia) { naoCouberam.push(itens[c2].id); continue; }
+      ir(c2, null);
+    }
+    var desl = seq.reduce(function (s, x) { return s + x.deslocMin; }, 0);
+    return { seq: seq, naoCouberam: naoCouberam, deslocMin: desl, conflitos: seq.filter(function (x) { return x.conflito; }).length,
+      termino: seq.length ? seq[seq.length - 1].saida : '', km: Math.round(seq.reduce(function (s, x, k) { return k ? s + distM(itens[seq[k - 1].i].ponto, itens[x.i].ponto) : s; }, 0) / 100) / 10 };
+  };
+  // Atrasados (passou a data sem resultado) em blocos de serviços próximos que cabem num dia de trabalho.
+  // itens: [{ id, ponto, tipo, data }]. Começa pelo mais antigo e junta o mais perto (até raioKm) enquanto couber.
+  C.blocosAtrasados = function (itens, opts) {
+    var o = opts || {}, raio = (o.raioKm || 3) * 1000, jornada = o.jornadaMin || 480, resto = itens.slice().sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); }), blocos = [];
+    while (resto.length) {
+      var b = [resto.shift()], tot = C.TEMPO_LOCAL[b[0].tipo] || 60;
+      for (;;) {
+        var ult = b[b.length - 1], m = -1, dm = Infinity;
+        resto.forEach(function (x, k) { var d = distM(ult.ponto, x.ponto); if (d < dm) { dm = d; m = k; } });
+        if (m < 0 || dm > raio) break;
+        var add = (C.TEMPO_LOCAL[resto[m].tipo] || 60) + C.tempoEstimado(ult.ponto, resto[m].ponto);
+        if (tot + add > jornada) break;
+        tot += add; b.push(resto.splice(m, 1)[0]);
+      }
+      blocos.push({ itens: b, minutos: tot, centro: [b.reduce(function (s, x) { return s + x.ponto[0]; }, 0) / b.length, b.reduce(function (s, x) { return s + x.ponto[1]; }, 0) / b.length], maisAntigo: b[0].data });
+    }
+    return blocos;
+  };
+  // Onde encaixar um bloco: o dia (com agendamento) mais próximo dele no período. agenda: [{ data, ponto }].
+  C.encaixeSugerido = function (bloco, agenda, opts) {
+    var o = opts || {}, raio = (o.raioKm || 5) * 1000, melhor = null;
+    (agenda || []).forEach(function (a) { var d = distM(bloco.centro, a.ponto); if (d <= raio && (!melhor || d < melhor.dist || (d === melhor.dist && a.data < melhor.data))) melhor = { data: a.data, dist: Math.round(d), id: a.id }; });
+    return melhor;
+  };
+
   // ─────────── Painel do mês (como o "PAINEL MENSAL" da planilha) ───────────
   // iv = [inicio, fim) em "aaaa-mm-dd". Recebidas = notificações com data no período.
   C.painel = function (regs, ini, fim) {

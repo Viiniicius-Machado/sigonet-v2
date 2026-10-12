@@ -44,8 +44,11 @@ SN.rota('/tec', () => {
   const u = SN.usuario();
   const minhas = SN.db.chamados.filter(c => SN.papelNo(c));
   if (SN.vst && SN.vst.abrirDireto(minhas)) return; // só vistoria, nenhum chamado: abre as rotas de vistoria
+  // Rota do dia (Acompanhamentos CPFL): as paradas de hoje primeiro, na ordem da rota.
+  const hojeIso = SN.dataIsoLocal(new Date()), naRota = c => c.rota && c.rota.data === hojeIso;
   const ativas = minhas.filter(c => ['ATRIBUIDO', 'ACEITO', 'EM_DESLOCAMENTO', 'EM_CAMPO', 'DEVOLVIDO'].includes(c.status))
-    .sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
+    .sort((a, b) => (naRota(b) - naRota(a)) || (naRota(a) && naRota(b) ? a.rota.ordem - b.rota.ordem : 0) || (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
+  const rotaHoje = ativas.filter(naRota);
   // Pós-atendimento: concluídas com LPU/materiais/fibra ainda por apontar (não bloqueiam o chamado).
   const pos = minhas.filter(c => ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) && SN.pendenciasPos(c).length)
     .sort((a, b) => (b.tempos.conclusaoTecnica || '').localeCompare(a.tempos.conclusaoTecnica || ''));
@@ -60,6 +63,7 @@ SN.rota('/tec', () => {
       <div class="cli">${SN.esc(c.cliente)}</div>
       <div class="small">${SN.esc(c.tipo || '')}${c.cat2 ? ' · ' + SN.esc(c.cat2) : ''}</div>
       <div class="small muted">📍 ${SN.esc([c.endereco, c.cidade].filter(Boolean).join(' - ') || '—')}</div>
+      ${naRota(c) ? `<div class="small" style="margin-top:4px"><b>🧭 Parada ${c.rota.ordem} de ${c.rota.total}</b> · prevista ${SN.esc(c.rota.prevista)}</div>` : ''}
       <div style="margin-top:6px"><span class="badge ${p.cls}">${SN.esc(p.txt)}</span> ${papel === 'apoio' ? '<span class="badge">APOIO</span>' : ''}
         ${SN.pendenciasPos(c).map(x => `<span class="badge alerta">${x}</span>`).join(' ')}
         ${c.validacao && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) ? `<span class="badge ${SN.VALIDACAO_ST[c.validacao.status].cls}">${SN.VALIDACAO_ST[c.validacao.status].rot}</span>` : ''}</div></div>`;
@@ -67,6 +71,7 @@ SN.rota('/tec', () => {
   const novas = ativas.filter(c => c.status === 'ATRIBUIDO').length;
   SN.cascaTec('fila', `
     ${novas ? `<div class="aviso ok" style="margin-bottom:10px">🔔 Você recebeu ${novas} nova(s) OS. Toque para aceitar.</div>` : ''}
+    ${rotaHoje.length > 1 ? `<a class="btn bloco" style="margin-bottom:10px" target="_blank" rel="noopener" href="${SN.esc('https://www.google.com/maps/dir/' + rotaHoje.filter(c => c.rota.lat).map(c => c.rota.lat + ',' + c.rota.lng).join('/'))}">🧭 Rota do dia (${rotaHoje.length} paradas) no Google Maps</a>` : ''}
     <h3>Em andamento (${ativas.length})</h3>${ativas.map(card).join('') || '<p class="muted">Nenhuma OS na sua fila agora.</p>'}
     ${pos.length ? `<h3 style="margin-top:18px">Pós-atendimento (${pos.length})</h3><p class="small muted">Chamado já concluído — falta apontar. Isso não altera seu MTTR/SLA.</p>${pos.map(card).join('')}` : ''}
     ${lpuEquipe.length ? `<h3 style="margin-top:18px">LPU da equipe ${SN.esc(u.empresa)} (${lpuEquipe.length})</h3><p class="small muted">Você é o responsável pela LPU da empresa.</p>
