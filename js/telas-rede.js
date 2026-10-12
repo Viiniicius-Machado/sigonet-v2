@@ -6,13 +6,29 @@
 //              contra a rede inteira e manda cidade a cidade; publicar troca a versão em uso.
 //   Cidades  — km, cabos, caixas e problemas de cadastro por cidade.
 //   Mapa     — cabos nas cores do GeoGrid e caixas, com busca por nome e os problemas marcados.
+//              "Todas as cidades" (pedido de 2026-10-12): a rede inteira num mapa só; as caixas aparecem
+//              no zoom de rua (só as da área visível) para o mapa continuar leve.
 //   Qualidade — listas para corrigir no GeoGrid (com exportação).
 // Usado também em Novos projetos (camada "Rede existente" e CEO mais perto do destino): SN.rede.
 (() => {
   const esc = SN.esc, RD = window.REDE;
-  let indice = null, indiceTs = 0;
-  const cidades = {}; // cidade → dados expandidos (cache da sessão)
+  let indice = null, indiceTs = 0, versaoLimpa;
+  const cidades = {}, buscando = {}; // cidade → dados expandidos (cache da sessão) / carga em andamento
+  const TODAS = '__todas', ZOOM_CAIXAS = 15;
   const st = { aba: 'CIDADES', cidade: '', tipoQ: 'pontasSoltas', q: '', busca: '', mostrarQ: true };
+  // Cópia no aparelho (IndexedDB) do JSON de cada cidade, pela versão da rede: na 2ª vez abre na hora.
+  // Só para a liderança logada; apaga ao sair e ao chegar versão nova.
+  const CACHE = (() => {
+    let dbp = null;
+    const abrir = () => dbp || (dbp = new Promise((ok, falha) => { const r = indexedDB.open('sigonet_v2_rede', 1); r.onupgradeneeded = () => r.result.createObjectStore('cid'); r.onsuccess = () => ok(r.result); r.onerror = () => falha(r.error); }));
+    const tx = async (modo, fn) => { const db = await abrir(); return new Promise((ok, falha) => { const t = db.transaction('cid', modo), r = fn(t.objectStore('cid')); t.oncomplete = () => ok(r && r.result); t.onerror = () => falha(t.error); }); };
+    const seguro = f => (...a) => { try { return f(...a).catch(() => null); } catch (e) { return Promise.resolve(null); } };
+    return {
+      ler: seguro(k => tx('readonly', o => o.get(k))),
+      gravar: seguro((k, v) => tx('readwrite', o => o.put(v, k))),
+      manterSo: seguro(versao => tx('readwrite', o => { const c = o.openCursor(); c.onsuccess = () => { const x = c.result; if (!x) return; if (!versao || !String(x.key).startsWith(versao + '|')) x.delete(); x.continue(); }; }))
+    };
+  })();
   const fmtKm = v => SN.num(v || 0, 1) + ' km';
   const disponivel = () => SN.remoto && SN.sessao() && (SN.usuario() || {}).tipo === 'lideranca';
 
@@ -20,13 +36,33 @@
   SN.rede = {
     indice: async (forcar) => {
       if (!disponivel()) return null;
-      if (!indice || forcar || Date.now() - indiceTs > 10 * 60e3) { const r = await SN.api('REDE_INDICE', {}); indice = r.indice || null; indiceTs = Date.now(); }
+      if (!indice || forcar || Date.now() - indiceTs > 10 * 60e3) {
+        const r = await SN.api('REDE_INDICE', {}), antes = indice && indice.versao; indice = r.indice || null; indiceTs = Date.now();
+        const v = indice && indice.versao; if (antes && antes !== v) Object.keys(cidades).forEach(k => delete cidades[k]);
+        if (v !== versaoLimpa) { versaoLimpa = v; CACHE.manterSo(v); }
+      }
       return indice;
     },
     cidade: async nome => {
       if (cidades[nome]) return cidades[nome];
-      const r = await SN.api('REDE_CIDADE', { cidade: nome }), j = JSON.parse(r.dados), d = RD.expandir(j);
-      d.q = j.q || null; return (cidades[nome] = d);
+      if (buscando[nome]) return buscando[nome];
+      return (buscando[nome] = (async () => {
+        if (!indice) await SN.rede.indice();
+        const v = indice && indice.versao, k = v ? v + '|' + nome : '';
+        let txt = k ? await CACHE.ler(k) : null;
+        if (!txt) { const r = await SN.api('REDE_CIDADE', { cidade: nome }); txt = r.dados; if (k) CACHE.gravar(k, txt); }
+        const j = JSON.parse(txt), d = RD.expandir(j); d.q = j.q || null; d.cidade = d.cidade || nome;
+        if (indice && indice.versao === v) cidades[nome] = d;
+        return d;
+      })().finally(() => { delete buscando[nome]; }));
+    },
+    // A rede inteira (todas as cidades), 8 de cada vez; passo(feitas, total) para mostrar o progresso.
+    todas: async passo => {
+      const ind = await SN.rede.indice(); if (!ind) return [];
+      const nomes = ind.cidades.map(c => c.cidade); let i = 0, feitas = 0;
+      const trab = async () => { while (i < nomes.length) { const n = nomes[i++]; try { await SN.rede.cidade(n); } catch (e) { } feitas++; if (passo) passo(feitas, nomes.length); } };
+      await Promise.all(Array.from({ length: Math.min(8, nomes.length) }, trab));
+      return nomes.filter(n => cidades[n]).map(n => cidades[n]);
     },
     ultimoIndice: () => indice, // o que já foi carregado nesta sessão (sem ir ao servidor)
     // Dados da cidade de um projeto/chamado ("Valinhos", "VALINHOS - SP"…), ou null.
@@ -63,7 +99,7 @@
   const pintarCidades = () => {
     const q = SN.normal(st.q), l = indice.cidades.filter(c => !q || SN.normal(c.cidade).includes(q)).sort((a, b) => b.km - a.km);
     SN.$('#redeCorpo').innerHTML = `<div class="card card-filtros"><div class="filtros"><input class="inp busca" id="rQ" placeholder="Buscar cidade" value="${esc(st.q)}">
-      <button class="btn" id="bExpCid">Exportar</button></div></div>
+      <button class="btn" id="bMapaTodo">🗺 Mapa completo</button><button class="btn" id="bExpCid">Exportar</button></div></div>
       <div class="card"><div class="tabela-wrap"><table class="tab"><thead><tr><th>Cidade</th><th class="num">Cabo (km)</th><th class="num">Cabos</th><th class="num">Caixas</th><th class="num" title="CEO nova (mini FOSC, rastreável)">Mini FOSC</th><th class="num" title="FOSC antiga, sem rastreio">FOSC antiga</th><th class="num">C/ splitter</th><th class="num">Não lançado</th><th class="num">Pontas sem caixa</th><th class="num">Caixas sem cabo</th><th class="num" title="Caixa cujo cabo está na pasta de outra cidade no GeoGrid">Cabo em outra pasta</th><th></th></tr></thead><tbody>
       ${l.map(c => `<tr><td><b>${esc(c.cidade)}</b></td><td class="num">${SN.num(c.km, 1)}</td><td class="num">${SN.num(c.cabos)}</td><td class="num">${SN.num(c.caixas)}</td><td class="num">${SN.num((c.tiposCaixa || {}).MINI_FOSC || 0)}</td><td class="num">${SN.num((c.tiposCaixa || {}).FOSC || 0)}</td><td class="num">${SN.num((c.tiposCaixa || {}).SPLITTER || 0)}</td>
         <td class="num">${c.naoLancados ? `${SN.num(c.naoLancados)} <span class="muted small">(${SN.num(c.naoLancadosKm, 1)} km)</span>` : '—'}</td><td class="num">${SN.num(c.pontasSoltas)}</td><td class="num">${c.caixasSemCabo ? `<b>${SN.num(c.caixasSemCabo)}</b>` : '—'}</td><td class="num muted">${SN.num(c.caixasOutraCidade || 0)}</td>
@@ -76,10 +112,12 @@
     SN.$('#bExpCid').onclick = () => SN.exportar('rede-geogrid-cidades', l.map(c => ({ Cidade: c.cidade, 'Cabo (km)': c.km, Cabos: c.cabos, Caixas: c.caixas, 'Não lançados': c.naoLancados, 'Não lançados (km)': c.naoLancadosKm,
       'Mini FOSC': (c.tiposCaixa || {}).MINI_FOSC || 0, 'FOSC antiga': (c.tiposCaixa || {}).FOSC || 0, 'Com splitter': (c.tiposCaixa || {}).SPLITTER || 0, 'Pontas sem caixa': c.pontasSoltas, 'Caixas sem cabo': c.caixasSemCabo, 'Cabo em outra pasta': c.caixasOutraCidade || 0, 'Nomes repetidos': c.nomesRepetidos })));
     SN.$$('[data-vercid]').forEach(b => b.onclick = () => { st.cidade = b.dataset.vercid; st.aba = 'MAPA'; pintar(); });
+    SN.$('#bMapaTodo').onclick = () => { st.cidade = TODAS; st.busca = ''; st.aba = 'MAPA'; pintar(); };
   };
 
   // ─────────── Mapa ───────────
-  let mapa = null, camadas = null;
+  let mapa = null, camadas = null, camadaCx = null;
+  const noMapa = () => st.cidade === TODAS ? Object.values(cidades) : cidades[st.cidade] ? [cidades[st.cidade]] : [];
   const carregarLeaflet = async () => {
     if (!document.querySelector('link[href*="leaflet.min.css"]')) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(l); }
     if (!window.L) await new Promise((ok, falha) => { const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'; s.onload = ok; s.onerror = () => falha(new Error('Mapa indisponível (sem internet?).')); document.head.appendChild(s); });
@@ -88,7 +126,7 @@
     const lista = indice.cidades.slice().sort((a, b) => a.cidade.localeCompare(b.cidade));
     if (!st.cidade) st.cidade = (indice.cidades.slice().sort((a, b) => b.km - a.km)[0] || {}).cidade || '';
     SN.$('#redeCorpo').innerHTML = `<div class="card" style="padding:8px">
-      <div class="prj-barra"><select class="inp" id="rCid" style="max-width:280px">${lista.map(c => `<option ${c.cidade === st.cidade ? 'selected' : ''}>${esc(c.cidade)}</option>`).join('')}</select>
+      <div class="prj-barra"><select class="inp" id="rCid" style="max-width:280px"><option value="${TODAS}" ${st.cidade === TODAS ? 'selected' : ''}>Todas as cidades (mapa completo)</option>${lista.map(c => `<option ${c.cidade === st.cidade ? 'selected' : ''}>${esc(c.cidade)}</option>`).join('')}</select>
         <input class="inp" id="rBusca" style="max-width:240px" placeholder="Buscar caixa ou cabo (CE…, NTT…)" value="${esc(st.busca)}">
         <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rQual" ${st.mostrarQ ? 'checked' : ''}> marcar problemas de cadastro</label>
         <span class="small muted" id="rInfo"></span></div>
@@ -104,36 +142,71 @@
       L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', { maxNativeZoom: 19, maxZoom: 21 })]);
     const ruas = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxNativeZoom: 19, maxZoom: 21, attribution: '© OpenStreetMap', className: 'mapa-cinza' }).addTo(mapa);
     L.control.layers({ Ruas: ruas, 'Satélite': sat }, {}, { position: 'topright' }).addTo(mapa);
-    camadas = L.layerGroup().addTo(mapa);
-    SN.$('#rInfo').textContent = 'carregando ' + st.cidade + '…';
-    try { await SN.rede.cidade(st.cidade); } catch (e) { SN.$('#rInfo').textContent = e.message; return; }
+    camadas = L.layerGroup().addTo(mapa); camadaCx = L.layerGroup().addTo(mapa);
+    mapa.on('moveend', () => { if (st.cidade === TODAS) pintarCaixas(); });
+    const t0 = Date.now();
+    if (st.cidade === TODAS) {
+      const n = indice.cidades.length, falta = indice.cidades.filter(c => !cidades[c.cidade]).length;
+      SN.$('#rInfo').textContent = falta ? `carregando a rede inteira… 0/${n}` : '';
+      await SN.rede.todas((f, tot) => { const i = SN.$('#rInfo'); if (i && el === SN.$('#rMapa')) i.textContent = `carregando a rede inteira… ${f}/${tot}`; });
+    } else {
+      SN.$('#rInfo').textContent = 'carregando ' + st.cidade + '…';
+      try { await SN.rede.cidade(st.cidade); } catch (e) { SN.$('#rInfo').textContent = e.message; return; }
+    }
     if (!SN.$('#rMapa') || SN.$('#rMapa') !== el) return;
+    SN.rede._ms = Date.now() - t0;
     desenhar(true); if (st.busca) buscar();
   };
-  const desenhar = enquadrar => {
-    const L = window.L, d = cidades[st.cidade]; if (!d || !camadas) return;
-    camadas.clearLayers();
-    const r = L.canvas({ padding: 0.3 });
-    d.cabos.forEach(c => L.polyline(c.pts, { color: c.cor, weight: 2.6, opacity: 0.9, renderer: r }).addTo(camadas)
-      .bindTooltip(`<b>${esc(c.n)}</b> · ${SN.num(c.m)} m${c.d ? '<br>' + esc(c.d.slice(0, 120)) : ''}`, { sticky: true }));
-    d.caixas.forEach(c => L.circleMarker([c.lat, c.lng], { radius: 4, color: '#222', weight: 1, fillColor: c.cor || '#ffffff', fillOpacity: 1, renderer: r }).addTo(camadas)
-      .bindTooltip(`<b>${esc(c.n)}</b> · ${esc(RD.TIPOS_CAIXA[RD.tipoCaixa(c.cor)].rot)}${c.d ? '<br>' + esc(c.d.slice(0, 120)) : ''}<br><span class="mono">${c.lat}, ${c.lng}</span>`));
+  let rend = null;
+  const tipCabo = c => `<b>${esc(c.n)}</b> · ${SN.num(c.m)} m${c.d ? '<br>' + esc(c.d.slice(0, 120)) : ''}`;
+  const tipCaixa = c => `<b>${esc(c.n)}</b> · ${esc(RD.TIPOS_CAIXA[RD.tipoCaixa(c.cor)].rot)}${c.d ? '<br>' + esc(c.d.slice(0, 120)) : ''}<br><span class="mono">${c.lat}, ${c.lng}</span>`;
+  // Caixas e marcas de qualidade de uma cidade (ou só as que estão dentro de "area").
+  const caixasDe = (d, alvo, area) => {
+    const L = window.L, dentro = (la, lg) => !area || area.contains([la, lg]);
+    d.caixas.forEach(c => { if (dentro(c.lat, c.lng)) L.circleMarker([c.lat, c.lng], { radius: 4, color: '#222', weight: 1, fillColor: c.cor || '#ffffff', fillOpacity: 1, renderer: rend }).addTo(alvo).bindTooltip(tipCaixa(c)); });
     if (st.mostrarQ && d.q) {
-      (d.q.caixasSemCabo || []).forEach(x => L.circleMarker([x.lat, x.lng], { radius: 9, color: '#d00', weight: 3, fill: false, renderer: r }).addTo(camadas).bindTooltip('Caixa sem cabo a 30 m: ' + esc(x.n)));
-      (d.q.pontasSoltas || []).forEach(x => L.circleMarker([x.lat, x.lng], { radius: 5, color: '#f59e0b', weight: 2, fill: false, renderer: r }).addTo(camadas).bindTooltip('Ponta sem caixa: ' + esc(x.n)));
+      (d.q.caixasSemCabo || []).forEach(x => { if (dentro(x.lat, x.lng)) L.circleMarker([x.lat, x.lng], { radius: 9, color: '#d00', weight: 3, fill: false, renderer: rend }).addTo(alvo).bindTooltip('Caixa sem cabo a 30 m: ' + esc(x.n)); });
+      (d.q.pontasSoltas || []).forEach(x => { if (dentro(x.lat, x.lng)) L.circleMarker([x.lat, x.lng], { radius: 5, color: '#f59e0b', weight: 2, fill: false, renderer: rend }).addTo(alvo).bindTooltip('Ponta sem caixa: ' + esc(x.n)); });
     }
-    const pts = d.cabos.flatMap(c => [c.pts[0], c.pts[c.pts.length - 1]]).concat(d.caixas.map(c => [c.lat, c.lng]));
+  };
+  // Mapa completo: as caixas só no zoom de rua e só as da área visível (milhares de caixas deixariam o mapa pesado).
+  const pintarCaixas = () => {
+    if (!camadaCx || !mapa) return; camadaCx.clearLayers();
+    const z = mapa.getZoom(), dica = SN.$('#rDicaCx');
+    if (dica) dica.style.display = z >= ZOOM_CAIXAS ? 'none' : '';
+    if (z < ZOOM_CAIXAS) return;
+    const area = mapa.getBounds().pad(0.2);
+    noMapa().forEach(d => { if (d.bbox && !area.intersects(d.bbox)) return; caixasDe(d, camadaCx, area); });
+  };
+  const desenhar = enquadrar => {
+    const L = window.L, ds = noMapa(); if (!ds.length || !camadas) return;
+    camadas.clearLayers(); if (camadaCx) camadaCx.clearLayers();
+    rend = L.canvas({ padding: 0.3, tolerance: 3 });
+    const todas = st.cidade === TODAS, pts = [];
+    ds.forEach(d => {
+      d.cabos.forEach(c => { L.polyline(c.pts, { color: c.cor, weight: todas ? 2 : 2.6, opacity: 0.9, renderer: rend }).addTo(camadas).bindTooltip(tipCabo(c), { sticky: true }); pts.push(c.pts[0], c.pts[c.pts.length - 1]); });
+      if (!d.bbox) { const b = L.latLngBounds(d.cabos.flatMap(c => [c.pts[0], c.pts[c.pts.length - 1]]).concat(d.caixas.map(c => [c.lat, c.lng]))); if (b.isValid()) d.bbox = b; }
+      if (!todas) { caixasDe(d, camadas); d.caixas.forEach(c => pts.push([c.lat, c.lng])); }
+    });
     if (enquadrar && pts.length) mapa.fitBounds(L.latLngBounds(pts).pad(0.05), { animate: false });
-    const ic = (indice.cidades.find(c => c.cidade === st.cidade) || {});
-    SN.$('#rInfo').innerHTML = `${SN.num(d.cabos.length)} cabos · ${fmtKm(ic.km)} · ${SN.num(d.caixas.length)} caixas${st.mostrarQ ? ' · <span style="color:#d00">○</span> caixa sem cabo · <span style="color:#f59e0b">○</span> ponta sem caixa' : ''}`;
+    const leg = st.mostrarQ ? ' · <span style="color:#d00">○</span> caixa sem cabo · <span style="color:#f59e0b">○</span> ponta sem caixa' : '';
+    if (todas) {
+      const t = indice.totais || {};
+      SN.$('#rInfo').innerHTML = `${SN.num(ds.length)} cidades · ${SN.num(ds.reduce((s, d) => s + d.cabos.length, 0))} cabos · ${fmtKm(t.km)} · ${SN.num(ds.reduce((s, d) => s + d.caixas.length, 0))} caixas <span id="rDicaCx">(aproxime até o nível de rua para ver as caixas)</span>${leg}`;
+      pintarCaixas();
+    } else {
+      const d = ds[0], ic = (indice.cidades.find(c => c.cidade === st.cidade) || {});
+      SN.$('#rInfo').innerHTML = `${SN.num(d.cabos.length)} cabos · ${fmtKm(ic.km)} · ${SN.num(d.caixas.length)} caixas${leg}`;
+    }
   };
   const buscar = () => {
-    const d = cidades[st.cidade], q = RD.norm(st.busca); if (!d || !q) return;
-    const cx = d.caixas.find(c => RD.norm(c.n) === q) || d.caixas.find(c => RD.norm(c.n).includes(q));
-    const cb = !cx && (d.cabos.find(c => RD.norm(c.n).startsWith(q)) || d.cabos.find(c => RD.norm(c.n).includes(q)));
+    const ds = noMapa(), q = RD.norm(st.busca); if (!ds.length || !q) return;
+    const achar = f => { for (const d of ds) { const x = f(d); if (x) return x; } return null; };
+    const cx = achar(d => d.caixas.find(c => RD.norm(c.n) === q)) || achar(d => d.caixas.find(c => RD.norm(c.n).includes(q)));
+    const cb = !cx && (achar(d => d.cabos.find(c => RD.norm(c.n).startsWith(q))) || achar(d => d.cabos.find(c => RD.norm(c.n).includes(q))));
     if (cx) { mapa.setView([cx.lat, cx.lng], 19, { animate: false }); window.L.popup().setLatLng([cx.lat, cx.lng]).setContent(`<b>${esc(cx.n)}</b>${cx.d ? '<br>' + esc(cx.d) : ''}`).openOn(mapa); }
     else if (cb) { mapa.fitBounds(window.L.latLngBounds(cb.pts).pad(0.2), { animate: false }); window.L.popup().setLatLng(cb.pts[0]).setContent(`<b>${esc(cb.n)}</b> · ${SN.num(cb.m)} m`).openOn(mapa); }
-    else SN.toast('Nada com "' + st.busca + '" em ' + st.cidade + '.', 'erro');
+    else SN.toast('Nada com "' + st.busca + '" ' + (st.cidade === TODAS ? 'na rede.' : 'em ' + st.cidade + '.'), 'erro');
   };
 
   // ─────────── Qualidade do cadastro ───────────
@@ -142,7 +215,7 @@
     rastreioRepetido: 'Mini FOSC com número de rastreio repetido', miniFoscSemNumero: 'Mini FOSC sem os 4 dígitos de rastreio' };
   const pintarQualidade = async () => {
     const lista = indice.cidades.slice().sort((a, b) => b.km - a.km);
-    if (!st.cidade) st.cidade = (lista[0] || {}).cidade || '';
+    if (!st.cidade || st.cidade === TODAS) st.cidade = (lista[0] || {}).cidade || '';
     SN.$('#redeCorpo').innerHTML = `<div class="card card-filtros"><div class="filtros">
       <select class="inp" id="qCid">${lista.map(c => `<option ${c.cidade === st.cidade ? 'selected' : ''}>${esc(c.cidade)}</option>`).join('')}</select>
       <select class="inp" id="qTipo">${Object.entries(TIPOS_Q).map(([k, r]) => `<option value="${k}" ${st.tipoQ === k ? 'selected' : ''}>${r}</option>`).join('')}</select>
@@ -161,7 +234,7 @@
       ${itens.length > 500 ? `<p class="small muted">Mostrando 500 de ${SN.num(itens.length)} — exporte para ver todos.</p>` : ''}` : '<p class="muted">Nada encontrado. 👍</p>'}`;
     SN.$('#bExpQ').onclick = () => SN.exportar(`rede-qualidade-${st.tipoQ}-${st.cidade}`, itens.map(x => ({ Cidade: st.cidade, Problema: TIPOS_Q[st.tipoQ], Nome: x.n, Metros: x.m, Vezes: x.vezes, 'Cidade do cabo': x.cidade, Latitude: x.lat, Longitude: x.lng })));
     SN.$$('[data-verq]').forEach(b => b.onclick = async () => { const [la, lg] = b.dataset.verq.split(',').map(Number); st.aba = 'MAPA'; pintar(); await new Promise(r => setTimeout(r, 900));
-      const espera = async n => { if (mapa && cidades[st.cidade] && camadas && camadas.getLayers().length) { mapa.setView([la, lg], 19, { animate: false }); window.L.circleMarker([la, lg], { radius: 14, color: '#2563eb', weight: 3, fill: false }).addTo(camadas); } else if (n) { await new Promise(r => setTimeout(r, 500)); return espera(n - 1); } };
+      const espera = async n => { if (mapa && noMapa().length && camadas && camadas.getLayers().length) { mapa.setView([la, lg], 19, { animate: false }); window.L.circleMarker([la, lg], { radius: 14, color: '#2563eb', weight: 3, fill: false }).addTo(camadas); } else if (n) { await new Promise(r => setTimeout(r, 500)); return espera(n - 1); } };
       espera(20); });
   };
 
@@ -212,11 +285,13 @@
       passo('Publicando…');
       const ind = { versao, arquivo: file.name, nome: r.nome, totais: tot, cidades: cidadesInd };
       await SN.api('REDE_PUBLICAR', { indice: ind });
-      Object.keys(cidades).forEach(k => delete cidades[k]); indice = null;
+      Object.keys(cidades).forEach(k => delete cidades[k]); indice = null; CACHE.manterSo(versao);
       SN.log('REDE_IMPORTADA', versao, file.name); SN.toast(`Rede importada: ${SN.num(tot.cidades)} cidades, ${fmtKm(tot.km)}.`, 'ok');
       await SN.rede.indice(true); st.aba = 'CIDADES'; pintar();
     } finally { fim(); }
   };
+
+  const sair0 = SN.sair; SN.sair = (...a) => { Object.keys(cidades).forEach(k => delete cidades[k]); indice = null; versaoLimpa = undefined; CACHE.manterSo(null); return sair0(...a); };
 
   // Menu (Gestão) e nome da tela em Cadastros e Acessos.
   SN.TELAS.rede = 'Rede GeoGrid (cabos e caixas)';
