@@ -112,7 +112,7 @@
           <td>${SN.vst.badgeRota(r.status)}</td>
           <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
           <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button>${deProjeto() ? '' : ` <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`}`
-            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="A equipe mandou os apontamentos mas não o &quot;Finalizado&quot;">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}${!['PLANEJADA', 'CANCELADA'].includes(r.status) ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da atividade em PDF">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha de cada apontamento (com fotos)">Baixar tudo</button>` : ''}</div></td></tr>`).join('')}
+            : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="A equipe mandou os apontamentos mas não o &quot;Finalizado&quot;">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}${!['PLANEJADA', 'CANCELADA'].includes(r.status) ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da atividade com as fotos de cada apontamento (PDF)">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha de cada apontamento (com fotos)">Baixar tudo</button>` : ''}</div></td></tr>`).join('')}
         </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : deProjeto() ? 'Nenhuma obra ainda: aprove um projeto em "Projetos".' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
     SN.ligarPeriodo(pintarLista, e.periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
@@ -147,10 +147,12 @@
       SN.toast('Atividade ' + b.dataset.canc + ' cancelada.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     SN.$$('[data-ed]').forEach(b => b.onclick = () => { e.form = JSON.parse(JSON.stringify(rotas().find(r => r.id_rota === b.dataset.ed))); e.aba = 'NOVA'; pintar(); });
     SN.$$('[data-verrev]').forEach(b => b.onclick = () => { e.revQ = b.dataset.verrev; SN.navegar(hrefVista('REV')); });
-    // PDF da atividade: o gestor decide se a conversa entra (completa / resumo / não), como na Preventiva.
+    // PDF da atividade com as fotos de cada apontamento: o gestor decide se a conversa entra
+    // (completa / resumo / não), como na Preventiva. As fotos vêm do Drive pelo servidor.
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.pdf); if (!r) return;
-      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoProg(r, aps(), cv));
-      else SN.abrirPdfDepois(() => SN.vst.pdfResumoProg(r, aps())); });
+      const montar = async cv => SN.vst.pdfResumoProg(r, aps(), cv, await fotosDaAtividade(r));
+      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, montar);
+      else SN.abrirPdfDepois(() => montar(null)); });
     SN.$$('[data-zip]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.zip); if (r) baixarTudo(r, b); });
     SN.$$('[data-vivo]').forEach(b => b.onclick = () => { const h = location.hash; SN.vst.abrirAoVivo(b.dataset.vivo).then(() => { if (location.hash === h) return recarregar(); }).catch(() => { }); });
   };
@@ -163,6 +165,14 @@
     s.onload = ok; s.onerror = () => falha(new Error('Não foi possível carregar o compactador (sem internet?).')); document.head.appendChild(s); });
   const nomeArq = t => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 90);
   const bytesDe = dataUrl => { const bin = atob(String(dataUrl).split(',')[1] || ''), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+  // Miniaturas das fotos dos apontamentos enviados da atividade (id_foto → { thumb }), 20 por pedido.
+  const fotosDaAtividade = async r => {
+    const ids = aps().filter(a => a.id_rota === r.id_rota && a.status_revisao && a.status_revisao !== 'RASCUNHO')
+      .flatMap(a => (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf').map(f => f.id_foto)), out = {}, lotes = [];
+    for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
+    await Promise.all(lotes.map(async l => { try { (await SN.vst.exec('VST_FOTOS_B64', { ids: l })).fotos.forEach(f => { if (f.dataUrl) out[f.id_foto] = { thumb: f.dataUrl }; }); } catch (e) { } }));
+    return out;
+  };
   const baixarTudo = async (r, bt) => {
     const todos = aps().filter(a => a.id_rota === r.id_rota);
     const itens = todos.filter(a => a.status_revisao && a.status_revisao !== 'RASCUNHO').sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.enviado_em || '').localeCompare(String(b.enviado_em || '')));

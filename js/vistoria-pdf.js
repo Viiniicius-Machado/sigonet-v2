@@ -258,8 +258,24 @@ SN.vst = SN.vst || {};
     if (rota.observacao) doc.linha('Observação', rota.observacao);
   };
 
+  // Fotos de um apontamento, separadas por tipo (usado na ficha e no resumo com fotos).
+  const fotosApontamentoProg = async (doc, a, rota, fotosLocais) => {
+    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
+    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    const tipos = VR.validarFotosProg(a, rota.segmento).itens;
+    for (const x of tipos) {
+      const doTipo = fotos.filter(f => f.tipo_foto === x.tipo);
+      if (!doTipo.length && !x.exigidas) continue;
+      doc.secao(`Fotos · ${x.rot} (${doTipo.length}${x.exigidas ? ' de ' + x.exigidas + ' exigida(s)' : ''})`);
+      if (doTipo.length) await SN.vst.pdfGradeFotos(doc, doTipo.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
+    }
+    const outras = fotos.filter(f => !tipos.some(x => x.tipo === f.tipo_foto));
+    if (outras.length) { doc.secao(`Outras fotos (${outras.length})`); await SN.vst.pdfGradeFotos(doc, outras.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda); }
+  };
+
   // Resumo de UMA atividade: dados, andamento, produção aprovada, LPU e valor, apontamentos.
-  SN.vst.pdfResumoProg = async (rota, apontamentos, conversa) => {
+  // fotosLocais (opcional, id_foto → { thumb }): acrescenta as fotos de cada apontamento no fim.
+  SN.vst.pdfResumoProg = async (rota, apontamentos, conversa, fotosLocais) => {
     const p = progDe(rota), ret = rota.segmento === 'RETIRADA';
     const doc = SN.novoPdf(`${p.rot} · Resumo da atividade ${rota.id_rota}`); if (!doc) return null;
     dadosAtividade(doc, rota);
@@ -281,6 +297,17 @@ SN.vst = SN.vst || {};
     tabela(doc, ['Data', 'Tipo', ret ? 'Retirado' : 'Serviços', 'Técnico', 'Revisão', 'Revisor'],
       aps.map(a => [SN.vst.dia(a.data), a.tipo === 'final' ? 'Finalizado' : 'Parcial', feitoProg(a, rota), a.tecnico || '', stRev(a.status_revisao), a.revisor || '']),
       [20, 20, 64, 30, 28, 28]);
+    if (fotosLocais) {
+      const enviados = aps.filter(a => a.status_revisao && a.status_revisao !== 'RASCUNHO');
+      for (const a of enviados) {
+        doc.addPage(); doc._y = 18;
+        doc.secao(`Apontamento ${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'} · ${SN.vst.dia(a.data)} · ${a.tecnico || ''} · ${stRev(a.status_revisao)}`);
+        doc.linha(ret ? 'Retirado' : 'Serviços', feitoProg(a, rota));
+        if (a.status_revisao === 'REJEITADA') doc.linha('Motivo da rejeição', `${(a.motivo_rejeicao || []).map(m => rot('motivos_rejeicao', m)).join(', ')}${a.motivo_rejeicao_texto ? ' — ' + a.motivo_rejeicao_texto : ''}`);
+        if (a.observacao) doc.linha('Observação', a.observacao);
+        await fotosApontamentoProg(doc, a, rota, fotosLocais);
+      }
+    }
     if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
     SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · atividade ${rota.id_rota}`);
     return doc;
@@ -303,14 +330,7 @@ SN.vst = SN.vst || {};
       if (ret) L.producao_retirada.forEach(c => doc.linha(c.rot, SN.num(Number(acumulado[c.k]) || 0)));
       else { doc.linha('Serviços', lpuTxt(acumulado.itens)); doc.linha('Cabo lançado', SN.num(VR.caboLancado(acumulado.itens)) + ' m'); }
     }
-    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
-    for (const x of VR.validarFotosProg(a, rota.segmento).itens) {
-      const doTipo = fotos.filter(f => f.tipo_foto === x.tipo);
-      if (!doTipo.length && !x.exigidas) continue;
-      doc.secao(`Fotos · ${x.rot} (${doTipo.length}${x.exigidas ? ' de ' + x.exigidas + ' exigida(s)' : ''})`);
-      if (doTipo.length) await SN.vst.pdfGradeFotos(doc, doTipo.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
-    }
+    await fotosApontamentoProg(doc, a, rota, fotosLocais || {});
     SN.vst.pdfRodape(doc, `Ficha gerada em ${SN.dt(SN.agora())} · apontamento ${a.id_apontamento}`);
     return SN.pdfDataUrl(doc);
   };
