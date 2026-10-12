@@ -155,7 +155,7 @@
         <div class="card"><h3>Traçado</h3>
           <div class="campo"><label>Origem — ${esc((PR.ELEMENTOS[o.origemTipo] || {}).rot || '')}</label>
             <div class="prj-linha"><input class="inp" id="pOrig" value="${esc(p.origem ? (p.origem.txt || coordTxt(p.origem)) : '')}" placeholder="lat, lng" ${dis}>
-              <button class="btn sm" data-modo="origem" ${dis} title="Clique no mapa">📍</button><button class="btn sm" id="bBaseCeo" ${dis} title="CEO/CTO da Base KML">🔎 Base</button></div>
+              <button class="btn sm" data-modo="origem" ${dis} title="Clique no mapa">📍</button><button class="btn sm" id="bGeoCeo" ${dis} title="Caixa do GeoGrid mais perto do destino">🔎 GeoGrid</button><button class="btn sm" id="bBaseCeo" ${dis} title="CEO/CTO da Base KML da Preventiva">Base</button></div>
             <select class="inp" data-pp="origemTipo" style="margin-top:4px" ${dis}>${opt([['CEO_EXIST', 'Sai de CEO/CTO existente'], ['CEO_NOVA', 'Sai de CEO nova (sangria)'], ['', 'Sem emenda na origem']], o.origemTipo)}</select></div>
           <div class="campo"><label>Destino — endereço ou lat, lng</label>
             <div class="prj-linha"><input class="inp" id="pDest" value="${esc(p.destino ? (p.destino.txt || coordTxt(p.destino)) : '')}" placeholder="Rua, número, cidade — ou lat, lng" ${dis}>
@@ -184,7 +184,7 @@
   };
   const ligarDesenho = p => {
     const e = E(p.id), ed = editavel(p);
-    SN.$$('[data-pf]').forEach(i => { i.oninput = () => { p[i.dataset.pf] = i.value; mudou(p); }; i.onchange = () => { p[i.dataset.pf] = i.value; mudou(p); if (i.dataset.pf === 'conta' || i.dataset.pf === 'nome') abrirProjeto(p.id); }; });
+    SN.$$('[data-pf]').forEach(i => { i.oninput = () => { p[i.dataset.pf] = i.value; mudou(p); }; i.onchange = () => { p[i.dataset.pf] = i.value; mudou(p); if (i.dataset.pf === 'conta' || i.dataset.pf === 'nome') abrirProjeto(p.id); else if (i.dataset.pf === 'cidade') desenharMapa(p).catch(() => { }); }; });
     SN.$$('[data-pp]').forEach(i => i.onchange = () => {
       const k = i.dataset.pp; p.params = { ...params(p), [k]: i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value };
       if (['encCada', 'angCanto'].includes(k) && p.postes) p.postes = PR.codificarPostes(PR.reclassificar(postesDe(p), p.params));
@@ -196,6 +196,7 @@
     if (SN.$('#pOrig')) SN.$('#pOrig').onchange = ev => { const c = lerCoord(ev.target.value); if (c) { p.origem = { ...c, txt: '' }; mudou(p); desenharMapa(p); } else if (ev.target.value) SN.toast('Use "lat, lng" (ex.: -22.97, -46.99) ou escolha na Base / no mapa.', 'erro'); };
     if (SN.$('#pDest')) SN.$('#pDest').onchange = ev => { const c = lerCoord(ev.target.value); if (c) { p.destino = { ...c, txt: '' }; mudou(p); desenharMapa(p); } };
     if (SN.$('#bBuscaDest')) SN.$('#bBuscaDest').onclick = () => buscarEndereco(p).catch(err => SN.toast(err.message, 'erro'));
+    if (SN.$('#bGeoCeo')) SN.$('#bGeoCeo').onclick = () => ceoMaisPerto(p).catch(err => SN.toast(err.message, 'erro'));
     if (SN.$('#bBaseCeo')) SN.$('#bBaseCeo').onclick = () => escolherCeoBase(p).catch(err => SN.toast(err.message, 'erro'));
     if (SN.$('#bTracar')) SN.$('#bTracar').onclick = async ev => { const b = ev.target; b.disabled = true; try { await tracar(p); } catch (err) { SN.toast(err.message, 'erro'); } finally { b.disabled = false; } };
     if (SN.$('#fKmzImp')) SN.$('#fKmzImp').onchange = ev => { const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (f) importarKmz(p, f).catch(err => SN.toast(err.message, 'erro')); };
@@ -279,13 +280,15 @@
       const mapa = L.map(el, { zoomControl: true, maxZoom: 21, zoomAnimation: false }).setView([-22.9, -47.06], 12);
       const sat = L.layerGroup([L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21, attribution: 'Imagens © Esri' }), L.tileLayer(RUAS_SAT, { maxNativeZoom: 19, maxZoom: 21 })]);
       const ruas = L.tileLayer(OSM, { maxNativeZoom: 19, maxZoom: 21, attribution: '© OpenStreetMap' });
-      sat.addTo(mapa); L.control.layers({ 'Satélite (Google Earth)': sat, 'Ruas': ruas }, {}, { position: 'topright' }).addTo(mapa);
-      M = mapas[p.id] = { mapa, el, camada: L.layerGroup().addTo(mapa), base: L.layerGroup().addTo(mapa), enquadrado: false };
+      sat.addTo(mapa); const ctl = L.control.layers({ 'Satélite (Google Earth)': sat, 'Ruas': ruas }, {}, { position: 'topright' }).addTo(mapa);
+      M = mapas[p.id] = { mapa, el, ctl, camada: L.layerGroup().addTo(mapa), base: L.layerGroup().addTo(mapa), enquadrado: false };
       mapa.on('click', ev => cliqueMapa(p, ev.latlng));
       mapa.on('moveend', () => pintarBase(p));
       el.addEventListener('click', ev => acaoPopup(p, ev));
       el.addEventListener('change', ev => acaoPopup(p, ev));
     }
+    // Rede existente da cidade do projeto (recarrega quando a cidade muda).
+    if (M.redeCidade !== (p.cidade || '')) { M.redeCidade = p.cidade || ''; if (M.rede) { M.ctl.removeLayer(M.rede); M.mapa.removeLayer(M.rede); M.rede = null; } camadaRede(p, M); }
     pintarCamada(p);
     const ps = postesDe(p), pts = ps.map(x => [x.lat, x.lng]).concat([p.origem, p.destino].filter(Boolean).map(c => [c.lat, c.lng]));
     if (!M.enquadrado && pts.length) { M.mapa.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 18, animate: false }); M.enquadrado = true; }
@@ -321,6 +324,33 @@
     (p.vias || []).forEach((v, i) => L.marker(v, { icon: ico(String(i + 1), '#6b7280'), draggable: ed }).addTo(M.camada).bindTooltip('Ponto de passagem ' + (i + 1))
       .on('dragend', ev => { const ll = ev.target.getLatLng(); p.vias[i] = [Math.round(ll.lat * 1e6) / 1e6, Math.round(ll.lng * 1e6) / 1e6]; mudou(p); }));
     pintarBase(p);
+  };
+  // Rede existente da cidade (GeoGrid, telas-rede.js): cabos nas cores do GeoGrid e caixas; clicar numa caixa a usa como origem.
+  const camadaRede = async (p, M) => {
+    if (!SN.rede || !p.cidade) return;
+    let d; try { d = await SN.rede.daCidade(p.cidade); } catch (e) { return; }
+    if (!d || mapas[p.id] !== M || M.redeCidade !== (p.cidade || '')) return;
+    const L = window.L, r = L.canvas({ padding: 0.3 }), g = L.layerGroup();
+    d.cabos.forEach(c => L.polyline(c.pts, { color: c.cor, weight: 2, opacity: 0.75, renderer: r, interactive: false }).addTo(g));
+    d.caixas.forEach(c => L.circleMarker([c.lat, c.lng], { radius: 4, color: '#222', weight: 1, fillColor: c.cor || '#fff', fillOpacity: 1, renderer: r }).addTo(g)
+      .bindTooltip(esc(c.n) + ' (GeoGrid)' + (editavel(p) ? ' — clique para usar como origem' : ''))
+      .on('click', ev => { L.DomEvent.stopPropagation(ev); if (!editavel(p)) return; usarCaixaOrigem(p, c); }));
+    M.rede = g; g.addTo(M.mapa); M.ctl.addOverlay(g, 'Rede existente (GeoGrid · ' + esc(d.cidade) + ')');
+  };
+  const usarCaixaOrigem = (p, c) => {
+    p.origem = { lat: c.lat, lng: c.lng, txt: c.n + ' (GeoGrid)' }; p.params = { ...params(p), origemTipo: 'CEO_EXIST' }; mudou(p);
+    SN.toast('Origem: ' + c.n + ' (GeoGrid)', 'ok'); pintarDesenho(p);
+  };
+  // As caixas do GeoGrid mais perto do destino (ou do centro do mapa), para escolher de onde sair.
+  const ceoMaisPerto = async p => {
+    const d = SN.rede && p.cidade ? await SN.rede.daCidade(p.cidade) : null;
+    if (!d) return SN.toast(p.cidade ? 'Sem rede do GeoGrid importada para ' + p.cidade + ' (menu Rede GeoGrid).' : 'Informe a cidade primeiro.', 'erro');
+    const M = mapas[p.id], ref = p.destino ? [p.destino.lat, p.destino.lng] : M ? [M.mapa.getCenter().lat, M.mapa.getCenter().lng] : null;
+    if (!ref) return SN.toast('Marque o destino primeiro.', 'erro');
+    const l = REDE.caixasMaisProximas(d, ref[0], ref[1], 8);
+    await SN.modal({ titulo: 'Caixas do GeoGrid mais perto ' + (p.destino ? 'do destino' : 'do centro do mapa'), botoes: [{ rot: 'Voltar', valor: null }],
+      corpo: '<p class="small muted">Distância em linha reta; o traçado pelas ruas sai maior.</p>' + l.map((x, i) => '<div class="prj-base-it" data-gg="' + i + '"><b>' + esc(x.c.n) + '</b> · ' + SN.num(Math.round(x.d)) + ' m' + (x.c.d ? '<div class="small muted">' + esc(x.c.d.slice(0, 120)) + '</div>' : '') + '</div>').join(''),
+      aoAbrir: m => SN.$$('[data-gg]', m).forEach(el => el.onclick = () => { SN.$('[data-x]', m).click(); usarCaixaOrigem(p, l[+el.dataset.gg].c); }) });
   };
   // CEO/CTO da Base KML visíveis no mapa (zoom de rua): clicar marca como origem.
   let baseCache = null;

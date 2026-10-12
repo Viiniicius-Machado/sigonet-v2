@@ -620,3 +620,23 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 .prj-base-it{padding:6px 8px;border-bottom:1px solid var(--borda);cursor:pointer}
 .prj-base-it:hover{background:var(--verde-bg)}
 @media (max-width:1100px){.prj-grade{grid-template-columns:minmax(0,1fr)}.prj-mapa{height:60vh}}
+
+/* ═══════════ Acompanhamentos CPFL (telas-cpfl.js) ═══════════ */
+.cp-grade{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:12px;align-items:start;margin-top:12px}
+.cp-grade .card{margin:0}
+.cp-lado{max-height:calc(min(68vh,720px) + 90px);overflow:auto;min-width:0}
+.cp-item{padding:8px 0;border-bottom:1px solid var(--borda)}
+.cp-item-cab{cursor:pointer}
+.cp-item-cab:hover{text-decoration:underline}
+.cp-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px}
+.cp-legenda span{display:inline-flex;align-items:center;gap:6px}
+.cp-legenda i{display:inline-block;width:12px;height:12px;border-radius:50%}
+.cp-res{display:flex;gap:8px;align-items:flex-start;padding:8px;border:1px solid var(--borda);border-radius:6px;margin-bottom:6px;cursor:pointer}
+.cp-res:has(input:checked){border-color:var(--verde,#3d4f11);background:var(--verde-bg)}
+.cp-solta{display:flex;align-items:center;justify-content:center;text-align:center;min-height:130px;border:2px dashed var(--borda-forte,#cdd2c7);border-radius:8px;cursor:pointer;padding:12px;margin:8px 0}
+.cp-solta.sobre,.cp-solta:hover{border-color:var(--verde,#3d4f11);background:var(--verde-bg)}
+.cp-conf .inp{min-width:90px;padding:4px 6px;font-size:.8rem}
+@media (max-width:1100px){.cp-grade{grid-template-columns:minmax(0,1fr)}.cp-lado{max-height:none}}
+.cp-conf select.inp{min-width:150px}
+.cp-conf [data-k="endereco"]{min-width:220px}
+.cp-conf [data-k="coord"]{min-width:180px}

@@ -11,7 +11,7 @@
 SN.remoto = typeof SIGONET_SERVIDOR === 'string' && /^https?:\/\//.test(SIGONET_SERVIDOR);
 // Chave de cada coleção (igual à do servidor).
 SN.CHAVES = { chamados: 'id', lpus: 'id', materiais: 'id', fibras: 'id', pagamentos: 'id', fechamentos: 'mes', disponibilidade: 'id',
-  empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id', estoques: 'id', projetos: 'id' };
+  empresas: 'nome', contas: 'codigo', tecnicos: 'id', lideranca: 'id', log: 'id', integracoes: 'id', estoques: 'id', projetos: 'id', notificacoes: 'id' };
 
 // Ações só de leitura podem ser repetidas com segurança quando o Google falha.
 // Pedidos que podem ser repetidos sem efeito colateral (PROX_ID pode pular um número;
@@ -227,7 +227,7 @@ SN.enviarMudancas = async () => {
   // Lote: no máximo LOTE_ENVIO registros por gravação. Uma importação grande (ex.: ~100 estoques) iria
   // numa gravação só e seguraria a trava do servidor por segundos, atrasando o NOC e os técnicos.
   // A operação vai na frente; o resto sobe nas rodadas seguintes, logo em seguida.
-  const PESO = { chamados: 0, lpus: 1, materiais: 1, fibras: 1, pagamentos: 2, disponibilidade: 2, log: 3, integracoes: 3, estoques: 4, projetos: 2 };
+  const PESO = { chamados: 0, lpus: 1, materiais: 1, fibras: 1, pagamentos: 2, disponibilidade: 2, log: 3, integracoes: 3, estoques: 4, projetos: 2, notificacoes: 3 };
   ops.sort((a, b) => (PESO[a.colecao] == null ? 2 : PESO[a.colecao]) - (PESO[b.colecao] == null ? 2 : PESO[b.colecao]));
   const resto = ops.length > SN.LOTE_ENVIO ? ops.splice(SN.LOTE_ENVIO) : [];
   if (resto.length) pendente = true;
