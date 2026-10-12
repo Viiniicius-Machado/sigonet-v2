@@ -84,12 +84,14 @@
         </tbody></table>
         ${(r.anexos || []).length ? `<div class="small muted" style="margin-top:8px">Anexos do planejamento (toque para abrir)</div><div class="fotos" id="aAnexosPlan"></div>` : ''}
       </div>
+      ${r.projeto && SN.prj ? SN.prj.htmlPacoteTecnico(r) : ''}
       ${A.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: o apontamento fica guardado e sobe quando a conexão voltar.</div>' : ''}
       ${SN.vst.cartaoOs ? SN.vst.cartaoOs(r, {}) : ''}
       <div class="card" style="margin-bottom:10px"><h3>Apontamentos</h3><div id="aLista"></div></div>
       <div id="aForm"></div>`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => SN.navegar(el.dataset.os));
     if (SN.$('#aAnexosPlan')) SN.pintarFotos(SN.$('#aAnexosPlan'), r.anexos);
+    if (r.projeto && SN.prj) SN.prj.ligarPacoteTecnico(r);
     pintarLista(); pintarForm();
   };
 
@@ -138,8 +140,10 @@
     }
     const f = A.form || (A.form = novoForm());
     const servicos = ret() ? '' : (() => {
-      const cat = SN.itensDaConta(prog().conta), its = f.itens || (f.itens = []);
-      return `<div class="campo"><label>Serviços realizados (LPU ${esc(prog().conta.slice(-4))})</label>
+      const conta = L.contaProg(A.rota), cat = SN.itensDaConta(conta), its = f.itens || (f.itens = []), pj = A.rota.projeto;
+      const faltamDoProjeto = pj ? (pj.lpu || []).filter(x => !its.some(i => i.cod === x.cod)) : [];
+      return `<div class="campo"><label>Serviços realizados (LPU ${esc(conta.slice(-4))})</label>
+        ${faltamDoProjeto.length ? `<button type="button" class="btn sm" id="aUsarProjeto" style="margin-bottom:6px">📐 Trazer os ${faltamDoProjeto.length} serviço(s) do projeto (quantidade estimada — ajuste para o que fez)</button>` : ''}
         ${its.length ? `<div>${its.map((i, n) => { const it = SN.itemLpu(i.cod) || {};
           return `<div class="item-lpu" style="grid-template-columns:1fr 90px auto;align-items:center"><div><div class="d">${esc(it.desc || i.cod)}</div><div class="c mono">${esc(i.cod)} · ${esc(it.medida || '')}</div>${it.tec ? `<div class="t">${esc(it.tec)}</div>` : ''}</div>
             <input class="inp" type="number" inputmode="decimal" min="0" step="any" data-qtd="${n}" value="${esc(i.qtd ?? '')}"><button type="button" class="btn sm" data-tira="${n}">×</button></div>`; }).join('')}</div>` : '<p class="small muted">Nenhum serviço ainda.</p>'}
@@ -161,6 +165,7 @@
     SN.$$('[data-a]', el).forEach(i => i.oninput = () => { const k = i.dataset.a; f[k] = i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); });
     SN.$$('[data-qtd]', el).forEach(i => i.oninput = () => { f.itens[+i.dataset.qtd].qtd = i.value === '' ? '' : Number(i.value); salvarRascunho(); validarNaTela(); });
     SN.$$('[data-tira]', el).forEach(b => b.onclick = () => { f.itens.splice(+b.dataset.tira, 1); salvarRascunho(); pintarForm(); });
+    if (SN.$('#aUsarProjeto')) SN.$('#aUsarProjeto').onclick = () => { (A.rota.projeto.lpu || []).forEach(x => { if (!f.itens.some(i => i.cod === x.cod)) f.itens.push({ cod: x.cod, qtd: x.qtd }); }); salvarRascunho(); pintarForm(); };
     if (SN.$('#aNovoItem')) SN.$('#aNovoItem').onchange = ev => { if (!ev.target.value) return; f.itens.push({ cod: ev.target.value, qtd: '' }); salvarRascunho(); pintarForm();
       const q = SN.$$('[data-qtd]', el).pop(); if (q) q.focus(); };
     SN.$('#aEnviar').onclick = enviar;

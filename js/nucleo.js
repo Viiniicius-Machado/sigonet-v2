@@ -99,7 +99,7 @@ SN.baseVazia = () => ({
     id: SN.uid(), empresa, nome, equipe, titular, frente, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   lideranca: SEED_LIDERANCA.map(l => ({ id: SN.uid(), nomeCompleto: '', ...l, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   contas: SEED_CONTAS.map(c => ({ ...c })),
-  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], estoques: [],
+  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], estoques: [], projetos: [],
   assinaturas: {}, log: [], integracoes: []
 });
 
@@ -108,6 +108,7 @@ SN.carregar = () => {
   try { SN.db = JSON.parse(localStorage.getItem(CHAVE_DB)); } catch (e) { SN.db = null; }
   if (!SN.db || SN.db.versao !== VERSAO_DB) { SN.db = SN.baseVazia(); SN.salvar(); }
   if (!SN.db.estoques) SN.db.estoques = []; // coleção nova (06/10/2026): bases locais antigas não tinham
+  if (!SN.db.projetos) SN.db.projetos = []; // Novos projetos (12/10/2026)
   return SN.db;
 };
 SN.salvar = () => {
@@ -720,9 +721,9 @@ SN.usuario = () => {
 };
 SN.temTela = tela => { const u = SN.usuario(); return !!u && u.tipo === 'lideranca' && (u.telas.includes('*') || u.telas.includes(tela)
   || (u.cargo === 'Encarregado' && SN.TELAS_ENCARREGADO.includes(tela)) // encarregado revisa as obras pelo cargo
-  || (/^(mel|ret)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento')))); }; // quem planeja o programa também revisa
+  || (/^(mel|ret|prj)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento')))); }; // quem planeja o programa também revisa
 // Revisão das obras (Preventiva, Melhoria, Retirada): todo Encarregado tem, sem marcar no Portal.
-SN.TELAS_ENCARREGADO = ['vst_revisao', 'mel_revisao', 'ret_revisao'];
+SN.TELAS_ENCARREGADO = ['vst_revisao', 'mel_revisao', 'ret_revisao', 'prj_revisao'];
 SN.podeAprovar = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor', 'Encarregado'].includes(u.cargo); };
 SN.ehGestor = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor'].includes(u.cargo); };
 

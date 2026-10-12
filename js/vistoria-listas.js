@@ -114,8 +114,13 @@ var VR_LISTAS = (function () {
   // e não aparecem em nenhuma tela da Preventiva. Cada uma tem a sua conta contábil.
   L.programas = {
     MELHORIA: { rot: 'Melhoria de rede', curto: 'Melhoria', tela: 'mel_planejamento', href: '#/mel/planejamento', pref: 'MEL', conta: '3.1.1.2.05.0103' },
-    RETIRADA: { rot: 'Retirada de cabo', curto: 'Retirada', tela: 'ret_planejamento', href: '#/ret/planejamento', pref: 'RET', conta: '3.1.1.2.05.0102' }
+    RETIRADA: { rot: 'Retirada de cabo', curto: 'Retirada', tela: 'ret_planejamento', href: '#/ret/planejamento', pref: 'RET', conta: '3.1.1.2.05.0102' },
+    // Novos projetos (2026-10-12): a obra nasce de um projeto aprovado (telas-projetos.js), não do
+    // formulário "Nova atividade". A conta é a que o gestor escolheu no projeto (rota.conta).
+    PROJETO: { rot: 'Novos projetos', curto: 'Projeto', tela: 'prj_planejamento', href: '#/prj/planejamento', pref: 'OBR', conta: '', contaLivre: true, soDeProjeto: true }
   };
+  // Conta contábil da atividade: a do programa, ou a escolhida no projeto (PROJETO).
+  L.contaProg = function (r) { var p = r && L.programas[r.segmento]; return p ? (p.contaLivre ? String(r.conta || '') : p.conta) : ''; };
   // Retirada: o que o técnico aponta e o item de LPU de cada quantidade.
   L.producao_retirada = [
     { k: 'metros', rot: 'Cabo retirado (m)', un: 'm', lpu: 'SEV0018' },
@@ -125,7 +130,8 @@ var VR_LISTAS = (function () {
   L.fotos_prog = {
     RETIRADA: [{ tipo: 'ret_antes', regra: 'mínimo 1' }, { tipo: 'ret_depois', regra: 'mínimo 1' },
       { tipo: 'ret_cabo', regra: '1 foto quando houver metros' }, { tipo: 'ret_ceo', regra: '1 foto por CEO/CTO' }],
-    MELHORIA: [{ tipo: 'mel_antes', regra: 'mínimo 1' }, { tipo: 'mel_depois', regra: 'mínimo 1' }, { tipo: 'mel_servico', regra: 'opcional' }]
+    MELHORIA: [{ tipo: 'mel_antes', regra: 'mínimo 1' }, { tipo: 'mel_depois', regra: 'mínimo 1' }, { tipo: 'mel_servico', regra: 'opcional' }],
+    PROJETO: [{ tipo: 'mel_antes', regra: 'mínimo 1' }, { tipo: 'mel_depois', regra: 'mínimo 1' }, { tipo: 'mel_servico', regra: 'opcional' }]
   };
 
   // ─────────── Revisão ───────────

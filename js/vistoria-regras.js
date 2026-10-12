@@ -817,7 +817,7 @@ var VR = (function () {
   // Classificação do chamado pela linha da matriz oficial (todas SLA 8 h).
   R.classificacaoRota = function (rota) {
     var base = R.CHAMADO_PREVENTIVA;
-    if (R.ehProg(rota)) return R.CHAMADO_PROG[rota.segmento];
+    if (R.ehProg(rota)) { var cp = R.CHAMADO_PROG[rota.segmento]; return L.programas[rota.segmento].contaLivre ? Object.assign({}, cp, { conta: L.contaProg(rota) }) : cp; }
     if (!rota || rota.segmento !== 'AEREA') return base;
     var m = R.normCidade(rota.motivo);
     var cat = { tipo: 'Preventiva', cat1: 'Preventiva de Rede', cat2: 'Preventiva Rede (Externa)', slaHoras: 8, conta: base.conta };
@@ -940,7 +940,9 @@ var VR = (function () {
   R.ehSubOuNada = function (r) { return !!r && r.segmento !== 'AEREA' && !R.ehProg(r); }; // subterrânea (rota antiga sem segmento conta)
   R.CHAMADO_PROG = {
     MELHORIA: { tipo: 'Melhoria', cat1: 'Melhoria de Rede', cat2: 'Melhoria Planejada', slaHoras: 24, conta: L.programas.MELHORIA.conta },
-    RETIRADA: { tipo: 'Retirada', cat1: 'Retirada de Cabo', cat2: 'Retirada Planejada', slaHoras: 24, conta: L.programas.RETIRADA.conta }
+    RETIRADA: { tipo: 'Retirada', cat1: 'Retirada de Cabo', cat2: 'Retirada Planejada', slaHoras: 24, conta: L.programas.RETIRADA.conta },
+    // Obra de projeto novo: a conta vem do projeto (rota.conta), escolhida pelo gestor.
+    PROJETO: { tipo: 'Implantação', cat1: 'Construção de Rede', cat2: 'Projeto Novo', slaHoras: 24, conta: '' }
   };
   R.validarRotaProg = function (r) {
     var erros = [];
@@ -948,6 +950,8 @@ var VR = (function () {
     if (vazio(r.cidade)) erros.push('Informe a cidade.');
     if (vazio(r.endereco)) erros.push('Informe o endereço / local.');
     if (r.segmento === 'MELHORIA' && vazio(r.pop)) erros.push('Informe o POP atendido pela melhoria.');
+    if (r.segmento === 'PROJETO' && vazio(r.conta)) erros.push('Escolha a conta contábil do projeto.');
+    if (r.segmento === 'PROJETO' && vazio(r.id_projeto)) erros.push('A obra precisa nascer de um projeto aprovado.');
     if (vazio(r.servico)) erros.push(r.segmento === 'RETIRADA' ? 'Descreva o que retirar (cabo, trecho, operadora…).' : 'Descreva o serviço de melhoria.');
     if (!vazio(r.metros_previstos) && (!numero(r.metros_previstos) || Number(r.metros_previstos) < 0)) erros.push('Metros previstos inválidos.');
     if (vazio(r.prestador)) erros.push('Escolha o prestador (equipe).');
@@ -973,7 +977,7 @@ var VR = (function () {
       if (!numero(a.metros) || Number(a.metros) < 0) erros.push('Informe os metros de cabo retirados (0 se não retirou).');
       if (!inteiroNaoNeg(a.ceo === '' || a.ceo == null ? 0 : a.ceo)) erros.push('Número inválido em CEO/CTO.');
       if (a.tipo === 'parcial' && !(Number(a.metros) > 0) && !(Number(a.ceo) > 0)) erros.push('Apontamento parcial sem produção.');
-    } else if (seg === 'MELHORIA') {
+    } else if (seg === 'MELHORIA' || seg === 'PROJETO') {
       var its = itensProg(a), cods = its.map(function (i) { return i.cod; });
       if (its.some(function (i) { return !/^SEV\d+[a-z]?$/i.test(i.cod); })) erros.push('Item de LPU inválido.');
       if (its.some(function (i) { return !(i.qtd > 0); })) erros.push('Informe a quantidade de cada serviço.');

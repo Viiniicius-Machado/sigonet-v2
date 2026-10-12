@@ -12,7 +12,8 @@ SN.vst = {};
 // Telas liberáveis em Cadastros e Acessos (quem tem "Todas" já vê).
 Object.assign(SN.TELAS || (SN.TELAS = {}), {
   vst_planejamento: 'Preventiva · Planejamento', vst_revisao: 'Preventiva · Revisão', vst_dashboard: 'Preventiva · Dashboard',
-  mel_planejamento: 'Melhoria de rede · Planejamento', ret_planejamento: 'Retirada de cabo · Planejamento'
+  mel_planejamento: 'Melhoria de rede · Planejamento', ret_planejamento: 'Retirada de cabo · Planejamento',
+  prj_planejamento: 'Novos projetos (projetar, orçar e acompanhar a obra)'
 });
 SN.vst.MENU = [
   { grupo: 'Preventiva' },
@@ -124,7 +125,7 @@ SN.vst.separar = r => {
 // Liderança com tela da Preventiva: já busca a carga em segundo plano logo depois de
 // entrar, para o primeiro clique no menu abrir sem esperar o servidor.
 SN.vst.preaquecer = () => {
-  if (!SN.vst.disponivel() || !(SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela)) || SN.temTela('mel_planejamento') || SN.temTela('ret_planejamento'))) return;
+  if (!SN.vst.disponivel() || !(SN.vst.MENU.some(m => m.tela && SN.temTela(m.tela)) || SN.temTela('mel_planejamento') || SN.temTela('ret_planejamento') || SN.temTela('prj_planejamento'))) return;
   const quem = (SN.sessao() || {}).token;
   setTimeout(() => { // só se a mesma pessoa ainda estiver logada (saiu ou trocou de usuário: não busca)
     if (!quem || (SN.sessao() || {}).token !== quem) return;
@@ -138,7 +139,7 @@ SN.vst.resumoAprovado = (prev, comItens) => {
   if (!prev || !prev.lpu_sugerida) return '';
   const it = cod => comItens ? ` (${cod})` : '';
   if (prev.segmento === 'RETIRADA') { const t = prev.producao || {}; return `${SN.num(t.metros)} m de cabo retirados${it('SEV0018')} · ${SN.num(t.ceo)} CEO/CTO retiradas${it('SEV0019')}`; }
-  if (prev.segmento === 'MELHORIA') return Object.entries(prev.lpu_sugerida).map(([cod, q]) => `${SN.num(q)} × ${SN.esc((SN.itemLpu(cod) || {}).desc || cod)}${it(cod)}`).join(' · ') || 'nenhum serviço aprovado';
+  if (prev.segmento === 'MELHORIA' || prev.segmento === 'PROJETO') return Object.entries(prev.lpu_sugerida).map(([cod, q]) => `${SN.num(q)} × ${SN.esc((SN.itemLpu(cod) || {}).desc || cod)}${it(cod)}`).join(' · ') || 'nenhum serviço aprovado';
   if (prev.segmento === 'AEREA') {
     const t = prev.producao || {};
     return `${SN.num(t.metros)} m percorridos${it('SEV0083')} · ${SN.num(t.postes)} postes equipados · ${SN.num(t.cordoalha)} m de cordoalha${it('SEV0009')} · `

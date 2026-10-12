@@ -239,6 +239,7 @@ const MATRIZ_SLA = [
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Diurno",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Noturno",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Lançamento Externo",cat2:"Lançamento Subterrâneo",cat3:"",cat4:"",sla:48},
+  {tipo:"Implantação",cat1:"Construção de Rede",cat2:"Projeto Novo",cat3:"",cat4:"",sla:24},
   {tipo:"Implantação",cat1:"Improdutiva Lançamento Externo",cat2:"Improdutiva Chamado Improcedente",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Improdutiva Lançamento Externo",cat2:"Improdutiva Cliente",cat3:"",cat4:"",sla:48},
   {tipo:"Implantação",cat1:"Improdutiva Lançamento Externo",cat2:"Improdutiva Clima/Fator Externo",cat3:"",cat4:"",sla:48},

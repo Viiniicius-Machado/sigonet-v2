@@ -18,6 +18,7 @@ const ICO = {
   portal: 'M4 20V11M10 20V5M16 20v-7M21 20H3',
   cadastros: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-1a6 6 0 0 1 12 0v1M16 3.5a4 4 0 0 1 0 7.5M22 21v-1a6 6 0 0 0-4-5.6',
   auditoria: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  projeto: 'M3 21h18M5 21V8l4-4 4 4v13M9 21v-5M13 10h6v11M16 13v.01M16 16v.01M7 9v.01M7 12v.01',
   planejamento: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14',
   revisao: 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-5-5',
   dashboard: 'M3 17l6-6 4 4 8-8M15 7h6v6',
@@ -34,7 +35,7 @@ const ICO = {
 };
 SN.iconeSvg = nome => `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICO[nome] || ICO.ponto}"/></svg>`;
 const ICO_POR_HREF = { '#/inicio': 'inicio', '#/chamados': 'chamados', '#/lpu': 'lpu', '#/servicedesk': 'servicedesk', '#/materiais': 'materiais', '#/fibra': 'fibra',
-  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard', '#/vst/mapa': 'planejamento', '#/mel/planejamento': 'planejamento', '#/ret/planejamento': 'planejamento', '#/mel/revisao': 'revisao', '#/ret/revisao': 'revisao', '#/mel/dashboard': 'dashboard', '#/ret/dashboard': 'dashboard',
+  '#/base': 'base', '#/portal': 'portal', '#/cadastros': 'cadastros', '#/auditoria': 'auditoria', '#/vst/planejamento': 'planejamento', '#/vst/revisao': 'revisao', '#/vst/dashboard': 'dashboard', '#/vst/mapa': 'planejamento', '#/mel/planejamento': 'planejamento', '#/ret/planejamento': 'planejamento', '#/mel/revisao': 'revisao', '#/ret/revisao': 'revisao', '#/mel/dashboard': 'dashboard', '#/ret/dashboard': 'dashboard', '#/prj/projetos': 'projeto', '#/prj/planejamento': 'planejamento', '#/prj/revisao': 'revisao', '#/prj/dashboard': 'dashboard',
   '#/tec': 'fila', '#/tec/vistorias': 'preventiva', '#/tec/resumo': 'dashboard', '#/tec/financeiro': 'financeiro', '#/estoque': 'materiais', '#/tec/estoque': 'materiais' };
 // Botões de módulo da OS (técnico): pelo destino do toque ou, sem destino (bloqueado), pelo nome.
 const icoModulo = el => { const m = el.closest('.modulo'); if (!m) return null;

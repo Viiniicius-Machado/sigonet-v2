@@ -35,6 +35,8 @@
   const rotas = () => (d.prog_rotas || []).filter(r => r.segmento === seg);
   const aps = () => { const ids = {}; rotas().forEach(r => { ids[r.id_rota] = true; }); return (d.prog_producao || []).filter(a => ids[a.id_rota]); };
   const retirada = () => seg === 'RETIRADA';
+  const deProjeto = () => !!P().soDeProjeto; // Novos projetos: a obra nasce do projeto aprovado (telas-projetos.js)
+  const contaDe = r => L.contaProg(r) || '';
   const popTxt = p => (/^POP\b/i.test(p) ? '' : 'POP ') + p; // o cadastro às vezes já traz "POP" no nome
   const diaLocal = v => { const s = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : (v ? new Date(v) : null); };
   const noIv = (iv, v) => { if (!iv) return true; const t = diaLocal(v); return !!t && t >= iv[0] && t < iv[1]; };
@@ -56,8 +58,11 @@
 
   const pintar = () => {
     const e = E(), pend = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO').length;
-    const abas = [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade']];
-    const sub = { PLAN: `Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico.`,
+    const abas = deProjeto() ? [['LISTA', 'Obras']] : [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade']];
+    if (deProjeto()) e.aba = 'LISTA';
+    const sub = deProjeto() ? { PLAN: 'Obras dos projetos aprovados. Ao despachar, o chamado é criado na conta escolhida no projeto e entra na fila da equipe — com o KMZ, o desenho, os materiais e a LPU estimada (sem valores).',
+      REV: `Apontamentos da equipe${pend ? ` (<b>${pend}</b> aguardando)` : ''}. Aprovado o "Finalizado", o chamado conclui e a LPU nasce preenchida.`,
+      DASH: 'Produção aprovada e valor lançado nas obras dos projetos.' }[vista] : { PLAN: `Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico.`,
       REV: `Apontamentos do técnico${pend ? ` (<b>${pend}</b> aguardando)` : ''}. Aprovado o "Finalizado", o chamado conclui e a LPU nasce preenchida.`,
       DASH: `Produção aprovada e valor atingido na conta <b>${esc(SN.contaTxt(P().conta))}</b>.` }[vista];
     SN.casca(idMenu(vista), `
@@ -95,28 +100,28 @@
       <div class="card card-filtros">${SN.htmlPeriodo(e.periodo)}<div class="filtros" style="margin-top:8px">
         <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(L.status_rota).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
         <input class="inp busca" id="fQ" placeholder="Buscar (cidade, ${retirada() ? 'endereço' : 'POP'}, prestador, chamado…)" value="${esc(f.q)}">
-        <button class="btn prim" id="bNova">➕ Nova atividade</button></div></div>
+        ${deProjeto() ? '<a class="btn prim" href="#/prj/projetos">📐 Projetos</a>' : '<button class="btn prim" id="bNova">➕ Nova atividade</button>'}</div></div>
       ${andamentoFora.length ? `<div class="aviso info small" style="margin-bottom:10px">${andamentoFora.length} atividade(s) <b>em andamento</b> com data fora deste período (${andamentoFora.slice(0, 5).map(r => esc(r.id_rota)).join(', ')}). <button class="btn sm" id="bVerAnd">Ver em andamento</button></div>` : ''}
       <div class="card"><div class="card-tit"><h3>Atividades (${vis.length})</h3></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Atividade</th><th>Onde</th><th>Serviço</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Produção</th><th></th></tr></thead><tbody>
         ${vis.map(r => `<tr><td class="mono">${esc(r.id_rota)}${r.id_chamado ? `<div class="small"><a href="#/chamado/${esc(r.id_chamado)}">${esc(r.id_chamado)}</a></div>` : ''}</td>
           <td>${esc(r.cidade || '')}<div class="small muted">${esc(r.regiao || '')}${r.pop ? ' · ' + esc(popTxt(r.pop)) : ''}</div><div class="small muted">${esc(r.endereco || '')}</div></td>
-          <td class="small">${esc(r.servico || '')}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}${(r.anexos || []).length ? `<div class="muted">📎 ${r.anexos.length} anexo(s)</div>` : ''}</td>
+          <td class="small">${esc(r.servico || '')}${r.id_projeto ? `<div><a href="#/prj/projeto/${esc(r.id_projeto)}">📐 ${esc(r.id_projeto)}</a> · conta ${esc(contaDe(r).slice(-4))}</div>` : ''}${r.notificacao ? `<div class="muted">${esc(r.notificacao)}</div>` : ''}${(r.anexos || []).length ? `<div class="muted">📎 ${r.anexos.length} anexo(s)</div>` : ''}</td>
           <td>${esc(r.prestador || '')}<div class="small muted">${esc(r.tecnico || 'qualquer técnico do prestador')}</div></td>
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
           <td>${SN.vst.badgeRota(r.status)}</td>
           <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
-          <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button> <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`
+          <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button>${deProjeto() ? '' : ` <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`}`
             : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="A equipe mandou os apontamentos mas não o &quot;Finalizado&quot;">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}${!['PLANEJADA', 'CANCELADA'].includes(r.status) ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da atividade em PDF">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha de cada apontamento (com fotos)">Baixar tudo</button>` : ''}</div></td></tr>`).join('')}
-        </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
+        </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : deProjeto() ? 'Nenhuma obra ainda: aprove um projeto em "Projetos".' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
     SN.ligarPeriodo(pintarLista, e.periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
     SN.$('#fSt').onchange = ev => { f.status = ev.target.value; pintarLista(); };
     SN.$('#fQ').oninput = SN.debounce(ev => { f.q = ev.target.value; pintarLista(); SN.$('#fQ').focus(); }, 300);
-    SN.$('#bNova').onclick = () => { e.form = nova(); e.aba = 'NOVA'; pintar(); };
+    if (SN.$('#bNova')) SN.$('#bNova').onclick = () => { e.form = nova(); e.aba = 'NOVA'; pintar(); };
     const acao = (sel, fn) => SN.$$(sel).forEach(b => b.onclick = async () => { b.disabled = true; try { await fn(b); } catch (err) { SN.toast(err.message, 'erro'); b.disabled = false; } });
     acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' });
-      SN.toast(`Atividade despachada: o chamado (conta ${P().conta.slice(-4)}) está na fila do técnico.`, 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
+      SN.toast(`Atividade despachada: o chamado (conta ${contaDe(rotas().find(x => x.id_rota === b.dataset.desp) || {}).slice(-4)}) está na fila do técnico.`, 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-ret]', async b => { if (!await SN.confirmar('Retirar despacho', 'A atividade volta a PLANEJADA e o chamado dela é cancelado.', 'Retirar', 'perigo')) { b.disabled = false; return; }
       await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.ret, para: 'PLANEJADA' }); SN.toast('Despacho retirado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); });
     acao('[data-ex]', async b => { if (!await SN.confirmar('Excluir atividade', 'Excluir esta atividade planejada?', 'Excluir', 'perigo')) { b.disabled = false; return; }
@@ -366,12 +371,12 @@
   const dataLpu = l => { const c = SN.db.chamados.find(x => x.id === l.chamadoId); return (c && c.tempos && c.tempos.conclusaoTecnica) || l.enviadoEm || l.criadoEm; };
   const tabela = (cab, linhas) => linhas.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr>${cab.map(([t, num]) => `<th class="${num ? 'num' : ''}">${t}</th>`).join('')}</tr></thead><tbody>${linhas.join('')}</tbody></table></div>` : '<p class="muted small">Sem dados no período.</p>';
   const pintarDash = () => {
-    const e = E(), iv = SN.intervaloMat(e.dash.per, e.dash.ref || hoje()), conta = SN.conta(P().conta) || { codigo: P().conta, nome: '', budget: 0 };
+    const e = E(), iv = SN.intervaloMat(e.dash.per, e.dash.ref || hoje()), livre = !!P().contaLivre, conta = livre ? { codigo: '', nome: 'Contas dos projetos', budget: 0 } : SN.conta(P().conta) || { codigo: P().conta, nome: '', budget: 0 };
     const rm = {}; rotas().forEach(r => { rm[r.id_rota] = r; });
     const aprov = aps().filter(a => a.status_revisao === 'APROVADA' && rm[a.id_rota] && noIv(iv, a.data));
     const emRev = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && rm[a.id_rota] && noIv(iv, a.data)).length;
     const chRota = {}; rotas().forEach(r => { if (r.id_chamado) chRota[r.id_chamado] = r; });
-    const lpus = SN.db.lpus.filter(l => l.cab && l.cab.conta === conta.codigo && l.status !== 'REPROVADA' && noIv(iv, dataLpu(l)));
+    const lpus = SN.db.lpus.filter(l => l.cab && (livre ? !!chRota[l.chamadoId] : l.cab.conta === conta.codigo) && l.status !== 'REPROVADA' && noIv(iv, dataLpu(l)));
     const lanc = lpus.reduce((s, l) => s + SN.valorLpu(l), 0), aprovado = lpus.filter(l => APROV.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
     const doProg = lpus.filter(l => chRota[l.chamadoId]), outros = lanc - doProg.reduce((s, l) => s + SN.valorLpu(l), 0);
     const budget = Number(conta.budget) || 0, pctMes = budget && e.dash.per === 'mes' ? Math.round(1000 * lanc / budget) / 10 : null;
@@ -397,10 +402,11 @@
         ${kpi('Atividades com produção', SN.num(tot.ativ.size), `${SN.num(tot.concl.size)} concluída(s)${emRev ? ' · ' + emRev + ' apontamento(s) em revisão' : ''}`)}
         ${kpi('Valor atingido na conta', SN.brl(lanc), `aprovado ${SN.brl(aprovado)}${budget ? ` · budget ${SN.brl(budget)}${pctMes != null ? ' (' + SN.num(pctMes) + '%)' : ''}` : ''}`)}
       </div>
-      <div class="card" style="margin-bottom:12px"><h3>Conta ${esc(SN.contaTxt(conta.codigo))}</h3>
+      <div class="card" style="margin-bottom:12px"><h3>${livre ? 'Obras dos projetos (contas escolhidas em cada projeto)' : 'Conta ' + esc(SN.contaTxt(conta.codigo))}</h3>
         ${budget && pctMes != null ? `<div class="gauge ${pctMes > 100 ? 'erro' : pctMes > 80 ? 'alerta' : ''}" style="margin:6px 0"><div style="width:${Math.min(100, pctMes)}%"></div></div>` : ''}
         <p class="small">Lançado no período: <b>${SN.brl(lanc)}</b> · aprovado (contabilizado/pago): <b>${SN.brl(aprovado)}</b>${budget ? ` · budget mensal ${SN.brl(budget)}` : ' · conta sem budget cadastrado'}.
           ${outros > 0.005 ? `<br><span class="muted">Desse valor, ${SN.brl(outros)} vem de outros chamados lançados nesta conta (fora das atividades desta tela).</span>` : ''}
+          ${livre ? '<br><span class="muted">Cada obra lança na conta escolhida no projeto; o orçado × realizado de cada uma está em Projetos.</span>' : ''}
           <br><span class="muted">"Estimado" = quantidade aprovada × valor de referência da LPU (vale antes de a LPU ser lançada; o valor real é o da LPU).</span></p></div>
       ${retirada() ? `
       <div class="card" style="margin-bottom:12px"><h3>Por região</h3>
@@ -425,8 +431,9 @@
 
   // Menu lateral: um grupo por programa, com Planejamento, Revisão e Dashboard (como a Preventiva).
   Object.keys(L.programas).forEach(s => { const p = L.programas[s];
-    SN.MENU.push({ grupo: p.rot },
-      { tela: p.tela, rot: 'Planejamento', ico: '🗺️', href: p.href },
+    SN.MENU.push({ grupo: p.rot });
+    if (p.soDeProjeto) SN.MENU.push({ id: 'prj_projetos', tela: p.tela, rot: 'Projetos', ico: '📐', href: '#/prj/projetos' });
+    SN.MENU.push({ tela: p.tela, rot: p.soDeProjeto ? 'Obras' : 'Planejamento', ico: '🗺️', href: p.href },
       { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela.replace('planejamento', 'revisao'), rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
       { id: p.tela.replace('planejamento', 'dashboard'), tela: p.tela, rot: 'Dashboard', ico: '📈', href: p.href.replace('planejamento', 'dashboard') }); });
 })();

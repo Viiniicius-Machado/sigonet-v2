@@ -591,3 +591,32 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
    break-word só quebra quando não cabe e não muda a largura das colunas de tabela. */
 .card, .coluna, .os, .kpi, .aviso, .est-chip, .modal{overflow-wrap:break-word}
 .coluna, .os{min-width:0}
+
+/* ═══════════ Novos projetos (telas-projetos.js) ═══════════ */
+.prj-grade{display:grid;grid-template-columns:minmax(300px,380px) minmax(0,1fr);gap:12px;align-items:start}
+.prj-lado{display:flex;flex-direction:column;gap:12px;min-width:0}
+.prj-lado .card{margin:0}
+.prj-mapa-col{min-width:0;display:flex;flex-direction:column;gap:12px}
+.prj-mapa-col .card{margin:0}
+.prj-mapa{height:min(68vh,720px);min-height:360px;border-radius:8px;overflow:hidden;background:#dfe4da}
+.prj-mapa-tec{height:340px;min-height:0;margin-top:8px}
+.prj-barra{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
+.prj-linha{display:flex;gap:6px;align-items:center}
+.prj-linha .inp{flex:1;min-width:0}
+.prj-metricas{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px}
+.prj-metricas>div{background:var(--bg-2,#eceeea);border-radius:6px;padding:6px 8px;min-width:0}
+.prj-metricas b{display:block;font-size:1rem;overflow-wrap:anywhere}
+.prj-metricas span{font-size:.72rem;color:var(--texto-3)}
+.prj-legenda{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;align-items:center}
+.prj-legenda span{display:inline-flex;align-items:center;gap:6px}
+.prj-traco{display:inline-block;width:26px;height:4px;border-radius:2px}
+.prj-ico{background:none;border:0}
+.prj-ico svg{display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.35))}
+.prj-rot{background:rgba(0,0,0,.6);color:#fff;border:0;box-shadow:none;font-size:11px;font-weight:700;padding:1px 5px}
+.prj-rot::before{display:none}
+.prj-pop{font-size:.8rem;min-width:210px}
+.prj-pop .inp{padding:4px 6px;font-size:.8rem}
+.prj-pop-el{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;padding-top:6px;border-top:1px solid var(--borda)}
+.prj-base-it{padding:6px 8px;border-bottom:1px solid var(--borda);cursor:pointer}
+.prj-base-it:hover{background:var(--verde-bg)}
+@media (max-width:1100px){.prj-grade{grid-template-columns:minmax(0,1fr)}.prj-mapa{height:60vh}}
