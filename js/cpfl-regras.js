@@ -196,9 +196,11 @@
     var tipo = C.tipoDe(assunto + ' ' + s);
     var num = (/(\d{3,6}\s*\/\s*\d{4})(?:\s*\/\s*[A-Z]{2,5})?/.exec(norm(assunto)) || [])[1] || (/\b(\d{7,8})\b/.exec(norm(assunto)) || [])[1] || '';
     num = num.replace(/\s+/g, '');
+    var geral = C.extrair(s, o); // número, postes e coordenada que estejam no corpo (ex.: PDF "Notificação Nº …")
+    if (!num) num = geral.numero;
     var dt = /(?:NO DIA|DIA|DATA[^:\n]{0,20}:?)\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/.exec(t) || /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(t) || /(\d{1,2}-\d{1,2}-\d{4})/.exec(norm(assunto));
     var data = dt ? C.dataDe(dt[1].replace(/-/g, '/')) : '';
-    var hr = /(?:INICIO PREVISTO|INICIO|HORARIO)\s*:?\s*(?:AS\s*)?(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t) || /\bAS\s+(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t);
+    var hr = /(?:INICIO PREVISTO|INICIO|HORARIO|\bDAS)\s*:?\s*(?:AS\s*)?(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t) || /\bAS\s+(\d{1,2})\s*[:H]\s*(\d{2})/.exec(t);
     var hora = hr ? C.horaDe(hr[1] + ':' + hr[2]) : '';
     var cidadeAssunto = '', cids = o.cidades || [];
     cids.forEach(function (c) { if (norm(c).length > 3 && norm(assunto).indexOf(norm(c)) >= 0) cidadeAssunto = c; });
@@ -216,7 +218,7 @@
     (ruas.length ? ruas : [{ rua: '', bairro: '', cidade: '' }]).forEach(function (r, i) {
       var cid = r.cidade || cidadeAssunto || C.extrair(s, o).cidade;
       cids.forEach(function (c) { if (norm(c) === norm(cid)) cid = c; });
-      out.push({ tipo: tipo === 'OUTRO' ? 'LIMPEZA' : tipo, numero: num, data: data, hora: hora, cidade: cid, endereco: r.rua, bairro: r.bairro, pontos: C.pontosDe(s, true),
+      out.push({ tipo: tipo === 'OUTRO' ? 'LIMPEZA' : tipo, numero: num, data: data, hora: hora, cidade: cid, endereco: r.rua, bairro: r.bairro, pontos: C.pontosDe(s, true), postes: geral.postes || '',
         obs: encontro ? 'Ponto de encontro: ' + encontro : '', assunto: assunto, origem_formato: 'COMUNICADO', seq: ruas.length > 1 ? i + 1 : 0 });
     });
     return out;

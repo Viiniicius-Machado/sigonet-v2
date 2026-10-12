@@ -47,6 +47,7 @@
     SN.casca('cpfl', `
       <div class="cab-pagina"><div><h1>Acompanhamentos CPFL</h1><p>Troca de poste, limpeza de cabo, reordenamento e demais serviços da concessionária na nossa rede. Risco para ${C.MIN_CLIENTES_MASSIVA} ou mais clientes = massiva: a Manutenção acompanha.</p></div>
         <div class="acoes"><button class="btn prim" id="bNovoAg">➕ Novo agendamento</button></div></div>
+      ${(() => { const n = lista().filter(doTecnico).length; return n ? `<div class="aviso alerta" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">🧑‍🔧 <b>${n}</b> acompanhamento(s) com o resultado informado pelo técnico, aguardando a sua confirmação. <button class="btn sm prim" id="bConfTec">Confirmar</button></div>` : ''; })()}
       ${(() => { const n = lista().filter(r => r.a_conferir).length; return n ? `<div class="aviso info" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">📬 <b>${n}</b> notificação(ões) recebida(s) por e-mail a conferir (com o resultado da nossa rede). <button class="btn sm prim" id="bConfEmail">Conferir</button></div>` : ''; })()}
       ${semLocal ? `<div class="aviso alerta small" style="margin-bottom:10px">${semLocal} agendamento(s) futuro(s) sem localização: veja na Lista (filtro "sem localização") e marque no mapa.</div>` : ''}
       <div class="abas">${abas.map(([k, r]) => `<button class="aba ${st.aba === k ? 'ativa' : ''}" data-abacp="${k}">${r}</button>`).join('')}</div>
@@ -54,6 +55,7 @@
     SN.$$('[data-abacp]').forEach(b => b.onclick = () => { st.aba = b.dataset.abacp; pintar(); });
     SN.$('#bNovoAg').onclick = () => editar(null);
     if (SN.$('#bConfEmail')) SN.$('#bConfEmail').onclick = () => conferirEmails().then(pintar);
+    if (SN.$('#bConfTec')) SN.$('#bConfTec').onclick = () => confirmarTecnicos().then(pintar);
     ({ MAPA: pintarMapa, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
   };
   const filtrosHtml = (comPeriodo) => `<div class="card card-filtros"><div class="filtros">
@@ -76,14 +78,20 @@
     SN.$('#fAb').onchange = e => { st.soAbertas = e.target.checked; repintar(); };
     SN.$('#fQ').oninput = SN.debounce(e => { st.q = e.target.value; repintar(); SN.$('#fQ').focus(); }, 300);
   };
-  const redeTxt = r => r.rede ? (r.rede.tem ? ` <span class="badge ok" title="${esc((r.rede.cabos || []).join(', '))}">rede nossa · ${SN.num(r.rede.metros)} m</span>` : ' <span class="badge">sem rede nossa</span>') : '';
-  const badgeReg = r => `${SN.badge(C.STATUS, r.status)}${redeTxt(r)}${r.resultado ? ` <span class="badge ${r.resultado === 'IMPRODUTIVA' ? 'erro' : 'ok'}">${esc(C.RESULTADOS[r.resultado].rot)}</span>` : ''}${r.massiva ? ' <span class="badge erro">massiva</span>' : ''}`;
+  const redeTxt = r => r.rede ? (r.rede.fora ? ' <span class="badge">fora da área</span>' : r.rede.tem ? ` <span class="badge ok" title="${esc((r.rede.cabos || []).join(', '))}">rede nossa · ${SN.num(r.rede.metros)} m</span>` : ' <span class="badge">sem rede nossa</span>') : '';
+  // Resultado que o técnico informou na OS e ainda não foi confirmado pela gestão.
+  const doTecnico = r => { const c = chamadoDe(r); return c && c.cpfl && c.cpfl.resultado && !(c.cpfl.confirmado) ? { c, res: c.cpfl.resultado } : null; };
+  const tecTxt = r => { const t = doTecnico(r); return t ? ` <span class="badge alerta" title="Informado pelo técnico na OS">técnico: ${esc(C.RESULTADOS[t.res].rot)} · confirmar</span>` : ''; };
+  const badgeReg = r => `${SN.badge(C.STATUS, r.status)}${redeTxt(r)}${tecTxt(r)}${r.resultado ? ` <span class="badge ${r.resultado === 'IMPRODUTIVA' ? 'erro' : 'ok'}">${esc(C.RESULTADOS[r.resultado].rot)}</span>` : ''}${r.massiva ? ' <span class="badge erro">massiva</span>' : ''}`;
   const acoesReg = r => `<button class="btn sm ${r.id_chamado ? '' : 'prim'}" data-desp="${esc(r.id)}">${r.id_chamado ? 'Chamado ' + esc(r.id_chamado) : 'Despachar'}</button>
-    <button class="btn sm" data-res="${esc(r.id)}">${r.resultado ? 'Resultado ✓' : 'Resultado'}</button><button class="btn sm" data-ed="${esc(r.id)}">Editar</button>`;
+    <button class="btn sm" data-res="${esc(r.id)}">${r.resultado ? 'Resultado ✓' : 'Resultado'}</button><button class="btn sm" data-ed="${esc(r.id)}">Editar</button>${r.rede ? '' : `<button class="btn sm" data-verrede="${esc(r.id)}" title="Confere se o endereço tem rede Net Turbo (GeoGrid)">Verificar rede</button>`}`;
   const ligarAcoes = (raiz, repintar) => {
     raiz.querySelectorAll('[data-desp]').forEach(b => b.onclick = () => despachar(lista().find(r => r.id === b.dataset.desp)).then(repintar));
     raiz.querySelectorAll('[data-res]').forEach(b => b.onclick = () => resultado(lista().find(r => r.id === b.dataset.res)).then(repintar));
     raiz.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => editar(lista().find(r => r.id === b.dataset.ed)).then(repintar));
+    raiz.querySelectorAll('[data-verrede]').forEach(b => b.onclick = async () => { const r = lista().find(x => x.id === b.dataset.verrede); if (!r) return; b.disabled = true; b.textContent = 'Conferindo…';
+      try { const x = await verificarRede(r); SN.salvar(); SN.toast(x ? (x.fora ? 'Fora da nossa área.' : x.tem ? `Tem rede Net Turbo: ${SN.num(x.metros)} m de cabo.` : 'Sem rede Net Turbo neste endereço.') : 'Não deu para conferir: falta coordenada ou a rua não foi localizada.', x && x.tem ? 'ok' : ''); } catch (e) { SN.toast(e.message, 'erro'); }
+      repintar(); });
   };
 
   // ─────────── Mapa ───────────
@@ -160,6 +168,28 @@
   };
 
   // ─────────── Despachar (chamado na Esteira) ───────────
+  // Mesma notificação (mesmo número) já cadastrada em outro registro — antes de colocar na Esteira.
+  const numChave = n => C.norm(n).replace(/[^A-Z0-9]/g, '');
+  const mesmaNotificacao = (numero, id) => { const k = numChave(numero); if (!k || k === 'SN') return [];
+    return lista().filter(x => x.id !== id && numChave(x.numero) === k).sort((a, b) => String(b.data).localeCompare(String(a.data))); };
+  const dupTxt = l => l.length ? `⚠️ Mesma notificação já cadastrada: ${l.slice(0, 3).map(x => `${dia(x.data)}${x.endereco ? ' · ' + esc(x.endereco) : ''}${x.id_chamado ? ' · chamado ' + esc(x.id_chamado) : ''}`).join('; ')}${l.length > 3 ? '…' : ''}` : '';
+  // Passa na nossa rede? Usa a coordenada; sem ela, localiza a rua. Guarda o resultado no registro.
+  const verificarRede = async r => {
+    const ind = SN.rede ? await SN.rede.indice().catch(() => null) : null;
+    if (!ind || !window.REDE) return null;
+    const cid = REDE.acharCidade(ind, r.cidade);
+    if (!cid) { r.rede = { tem: false, fora: true, metros: 0, cabos: [], caixas: 0 }; return r.rede; }
+    let trechos = (r.pontos || []).length ? [r.pontos] : null;
+    if (!trechos && r.endereco) { const g = await localizarRua(r.endereco, r.cidade); if (g) trechos = g.trechos; }
+    if (!trechos) return null;
+    const d = await SN.rede.cidade(cid.cidade), x = C.naRede(trechos, d, REDE);
+    r.rede = x && { tem: x.tem, metros: x.metros, ruaM: x.ruaM, cabos: x.cabos.slice(0, 5), caixas: x.caixas.length, ts: SN.agora() };
+    if (!(r.pontos || []).length && trechos.length) r.pontos = [trechos[0][Math.floor(trechos[0].length / 2)]].map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
+    return r.rede;
+  };
+  const redeLinha = rd => !rd ? '⚠️ Não deu para conferir a rede (sem coordenada e rua não localizada).' : rd.fora ? 'Fora da nossa área (sem rede Net Turbo nesta cidade).'
+    : rd.tem ? `✔ <b>Tem rede Net Turbo</b>: ${SN.num(rd.metros)} m de cabo${rd.caixas ? ' · ' + rd.caixas + ' caixa(s)' : ''}${rd.cabos && rd.cabos.length ? ' (' + rd.cabos.slice(0, 3).map(esc).join(', ') + ')' : ''}` : '✖ <b>Sem rede Net Turbo</b> neste endereço.';
+  const contasOpts = sel => SN.db.contas.map(c => `<option value="${esc(c.codigo)}" ${c.codigo === sel ? 'selected' : ''}>${esc(SN.contaTxt(c.codigo))}</option>`).join('');
   const novoChamado = async (r, extra) => {
     const id = await SN.novoId('CH'), ab = SN.agora(), pt = (r.pontos || [])[0];
     const c = { id, origem: 'CPFL', protocoloNoc: '', protocoloOem: numTxt(r) === 's/n' ? '' : numTxt(r), etiqueta: '', cliente: `CPFL · ${tipoRot(r.tipo)} · ${r.cidade || ''}`,
@@ -178,28 +208,33 @@
   const despachar = async r => {
     if (!r) return;
     let c = chamadoDe(r);
-    if (c) { if (['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status)) SN.atribuir(c); else SN.navegar('#/chamado/' + c.id); return; }
-    const res = await SN.modal({ titulo: 'Despachar ' + tipoRot(r.tipo) + ' · ' + numTxt(r),
+    if (c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status)) { SN.navegar('#/chamado/' + c.id); return; }
+    if (!r.rede) { const fim = SN.cobrirCarregando('Conferindo se o endereço tem rede Net Turbo…'); try { await verificarRede(r); SN.salvar(); } catch (e) { } finally { fim(); } }
+    const dups = mesmaNotificacao(r.numero, r.id), dupComChamado = dups.filter(x => x.id_chamado && x.id_chamado !== r.id_chamado);
+    const res = await SN.modal({ titulo: (c ? 'Despachar ' + c.id + ' · ' : 'Despachar ') + tipoRot(r.tipo) + ' · ' + numTxt(r),
       corpo: `<p class="small">${dia(r.data)} ${esc(r.hora || '')} · ${esc(r.cidade || '')}${r.endereco ? ' · ' + esc(r.endereco) : ''}</p>
-        <div class="small" style="margin-bottom:8px">${perigoRede(r) || ''}</div>
+        <div class="aviso ${r.rede && r.rede.tem ? 'ok' : 'info'} small" style="margin-bottom:8px">${redeLinha(r.rede)}</div>
+        ${dups.length ? `<div class="aviso alerta small" style="margin-bottom:8px">${dupTxt(dups)}${dupComChamado.length ? '<br><b>Já existe chamado para essa notificação</b> — confira antes de abrir outro.' : ''}</div>` : ''}
+        <div class="campo"><label>Conta contábil *</label><select class="inp" id="mConta">${contasOpts((c && c.conta) || CONTA)}</select></div>
         <div class="campo"><label>Clientes em risco</label><input class="inp" type="number" min="0" id="mCli" value="${esc(r.clientes ?? '')}" placeholder="estimativa">
           <div class="small muted">${C.MIN_CLIENTES_MASSIVA} ou mais = massiva (a Manutenção acompanha).</div></div>
-        <p class="small muted">Cria o chamado na Esteira (Manutenção › Acompanhamento Cia Energia, prazo na hora agendada) e abre o despacho para escolher o técnico.</p>`,
-      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Criar chamado e despachar', cls: 'prim', acao: m => ({ cli: SN.$('#mCli', m).value }) }] });
+        <p class="small muted">${c ? 'Ajusta a conta do chamado e abre o despacho da Esteira para escolher o técnico.' : 'Cria o chamado na Esteira (Manutenção › Acompanhamento Cia Energia, prazo na hora agendada) e abre o despacho da Esteira para escolher o técnico.'} No celular, o técnico informa primeiro o resultado (Preventiva / Improdutiva / Acompanhamento) e depois as demais obrigações; o resultado volta aqui para você confirmar.</p>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: c ? 'Despachar' : 'Criar chamado e despachar', cls: 'prim', acao: m => ({ cli: SN.$('#mCli', m).value, conta: SN.$('#mConta', m).value }) }] });
     if (!res) return;
     if (res.cli !== '') { r.clientes = Number(res.cli) || 0; r.massiva = r.clientes >= C.MIN_CLIENTES_MASSIVA; }
     r.editado = true;
-    try { c = await novoChamado(r); } catch (e) { return SN.toast(e.message, 'erro'); }
-    SN.salvar(); SN.toast(`Chamado ${c.id} criado na Esteira.`, 'ok');
+    if (!c) { try { c = await novoChamado(r, { conta: res.conta }); } catch (e) { return SN.toast(e.message, 'erro'); } SN.toast(`Chamado ${c.id} criado na Esteira.`, 'ok'); }
+    else if (res.conta && c.conta !== res.conta) { SN.hist(c, 'Conta contábil', SN.contaTxt(c.conta) + ' → ' + SN.contaTxt(res.conta)); c.conta = res.conta; }
+    SN.salvar();
     SN.atribuir(c);
   };
 
   // ─────────── Resultado ───────────
   const resultado = async r => {
     if (!r) return;
-    const c = chamadoDe(r);
+    const c = chamadoDe(r), tec = c && c.cpfl && c.cpfl.resultado;
     const res = await SN.modal({ titulo: 'Resultado · ' + tipoRot(r.tipo) + ' ' + (r.numero || ''),
-      corpo: `${Object.entries(C.RESULTADOS).map(([k, v]) => `<label class="cp-res"><input type="radio" name="mRes" value="${k}" ${r.resultado === k ? 'checked' : ''}><span><b>${v.rot}</b><br><span class="small muted">${esc(v.desc)}</span></span></label>`).join('')}
+      corpo: `${tec ? `<p class="small">O técnico informou na OS: <b>${esc(C.RESULTADOS[tec].rot)}</b>${c.cpfl.confirmado ? ' (já confirmado)' : ''}.</p>` : ''}${Object.entries(C.RESULTADOS).map(([k, v]) => `<label class="cp-res"><input type="radio" name="mRes" value="${k}" ${(r.resultado || tec) === k ? 'checked' : ''}><span><b>${v.rot}</b><br><span class="small muted">${esc(v.desc)}</span></span></label>`).join('')}
         <div class="linha-form"><div class="campo"><label>Data da atuação</label><input class="inp" type="date" id="mData" value="${esc(r.data_atuacao || r.data || hoje())}"></div>
           <div class="campo"><label>Equipe</label><input class="inp" id="mEq" value="${esc(r.equipe || (c ? c.empresa : '') || '')}"></div></div>
         <div class="campo"><label>Observação</label><textarea class="inp" id="mObs">${esc(r.obs_resultado || '')}</textarea></div>
@@ -209,7 +244,8 @@
         return { v, data: SN.$('#mData', m).value, eq: SN.$('#mEq', m).value.trim(), obs: SN.$('#mObs', m).value.trim() }; } }]) });
     if (!res) return;
     if (res === 'limpar') { r.resultado = ''; r.data_atuacao = ''; if (r.status === 'CONCLUIDO') r.status = 'PLANEJADO'; hist(r, 'RESULTADO LIMPO'); }
-    else { Object.assign(r, { resultado: res.v, data_atuacao: res.data, equipe: C.equipeDe(res.eq), obs_resultado: res.obs }); if (r.status !== 'CANCELADO') r.status = 'CONCLUIDO'; hist(r, 'RESULTADO', C.RESULTADOS[res.v].rot); }
+    else { Object.assign(r, { resultado: res.v, data_atuacao: res.data, equipe: C.equipeDe(res.eq), obs_resultado: res.obs }); if (r.status !== 'CANCELADO') r.status = 'CONCLUIDO'; hist(r, 'RESULTADO', C.RESULTADOS[res.v].rot);
+      if (c && c.cpfl && c.cpfl.resultado) { r.resultado_tecnico = c.cpfl.resultado; c.cpfl.confirmado = { por: (SN.usuario() || {}).nome || '', ts: SN.agora(), resultado: res.v }; } }
     r.editado = true; SN.log('CPFL_RESULTADO', r.id, r.resultado); SN.salvar(); SN.toast('Resultado registrado.', 'ok');
   };
 
@@ -252,7 +288,10 @@
       hist(reg, 'CRIADO', 'manual'); lista().push(reg);
       if (res.chamado) { try { await novoChamado(reg); } catch (e) { SN.toast(e.message, 'erro'); } }
       SN.log('CPFL_NOVO', reg.id, ''); SN.salvar(); SN.toast('Agendamento criado' + (reg.id_chamado ? ' e chamado ' + reg.id_chamado + ' na Esteira.' : '.'), 'ok');
-    } else { Object.assign(x, dados, { editado: true }); hist(x, 'EDITADO'); SN.salvar(); SN.toast('Salvo.', 'ok'); }
+    } else {
+      const mudouLocal = JSON.stringify([x.cidade, x.endereco, x.pontos]) !== JSON.stringify([dados.cidade, dados.endereco, dados.pontos]);
+      Object.assign(x, dados, { editado: true }); if (mudouLocal) delete x.rede; hist(x, 'EDITADO'); SN.salvar(); SN.toast('Salvo.', 'ok');
+    }
   };
 
   // ─────────── Lista ───────────
@@ -334,6 +373,38 @@
         <li>Quem recebe a CPFL no Outlook encaminha o e-mail para a conta dedicada (a Microsoft da empresa pode bloquear o encaminhamento automático para fora — aí é encaminhar manualmente).</li>
         <li>A resposta automática sai do Gmail do servidor e vai para quem encaminhou.</li></ol></details>`;
     SN.$('#cxSalvar').onclick = async () => { try { await SN.api('CPFL_EMAIL_CONFIG', { endereco: SN.$('#cxEnd').value.trim() }); SN.toast('Endereço salvo.', 'ok'); pintarCaixa(); } catch (e) { SN.toast(e.message, 'erro'); } };
+  };
+  // Confirmação do resultado que o técnico escolheu na OS (Preventiva / Improdutiva / Acompanhamento).
+  const CONCLUIDOS = ['CONCLUIDO_TECNICO', 'FECHADO'];
+  const gravarConfirmacao = (r, c, res) => {
+    const u = (SN.usuario() || {}).nome || '', quando = (c.tempos && (c.tempos.conclusaoTecnica || c.tempos.chegada)) || SN.agora();
+    Object.assign(r, { resultado: res, resultado_tecnico: c.cpfl.resultado, confirmado: { por: u, ts: SN.agora() }, status: r.status === 'CANCELADO' ? r.status : 'CONCLUIDO',
+      equipe: C.equipeDe(c.empresa || r.equipe || ''), data_atuacao: SN.dataIsoLocal(new Date(quando)), editado: true });
+    c.cpfl.confirmado = { por: u, ts: SN.agora(), resultado: res };
+    hist(r, res === c.cpfl.resultado ? 'RESULTADO CONFIRMADO' : 'RESULTADO CORRIGIDO', (res === c.cpfl.resultado ? '' : 'técnico: ' + C.RESULTADOS[c.cpfl.resultado].rot + ' → ') + C.RESULTADOS[res].rot);
+    SN.hist(c, 'Resultado CPFL ' + (res === c.cpfl.resultado ? 'confirmado' : 'corrigido') + ' pela gestão', C.RESULTADOS[res].rot);
+    SN.log('CPFL_CONFIRMAR', r.id, res);
+  };
+  const confirmarTecnicos = async () => {
+    const l = lista().filter(doTecnico).sort((a, b) => (a.data + (a.hora || '')).localeCompare(b.data + (b.hora || '')));
+    if (!l.length) return;
+    const linha = r => { const c = chamadoDe(r), concl = CONCLUIDOS.includes(c.status), res = c.cpfl.resultado;
+      return `<tr data-id="${esc(r.id)}"><td class="nowrap">${dia(r.data)} ${esc(r.hora || '')}<div class="muted">${esc(tipoRot(r.tipo))} · ${esc(numTxt(r))}</div></td>
+        <td>${esc(r.cidade || '')}<div class="muted">${esc(r.endereco || '')}</div></td>
+        <td><a href="#/chamado/${esc(c.id)}">${esc(c.id)}</a><div>${SN.badgeStatus(c.status)}</div><div class="muted">${esc(c.empresa || '')} · ${esc(c.tecnico || '')}</div></td>
+        <td><b>${esc(C.RESULTADOS[res].rot)}</b><div class="muted">${SN.dt(c.cpfl.resultadoEm)}</div>${c.rfo && (c.rfo.solucao || c.rfo.obs) ? `<div class="muted">${esc([c.rfo.solucao, c.rfo.obs].filter(Boolean).join(' · ').slice(0, 140))}</div>` : ''}</td>
+        <td>${concl ? `<div class="acoes" style="gap:6px;min-width:220px"><button class="btn sm ok" data-cfok="${esc(r.id)}">✔ Confirmar ${esc(C.RESULTADOS[res].rot)}</button>
+          <select class="inp" data-cfcorr="${esc(r.id)}" style="max-width:190px"><option value="">Corrigir para…</option>${Object.entries(C.RESULTADOS).filter(([k]) => k !== res).map(([k, v]) => `<option value="${k}">${v.rot}</option>`).join('')}</select></div>`
+          : '<span class="small muted">o técnico ainda não concluiu o atendimento</span>'}</td></tr>`; };
+    await SN.modal({ titulo: `Confirmar resultado · ${l.length} acompanhamento(s)`, largo: true, botoes: [{ rot: 'Fechar', valor: null }],
+      corpo: `<p class="small">O técnico informou o resultado na OS. Confira o atendimento (abra o chamado para ver fotos e relatório) e confirme, ou corrija.</p>
+        <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Agendamento</th><th>Onde</th><th>Chamado</th><th>Informado pelo técnico</th><th></th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`,
+      aoAbrir: m => {
+        const tirar = id => { const tr = m.querySelector(`tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.remove(); if (!m.querySelector('tbody tr')) SN.$('[data-x]', m).click(); };
+        const fazer = (id, res) => { const r = lista().find(x => x.id === id), c = r && chamadoDe(r); if (!c) return; gravarConfirmacao(r, c, res || c.cpfl.resultado); SN.salvar(); SN.toast('Resultado ' + (res && res !== c.cpfl.resultado ? 'corrigido' : 'confirmado') + '.', 'ok'); tirar(id); };
+        SN.$$('[data-cfok]', m).forEach(b => b.onclick = () => fazer(b.dataset.cfok));
+        SN.$$('[data-cfcorr]', m).forEach(sl => sl.onchange = () => { if (sl.value) fazer(sl.dataset.cfcorr, sl.value); });
+      } });
   };
   // Recebidas por e-mail: a gestão decide (decisão do usuário: o SigoNet não abre chamado sozinho).
   const conferirEmails = async () => {
@@ -417,7 +488,10 @@
   };
   // ─────────── Localizar a rua e conferir se passa na nossa rede ───────────
   const ruaPorExtenso = C.ruaPorExtenso;
-  const geoCache = {};
+  // Ruas já localizadas ficam guardadas neste aparelho: a mesma rua de novo não espera o serviço de
+  // endereços (limite de 1 consulta por segundo). Só o trecho simplificado (~5 m) entra no cache.
+  const GEO_CHAVE = 'sigonet_v2_geo_ruas', geoCache = (() => { try { return JSON.parse(localStorage.getItem(GEO_CHAVE) || '{}'); } catch (e) { return {}; } })();
+  const geoGuardar = (k, v) => { geoCache[k] = v; try { const ks = Object.keys(geoCache); if (ks.length > 600) ks.slice(0, ks.length - 600).forEach(x => delete geoCache[x]); localStorage.setItem(GEO_CHAVE, JSON.stringify(geoCache)); } catch (e) { } };
   const localizarRua = async (rua, cidade) => {
     const k = SN.normal(rua + '|' + cidade); if (geoCache[k] !== undefined) return geoCache[k];
     // 1º com o tipo da via ("Rua …"); se não achar, só o nome — a notificação às vezes escreve "R." numa avenida.
@@ -433,15 +507,16 @@
         else if (g.type === 'MultiLineString') g.coordinates.forEach(cs => trechos.push(cs.map(c => [c[1], c[0]]))); });
       if (trechos.length) res = { trechos, nome: l[0].display_name };
       else if (l[0]) res = { trechos: [[[Number(l[0].lat), Number(l[0].lon)]]], nome: l[0].display_name, aprox: true };
-    } catch (e) { res = null; }
-    return (geoCache[k] = res);
+    } catch (e) { return null; } // falha de rede: não guarda, tenta de novo da próxima vez
+    if (res && window.REDE) res.trechos = res.trechos.map(t => t.length > 2 ? REDE.simplificar(t, 5).map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]) : t);
+    geoGuardar(k, res); return res;
   };
   const conferirRede = async cands => {
     const ind = SN.rede ? await SN.rede.indice().catch(() => null) : null, fim = SN.cobrirCarregando('Conferindo na nossa rede…'), passo = t => { const p = document.querySelector('.carregando-sobre p'); if (p) p.textContent = t; };
     try {
       for (let i = 0; i < cands.length; i++) {
         const c = cands[i], cid = ind && window.REDE ? REDE.acharCidade(ind, c.cidade) : null;
-        if (!ind) { c.redeTxt = 'rede GeoGrid não importada'; continue; }
+        if (!ind) { c.redeTxt = 'rede GeoGrid não importada — sem conferência'; c.semConferencia = true; continue; }
         if (!cid) { c.foraArea = true; c.redeTxt = 'fora da nossa área (sem rede nesta cidade)'; continue; }
         passo(`Conferindo ${i + 1}/${cands.length}: ${c.endereco || c.cidade}…`);
         let trechos = (c.pontos || []).length ? [c.pontos] : null;
@@ -457,10 +532,14 @@
   };
   // Conferência: cada notificação lida, editável, antes de entrar no SigoNet e na Esteira.
   const conferir = async cands => {
-    const tem = c => !!(c.rede && c.rede.tem);
+    // Mesma notificação: já cadastrada no SigoNet ou repetida neste lote.
+    cands.forEach((c, i) => { const id = c.seq || c.origem_formato === 'COMUNICADO' ? C.chaveRua(c) : C.chave(c);
+      c.dups = mesmaNotificacao(c.numero, null); c.jaExiste = lista().some(x => x.id === id); // inclui o mesmo registro (e-mail recebido de novo) c.dupLote = cands.slice(0, i).some(o => numChave(o.numero) && numChave(o.numero) === numChave(c.numero) && C.norm(o.endereco) === C.norm(c.endereco));
+      c.temChamado = c.dups.some(x => x.id_chamado); });
+    const tem = c => !!((c.rede && c.rede.tem) || c.semConferencia) && !c.temChamado && !c.dupLote;
     const linha = (c, i) => `<tr data-i="${i}" class="${c.foraArea ? 'muted' : ''}"><td><input type="checkbox" data-k="ok" ${c.foraArea ? '' : 'checked'}></td>
       <td><input type="checkbox" data-k="ch" ${tem(c) ? 'checked' : ''} title="Colocar na Esteira"></td>
-      <td class="small" style="min-width:170px">${c.redeTxt ? `<span style="color:${tem(c) ? 'var(--ok,#15803d)' : c.foraArea ? 'inherit' : '#b45309'}">${esc(c.redeTxt)}</span>` : ''}${c.rede && c.rede.cabos.length ? `<div class="muted">${c.rede.cabos.map(esc).join(', ')}</div>` : ''}</td>
+      <td class="small" style="min-width:170px">${c.dups && c.dups.length ? `<div style="color:#b45309;margin-bottom:4px">${dupTxt(c.dups)}${c.temChamado ? ' — Esteira desmarcada' : ''}</div>` : ''}${c.dupLote ? '<div style="color:#b45309;margin-bottom:4px">⚠️ Repetida neste e-mail</div>' : ''}${c.redeTxt ? `<span style="color:${tem(c) ? 'var(--ok,#15803d)' : c.foraArea ? 'inherit' : '#b45309'}">${esc(c.redeTxt)}</span>` : ''}${c.rede && c.rede.cabos.length ? `<div class="muted">${c.rede.cabos.map(esc).join(', ')}</div>` : ''}</td>
       <td><select class="inp" data-k="tipo">${Object.entries(C.TIPOS).map(([k, v]) => `<option value="${k}" ${c.tipo === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select></td>
       <td><input class="inp" data-k="numero" value="${esc(c.numero)}" style="width:110px"></td>
       <td><input class="inp" type="date" data-k="data" value="${esc(c.data)}"></td><td><input class="inp" type="time" data-k="hora" value="${esc(c.hora)}"></td>

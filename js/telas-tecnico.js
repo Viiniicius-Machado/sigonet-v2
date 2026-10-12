@@ -145,8 +145,15 @@ SN.rota('/tec/os/:id', id => {
           <input class="inp" id="vObs" placeholder="Observação para o ${quem} (opcional)" style="margin-bottom:8px">
           <button class="btn prim lg bloco" id="bPedirVal">🛎 ${v.status === 'FALHA' ? 'Pedir validação de novo' : 'Pedir validação ao ' + quem}</button>`}</div>`; })() : ''}
     ${titular && acao ? `<button class="btn prim lg bloco" id="bAcao">${acao[1]}</button>` : ''}
+    ${c.cpfl && window.CPFL ? (() => { const r = c.cpfl.resultado, pode = titular && emCampo;
+      return `<div class="card" style="margin-top:12px;border-left:4px solid ${r ? 'var(--ok)' : 'var(--alerta,#d97706)'}"><h3>⚡ Acompanhamento CPFL · resultado${pode ? ' *' : ''}</h3>
+        ${pode ? '<p class="small muted">Escolha primeiro o que aconteceu no local. Improdutiva: não precisa preencher mais nada, só concluir.</p>' : ''}
+        ${Object.entries(CPFL.RESULTADOS).map(([k, v]) => pode ? `<button type="button" class="cp-res ${r === k ? 'sel' : ''}" data-cpres="${k}" style="width:100%;text-align:left;background:${r === k ? 'var(--verde-bg)' : '#fff'}"><span><b>${r === k ? '✔ ' : ''}${v.rot}</b><br><span class="small muted">${SN.esc(v.desc)}</span></span></button>`
+          : (r === k ? `<div><b>✔ ${v.rot}</b> <span class="small muted">${SN.esc(v.desc)}</span></div>` : '')).join('')}
+        ${!pode && !r ? '<p class="small muted">Ainda não informado.</p>' : ''}
+        ${r && c.cpfl.confirmado ? `<div class="small" style="margin-top:6px">Confirmado pela gestão${c.cpfl.confirmado.resultado !== r ? ' como <b>' + SN.esc(CPFL.RESULTADOS[c.cpfl.confirmado.resultado].rot) + '</b>' : ''}.</div>` : ''}</div>`; })() : ''}
     ${titular && emCampo ? `
-      <div class="card" style="margin-top:12px"><h3>Diagnóstico e tratamento</h3>
+      <div class="card" id="cardRfo" style="margin-top:12px${c.cpfl && c.cpfl.resultado === 'IMPRODUTIVA' ? ';display:none' : ''}"><h3>Diagnóstico e tratamento</h3>
         <p class="small muted">Categoria 1 veio do despacho e não muda. Ajuste as demais se o que encontrou em campo for diferente.</p>
         <div id="tecClass"></div>
         <div class="campo"><label>Causa *</label><textarea class="inp" id="rCausa">${SN.esc(c.rfo.causa || '')}</textarea></div>
@@ -344,8 +351,20 @@ SN.rota('/tec/os/:id', id => {
       } catch (e) { SN.toast('Não foi possível processar a foto: ' + (e.message || e), 'erro'); }
       ev.target.value = '';
     };
+    SN.$$('[data-cpres]').forEach(b => b.onclick = () => {
+      const v = b.dataset.cpres; if (c.cpfl.resultado === v) return;
+      c.cpfl.resultado = v; c.cpfl.resultadoEm = SN.agora(); c.cpfl.resultadoPor = (SN.usuario() || {}).nome || c.tecnico; delete c.cpfl.confirmado;
+      SN.hist(c, 'Resultado do acompanhamento CPFL', CPFL.RESULTADOS[v].rot); SN.salvar(); SN.render();
+    });
     SN.$('#bConcluir').onclick = async () => {
+      // Acompanhamento CPFL: o resultado é a 1ª coisa. Improdutiva (a CPFL não veio) não pede mais nada.
+      if (c.cpfl && !c.cpfl.resultado) return SN.toast('Escolha o resultado do acompanhamento CPFL (Preventiva, Improdutiva ou Acompanhamento).', 'erro');
       const cl = salvarRfo();
+      if (c.cpfl && c.cpfl.resultado === 'IMPRODUTIVA') {
+        c.rfo.causa = c.rfo.causa || 'Improdutiva — a CPFL não compareceu no local agendado';
+        c.rfo.solucao = c.rfo.solucao || 'Sem intervenção na rede';
+        c.rfo.ceo = c.rfo.ceo || { trabalhou: 'nao' };
+      }
       if (!c.rfo.causa || !c.rfo.solucao) { SN.salvar(); return SN.toast('Preencha causa e solução para concluir (análise e tratamento são obrigatórios).', 'erro'); }
       if (!c.rfo.ceo) { SN.salvar(); return SN.toast('Responda se trabalhou na CEO.', 'erro'); }
       if (c.rfo.ceo.trabalhou === 'sim' && !c.rfo.ceo.tipo) { SN.salvar(); return SN.toast('Informe o caso da CEO (nova → nova, nova → existente ou existente → existente).', 'erro'); }
