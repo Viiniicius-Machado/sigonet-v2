@@ -47,11 +47,13 @@
     SN.casca('cpfl', `
       <div class="cab-pagina"><div><h1>Acompanhamentos CPFL</h1><p>Troca de poste, limpeza de cabo, reordenamento e demais serviços da concessionária na nossa rede. Risco para ${C.MIN_CLIENTES_MASSIVA} ou mais clientes = massiva: a Manutenção acompanha.</p></div>
         <div class="acoes"><button class="btn prim" id="bNovoAg">➕ Novo agendamento</button></div></div>
+      ${(() => { const n = lista().filter(r => r.a_conferir).length; return n ? `<div class="aviso info" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">📬 <b>${n}</b> notificação(ões) recebida(s) por e-mail a conferir (com o resultado da nossa rede). <button class="btn sm prim" id="bConfEmail">Conferir</button></div>` : ''; })()}
       ${semLocal ? `<div class="aviso alerta small" style="margin-bottom:10px">${semLocal} agendamento(s) futuro(s) sem localização: veja na Lista (filtro "sem localização") e marque no mapa.</div>` : ''}
       <div class="abas">${abas.map(([k, r]) => `<button class="aba ${st.aba === k ? 'ativa' : ''}" data-abacp="${k}">${r}</button>`).join('')}</div>
       <div id="cpCorpo"></div>`);
     SN.$$('[data-abacp]').forEach(b => b.onclick = () => { st.aba = b.dataset.abacp; pintar(); });
     SN.$('#bNovoAg').onclick = () => editar(null);
+    if (SN.$('#bConfEmail')) SN.$('#bConfEmail').onclick = () => conferirEmails().then(pintar);
     ({ MAPA: pintarMapa, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
   };
   const filtrosHtml = (comPeriodo) => `<div class="card card-filtros"><div class="filtros">
@@ -300,16 +302,58 @@
       <div class="card"><h3>🗂️ Base histórica (planilha)</h3>
         <p class="small">A planilha online da sala técnica ("TROCA DE POSTES", aba NOTIFICAÇÕES). Importar de novo atualiza: o que já foi editado no SigoNet é preservado.</p>
         <label class="cp-solta" id="zHist"><input type="file" id="fHist" accept=".xlsx,.xls" hidden><span>Solte a planilha aqui<br><span class="small muted">ou clique para escolher</span></span></label>
-        <p class="small muted">${SN.num(lista().length)} notificação(ões) no SigoNet · ${SN.num(lista().filter(r => r.origem === 'PLANILHA').length)} da planilha.</p></div></div>`;
+        <p class="small muted">${SN.num(lista().length)} notificação(ões) no SigoNet · ${SN.num(lista().filter(r => r.origem === 'PLANILHA').length)} da planilha.</p></div></div>
+      <div class="card" style="margin-top:12px" id="cxAuto"><h3>📬 Caixa automática</h3><p class="small muted">Carregando…</p></div>`;
     const zona = (id, inp, fn) => { const z = SN.$('#' + id);
       z.ondragover = e => { e.preventDefault(); z.classList.add('sobre'); }; z.ondragleave = () => z.classList.remove('sobre');
       z.ondrop = e => { e.preventDefault(); z.classList.remove('sobre'); const fs = [...(e.dataTransfer.files || [])]; if (fs.length) fn(fs).catch(err => SN.toast(err.message || String(err), 'erro')); };
       SN.$('#' + inp).onchange = e => { const fs = [...(e.target.files || [])]; e.target.value = ''; if (fs.length) fn(fs).catch(err => SN.toast(err.message || String(err), 'erro')); }; };
     zona('zNot', 'fNot', importarNotificacoes); zona('zHist', 'fHist', fs => importarHistorico(fs[0]));
+    pintarCaixa();
     // Colar do Outlook: se vier HTML (tabela da programação), vira texto com as colunas separadas por tabulação.
     SN.$('#tEmail').addEventListener('paste', ev => { const h = ev.clipboardData && ev.clipboardData.getData('text/html'); if (!h) return; ev.preventDefault(); SN.$('#tEmail').value = htmlParaTexto(h); });
     SN.$('#bLerEmail').onclick = () => { const t = SN.$('#tEmail').value.trim(); if (!t) return SN.toast('Cole o e-mail primeiro.', 'erro');
       lerTextos([{ texto: t, fonte: 'e-mail colado' }]).catch(err => SN.toast(err.message || String(err), 'erro')); };
+  };
+  const pintarCaixa = async () => {
+    const el = SN.$('#cxAuto'); if (!el) return;
+    if (!SN.remoto) { el.innerHTML = '<h3>📬 Caixa automática</h3><p class="small muted">Precisa do servidor.</p>'; return; }
+    // Caixa automática adiada (2026-10-12): sem a função no servidor, o quadro não aparece.
+    let cfg = null; try { cfg = (await SN.api('CPFL_EMAIL_CONFIG', {})).config; } catch (e) { if (/desconhecida/i.test(e.message || '')) { el.remove(); return; } el.innerHTML = `<h3>📬 Caixa automática</h3><div class="aviso erro small">${esc(e.message)}</div>`; return; }
+    if (!SN.$('#cxAuto')) return;
+    const u = cfg.ultima;
+    el.innerHTML = `<h3>📬 Caixa automática</h3>
+      <p class="small">Encaminhe o e-mail da CPFL para o endereço abaixo. A cada 10 minutos o SigoNet lê, confere cada rua na nossa rede, guarda aqui como <b>a conferir</b> e responde para quem encaminhou dizendo o que tem e o que não tem rede nossa.</p>
+      <div class="linha-form"><div class="campo" style="flex:2"><label>Endereço da caixa (conta dedicada)</label><input class="inp" id="cxEnd" value="${esc(cfg.endereco)}" placeholder="ex.: sigonet.cpfl@gmail.com"></div>
+        <div class="campo" style="align-self:end"><button class="btn" id="cxSalvar">Salvar</button></div></div>
+      <p class="small">${cfg.ativo ? '✔ Leitura automática ativada.' : '⚠️ Leitura automática ainda não ativada: quem é dono do Apps Script abre o editor, escolhe a função <b>ativarEmailCpfl</b>, clica em Executar e permite o acesso (uma vez só).'}
+        ${u ? ` Última leitura: ${SN.dt(u.ts)} · ${SN.num(u.emails)} e-mail(s) · ${SN.num(u.notificacoes)} notificação(ões).` : ''}</p>
+      <details class="small"><summary>Como montar</summary><ol style="margin:6px 0 0 18px">
+        <li>Crie a conta dedicada (ex.: um Gmail só para isso) e salve o endereço aqui.</li>
+        <li>Nessa conta: Configurações › Encaminhamento › encaminhar tudo para o Gmail dono do servidor do SigoNet (o Google manda um código para confirmar).</li>
+        <li>Quem recebe a CPFL no Outlook encaminha o e-mail para a conta dedicada (a Microsoft da empresa pode bloquear o encaminhamento automático para fora — aí é encaminhar manualmente).</li>
+        <li>A resposta automática sai do Gmail do servidor e vai para quem encaminhou.</li></ol></details>`;
+    SN.$('#cxSalvar').onclick = async () => { try { await SN.api('CPFL_EMAIL_CONFIG', { endereco: SN.$('#cxEnd').value.trim() }); SN.toast('Endereço salvo.', 'ok'); pintarCaixa(); } catch (e) { SN.toast(e.message, 'erro'); } };
+  };
+  // Recebidas por e-mail: a gestão decide (decisão do usuário: o SigoNet não abre chamado sozinho).
+  const conferirEmails = async () => {
+    const l = lista().filter(r => r.a_conferir).sort((a, b) => (a.data + (a.hora || '')).localeCompare(b.data + (b.hora || '')));
+    if (!l.length) return;
+    const linha = r => `<tr data-id="${esc(r.id)}"><td class="nowrap">${dia(r.data)} ${esc(r.hora || '')}</td><td>${esc(tipoRot(r.tipo))}</td><td class="mono">${esc(numTxt(r))}</td>
+      <td>${esc(r.cidade || '')}<div class="muted">${esc(r.endereco || '')}${r.bairro ? ' – ' + esc(r.bairro) : ''}</div></td>
+      <td>${r.rede ? (r.rede.tem ? `<span style="color:var(--ok,#15803d)">✔ ${SN.num(r.rede.metros)} m de cabo nosso${r.rede.caixas ? ' · ' + r.rede.caixas + ' caixa(s)' : ''}</span><div class="muted">${(r.rede.cabos || []).slice(0, 3).map(esc).join(', ')}</div>` : '✖ sem rede nossa') : '<span style="color:#b45309">a conferir (rua não localizada)</span>'}</td>
+      <td class="small muted">${esc(((r.email || {}).de) || '')}</td>
+      <td><div class="acoes" style="gap:6px;min-width:220px"><button class="btn sm ${r.rede && r.rede.tem ? 'prim' : ''}" data-cxesteira="${esc(r.id)}">Mandar para a Esteira</button><button class="btn sm" data-cxnao="${esc(r.id)}">Não acompanhar</button></div></td></tr>`;
+    await SN.modal({ titulo: `Recebidas por e-mail · ${l.length} a conferir`, largo: true, botoes: [{ rot: 'Fechar', valor: null }],
+      corpo: `<p class="small">Conferidas na rede GeoGrid pela rua informada. "Mandar para a Esteira" cria o chamado (não atribuído, prazo na hora agendada).</p>
+        <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Data</th><th>Tipo</th><th>Notificação</th><th>Onde</th><th>Nossa rede</th><th>Encaminhado por</th><th></th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`,
+      aoAbrir: m => {
+        const tirar = id => { const tr = m.querySelector(`tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.remove(); if (!m.querySelector('tbody tr')) SN.$('[data-x]', m).click(); };
+        SN.$$('[data-cxesteira]', m).forEach(b => b.onclick = async () => { const r = lista().find(x => x.id === b.dataset.cxesteira); if (!r) return; b.disabled = true;
+          try { if (!r.id_chamado) await novoChamado(r); r.a_conferir = false; hist(r, 'CONFERIDA', 'mandada para a Esteira'); SN.salvar(); SN.toast('Chamado ' + r.id_chamado + ' na Esteira.', 'ok'); tirar(r.id); } catch (e) { b.disabled = false; SN.toast(e.message, 'erro'); } });
+        SN.$$('[data-cxnao]', m).forEach(b => b.onclick = () => { const r = lista().find(x => x.id === b.dataset.cxnao); if (!r) return;
+          r.a_conferir = false; hist(r, 'CONFERIDA', 'não acompanhar'); SN.salvar(); tirar(r.id); });
+      } });
   };
   const htmlParaTexto = h => {
     const d = new DOMParser().parseFromString(h, 'text/html');
@@ -372,14 +416,12 @@
     conferir(cands);
   };
   // ─────────── Localizar a rua e conferir se passa na nossa rede ───────────
-  const ABREV = [[/^R\.\s*/i, 'Rua '], [/^AV\.?\s*/i, 'Avenida '], [/^ESTR\.?\s*/i, 'Estrada '], [/^ROD\.?\s*/i, 'Rodovia '], [/^TV\.\s*/i, 'Travessa '], [/^AL\.\s*/i, 'Alameda '], [/^P[ÇC]A\.?\s*/i, 'Praça '],
-    [/\bGEN\.\s*/gi, 'General '], [/\bCAP\.\s*/gi, 'Capitão '], [/\bCEL\.\s*/gi, 'Coronel '], [/\bDR\.\s*/gi, 'Doutor '], [/\bPROF\.\s*/gi, 'Professor '], [/\bSTA\.\s*/gi, 'Santa '], [/\bSTO\.\s*/gi, 'Santo '], [/\bENG\.\s*/gi, 'Engenheiro '], [/\bMAL\.\s*/gi, 'Marechal '], [/\bPRES\.\s*/gi, 'Presidente ']];
-  const ruaPorExtenso = r => { let x = String(r || '').replace(/,.*$/, '').replace(/\s+-\s+.*$/, '').trim(); ABREV.forEach(([re, v]) => { x = x.replace(re, v); }); return x.replace(/\s+/g, ' ').trim(); };
+  const ruaPorExtenso = C.ruaPorExtenso;
   const geoCache = {};
   const localizarRua = async (rua, cidade) => {
     const k = SN.normal(rua + '|' + cidade); if (geoCache[k] !== undefined) return geoCache[k];
     // 1º com o tipo da via ("Rua …"); se não achar, só o nome — a notificação às vezes escreve "R." numa avenida.
-    const nome = ruaPorExtenso(rua), semTipo = nome.replace(/^(Rua|Avenida|Estrada|Rodovia|Travessa|Alameda|Praça)\s+/i, '');
+    const nome = C.ruaPorExtenso(rua), semTipo = C.ruaSemTipo(rua);
     const buscar = async rr => { const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&polygon_geojson=1&limit=8&countrycodes=br&street=' + encodeURIComponent(rr) + '&city=' + encodeURIComponent(cidade))).json();
       await new Promise(ok => setTimeout(ok, 1100)); return r; }; // limite do serviço: 1 consulta por segundo
     let res = null;
@@ -462,15 +504,7 @@
       st.aba = 'MAPA'; st.per = 'tudo'; pintar();
     } finally { fim(); }
   };
-  // Texto para responder o e-mail: o que passa e o que não passa na nossa rede.
-  const resumoRede = cands => {
-    const lin = c => `- ${c.numero ? 'Nota ' + c.numero + ' · ' : ''}${c.endereco || '(sem endereço)'}${c.bairro ? ' – ' + c.bairro : ''} / ${c.cidade || ''}${c.data ? ' · ' + dia(c.data) : ''}${c.hora ? ' ' + c.hora : ''}`;
-    const tem = cands.filter(c => c.rede && c.rede.tem), nao = cands.filter(c => c.rede && !c.rede.tem), fora = cands.filter(c => c.foraArea), conf = cands.filter(c => !c.rede && !c.foraArea);
-    return ['Prezados,', '', 'Segue a verificação da Net Turbo para as intervenções informadas:', '',
-      `COM REDE NET TURBO (${tem.length}) — acompanharemos:`, ...(tem.length ? tem.map(c => lin(c) + ` (${c.rede.metros} m de cabo${c.rede.caixas ? ', ' + c.rede.caixas + ' caixa(s) de emenda' : ''})`) : ['- nenhuma']), '',
-      `SEM REDE NET TURBO (${nao.length + fora.length}):`, ...(nao.length + fora.length ? nao.concat(fora).map(lin) : ['- nenhuma']),
-      ...(conf.length ? ['', `A CONFERIR (${conf.length}) — endereço não localizado:`, ...conf.map(lin)] : []), '', 'Atenciosamente,', 'Net Turbo — Operação e Manutenção'].join('\n');
-  };
+  const resumoRede = C.resumoRede;
   const lerPlanilhaArquivo = async file => {
     if (!window.XLSX) throw new Error('Leitor de Excel indisponível (sem internet?).');
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });

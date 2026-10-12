@@ -253,6 +253,24 @@
     return res;
   };
 
+  // Nome da rua por extenso para a busca de endereço ("R. Gen. X" → "Rua General X"); sem número/bairro.
+  var ABREV = [[/^R\.\s*/i, 'Rua '], [/^AV\.?\s*/i, 'Avenida '], [/^ESTR\.?\s*/i, 'Estrada '], [/^ROD\.?\s*/i, 'Rodovia '], [/^TV\.\s*/i, 'Travessa '], [/^AL\.\s*/i, 'Alameda '], [/^P[ÇC]A\.?\s*/i, 'Praça '],
+    [/\bGEN\.\s*/gi, 'General '], [/\bCAP\.\s*/gi, 'Capitão '], [/\bCEL\.\s*/gi, 'Coronel '], [/\bDR\.\s*/gi, 'Doutor '], [/\bPROF\.\s*/gi, 'Professor '], [/\bSTA\.\s*/gi, 'Santa '], [/\bSTO\.\s*/gi, 'Santo '],
+    [/\bENG\.\s*/gi, 'Engenheiro '], [/\bMAL\.\s*/gi, 'Marechal '], [/\bPRES\.\s*/gi, 'Presidente ']];
+  C.ruaPorExtenso = function (r) { var x = String(r || '').replace(/,.*$/, '').replace(/\s+-\s+.*$/, '').trim(); ABREV.forEach(function (a) { x = x.replace(a[0], a[1]); }); return x.replace(/\s+/g, ' ').trim(); };
+  C.ruaSemTipo = function (r) { return C.ruaPorExtenso(r).replace(/^(Rua|Avenida|Estrada|Rodovia|Travessa|Alameda|Praça)\s+/i, ''); };
+  // Texto para responder o e-mail: o que passa e o que não passa na nossa rede.
+  var diaBr = function (v) { return v ? String(v).split('-').reverse().join('/') : ''; };
+  C.resumoRede = function (cands) {
+    var lin = function (c) { return '- ' + (c.numero ? 'Nota ' + c.numero + ' · ' : '') + (c.endereco || '(sem endereço)') + (c.bairro ? ' – ' + c.bairro : '') + ' / ' + (c.cidade || '') + (c.data ? ' · ' + diaBr(c.data) : '') + (c.hora ? ' ' + c.hora : ''); };
+    var tem = cands.filter(function (c) { return c.rede && c.rede.tem; }), nao = cands.filter(function (c) { return (c.rede && !c.rede.tem) || c.foraArea; }), conf = cands.filter(function (c) { return !c.rede && !c.foraArea; });
+    return ['Prezados,', '', 'Segue a verificação da Net Turbo para as intervenções informadas:', '',
+      'COM REDE NET TURBO (' + tem.length + ') — a Manutenção vai avaliar e acompanhar:'].concat(tem.length ? tem.map(function (c) { return lin(c) + ' (' + c.rede.metros + ' m de cabo' + (c.rede.caixas ? ', ' + c.rede.caixas + ' caixa(s) de emenda' : '') + ')'; }) : ['- nenhuma'])
+      .concat(['', 'SEM REDE NET TURBO (' + nao.length + '):']).concat(nao.length ? nao.map(lin) : ['- nenhuma'])
+      .concat(conf.length ? ['', 'A CONFERIR (' + conf.length + ') — endereço não localizado automaticamente:'].concat(conf.map(lin)) : [])
+      .concat(['', 'Atenciosamente,', 'Net Turbo — Operação e Manutenção (mensagem automática do SigoNet)']).join('\n');
+  };
+
   // ─────────── Painel do mês (como o "PAINEL MENSAL" da planilha) ───────────
   // iv = [inicio, fim) em "aaaa-mm-dd". Recebidas = notificações com data no período.
   C.painel = function (regs, ini, fim) {
