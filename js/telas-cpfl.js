@@ -14,7 +14,7 @@
   const esc = SN.esc, C = window.CPFL;
   const TELA = 'cpfl', CONTA = '3.1.1.2.05.0008';
   const CLASSE = { tipo: 'Manutenção', cat1: 'Manutenção - Rede Externa', cat2: 'Acompanhamento / Fiscalização', cat3: 'Acompanhamento Cia Energia' };
-  const st = { aba: 'MAPA', per: 'semana', ref: '', tipo: '', status: '', q: '', soAbertas: false, rede: true, modo: '' };
+  const st = { aba: 'MAPA', per: 'semana', ref: '', tipo: '', status: '', q: '', soAbertas: false, rede: true, modo: '', fRede: '' };
   const lista = () => SN.db.notificacoes || (SN.db.notificacoes = []);
   const hoje = () => SN.dataIsoLocal(new Date());
   const dia = v => v ? String(v).split('-').reverse().join('/') : '—';
@@ -35,6 +35,7 @@
     const [ini, fim] = intervalo(), q = SN.normal(st.q);
     return lista().filter(r => r.data >= ini && r.data < fim && (!st.tipo || r.tipo === st.tipo) && (!st.status || r.status === st.status)
       && (!st.soAbertas || (r.status === 'PLANEJADO' && !r.resultado))
+      && (!st.fRede || (st.fRede === 'TEM' ? r.rede && r.rede.tem : st.fRede === 'SEM' ? r.rede && !r.rede.tem : !r.rede))
       && (!q || SN.normal([r.numero, r.cidade, r.endereco, r.equipe, r.id_chamado, tipoRot(r.tipo)].join(' ')).includes(q)))
       .sort((a, b) => (a.data + (a.hora || '')).localeCompare(b.data + (b.hora || '')));
   };
@@ -57,12 +58,14 @@
     if (SN.$('#bConfEmail')) SN.$('#bConfEmail').onclick = () => conferirEmails().then(pintar);
     if (SN.$('#bConfTec')) SN.$('#bConfTec').onclick = () => confirmarTecnicos().then(pintar);
     ({ MAPA: pintarMapa, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
+    verificarAuto().catch(() => { });
   };
   const filtrosHtml = (comPeriodo) => `<div class="card card-filtros"><div class="filtros">
     ${comPeriodo ? `<div class="chips">${[['dia', 'Dia'], ['semana', 'Semana'], ['mes', 'Mês'], ['tudo', 'Tudo']].map(([k, r]) => `<button type="button" class="chip ${st.per === k ? 'sel' : ''}" data-per="${k}">${r}</button>`).join('')}</div>
       ${st.per !== 'tudo' ? `<button class="btn sm" data-mov="-1">◀</button><input class="inp" type="date" id="fRef" value="${esc(st.ref || hoje())}" style="max-width:160px"><button class="btn sm" data-mov="1">▶</button><button class="btn sm" id="bHoje">Hoje</button>` : ''}` : ''}
     <select class="inp" id="fTipo"><option value="">Todos os tipos</option>${Object.entries(C.TIPOS).map(([k, v]) => `<option value="${k}" ${st.tipo === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
     <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(C.STATUS).map(([k, v]) => `<option value="${k}" ${st.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
+    <select class="inp" id="fRedeF" title="Rede Net Turbo no local (GeoGrid)"><option value="">Rede: todas</option><option value="TEM" ${st.fRede === 'TEM' ? 'selected' : ''}>Com rede nossa</option><option value="SEM" ${st.fRede === 'SEM' ? 'selected' : ''}>Sem rede nossa</option><option value="NAO" ${st.fRede === 'NAO' ? 'selected' : ''}>Rede não conferida</option></select>
     <label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fAb" ${st.soAbertas ? 'checked' : ''}> só a acompanhar</label>
     <input class="inp busca" id="fQ" placeholder="Buscar (notificação, cidade, rua, equipe, chamado)" value="${esc(st.q)}"></div>
     ${comPeriodo && st.per !== 'tudo' ? `<div class="small muted" style="margin-top:6px">${dia(intervalo()[0])} a ${dia(somaDias(intervalo()[1], -1))}</div>` : ''}</div>`;
@@ -76,6 +79,7 @@
     SN.$('#fTipo').onchange = e => { st.tipo = e.target.value; repintar(); };
     SN.$('#fSt').onchange = e => { st.status = e.target.value; repintar(); };
     SN.$('#fAb').onchange = e => { st.soAbertas = e.target.checked; repintar(); };
+    SN.$('#fRedeF').onchange = e => { st.fRede = e.target.value; repintar(); };
     SN.$('#fQ').oninput = SN.debounce(e => { st.q = e.target.value; repintar(); SN.$('#fQ').focus(); }, 300);
   };
   const redeTxt = r => r.rede ? (r.rede.fora ? ' <span class="badge">fora da área</span>' : r.rede.tem ? ` <span class="badge ok" title="${esc((r.rede.cabos || []).join(', '))}">rede nossa · ${SN.num(r.rede.metros)} m</span>` : ' <span class="badge">sem rede nossa</span>') : '';
@@ -186,6 +190,37 @@
     r.rede = x && { tem: x.tem, metros: x.metros, ruaM: x.ruaM, cabos: x.cabos.slice(0, 5), caixas: x.caixas.length, ts: SN.agora() };
     if (!(r.pontos || []).length && trechos.length) r.pontos = [trechos[0][Math.floor(trechos[0].length / 2)]].map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
     return r.rede;
+  };
+  // Confere vários de uma vez. Com coordenada é tudo no aparelho (rápido); sem coordenada só se
+  // comRua (localiza a rua, 1 por segundo). Salva uma vez no fim.
+  let loteRodando = false;
+  const verificarLote = async (regs, opts) => {
+    const o = opts || {}, alvo = regs.filter(r => !r.rede && ((r.pontos || []).length || (o.comRua && r.endereco)));
+    if (loteRodando || !alvo.length || !SN.rede) return null;
+    const ind = await SN.rede.indice().catch(() => null); if (!ind) return null;
+    loteRodando = true; const res = { tem: 0, sem: 0, fora: 0, falha: 0, total: alvo.length };
+    try {
+      for (let i = 0; i < alvo.length; i++) {
+        if (o.passo) o.passo(i + 1, alvo.length);
+        let x = null; try { x = await verificarRede(alvo[i]); } catch (e) { x = null; }
+        if (!x) res.falha++; else if (x.fora) res.fora++; else if (x.tem) res.tem++; else res.sem++;
+        if (i % 25 === 24) await new Promise(ok => setTimeout(ok, 0)); // deixa a tela respirar
+      }
+    } finally { loteRodando = false; }
+    SN.salvar(); SN.log('CPFL_REDE_LOTE', '', JSON.stringify(res));
+    return res;
+  };
+  // Ao abrir a tela: os agendamentos de hoje em diante ainda sem conferência de rede (em segundo plano).
+  // Refaz quando entra uma rede nova (outra versão do KMZ) — inclusive a 1ª, para o que foi importado antes da rede.
+  let autoVersao = null;
+  const verificarAuto = async () => {
+    if (!SN.remoto || !SN.rede) return;
+    const ind = await SN.rede.indice().catch(() => null); if (!ind || autoVersao === ind.versao) return; autoVersao = ind.versao;
+    const hj = hoje(), l = lista().filter(r => !r.rede && r.data >= hj && r.status !== 'CANCELADO' && (r.pontos || []).length);
+    if (!l.length) return;
+    const res = await verificarLote(l); if (!res) return;
+    SN.toast(`Rede conferida em ${res.total} agendamento(s): ${res.tem} com rede nossa, ${res.sem} sem${res.fora ? ', ' + res.fora + ' fora da área' : ''}.`, res.tem ? 'ok' : '');
+    if (location.hash === '#/cpfl' && !document.querySelector('.fundo-modal')) pintar();
   };
   const redeLinha = rd => !rd ? '⚠️ Não deu para conferir a rede (sem coordenada e rua não localizada).' : rd.fora ? 'Fora da nossa área (sem rede Net Turbo nesta cidade).'
     : rd.tem ? `✔ <b>Tem rede Net Turbo</b>: ${SN.num(rd.metros)} m de cabo${rd.caixas ? ' · ' + rd.caixas + ' caixa(s)' : ''}${rd.cabos && rd.cabos.length ? ' (' + rd.cabos.slice(0, 3).map(esc).join(', ') + ')' : ''}` : '✖ <b>Sem rede Net Turbo</b> neste endereço.';
@@ -299,7 +334,7 @@
   const pintarLista = () => {
     let l = filtrados(); if (semLocalFiltro) l = l.filter(r => !(r.pontos || []).length);
     SN.$('#cpCorpo').innerHTML = `${filtrosHtml(true)}
-      <div class="card"><div class="card-tit"><h3>${l.length} notificação(ões)</h3><div class="acoes"><label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fSemLoc" ${semLocalFiltro ? 'checked' : ''}> sem localização</label><button class="btn sm" id="bExp">Exportar</button></div></div>
+      <div class="card"><div class="card-tit"><h3>${l.length} notificação(ões)</h3><div class="acoes"><label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fSemLoc" ${semLocalFiltro ? 'checked' : ''}> sem localização</label><button class="btn sm" id="bRedeTodos" title="Confere a rede Net Turbo em todos os registros ainda não conferidos">Verificar rede de todos (${lista().filter(r => !r.rede && ((r.pontos || []).length || r.endereco)).length})</button><button class="btn sm" id="bExp">Exportar</button></div></div>
       ${l.length ? `<div class="tabela-wrap"><table class="tab small"><thead><tr><th>Data</th><th>Tipo</th><th>Notificação</th><th>Cidade / endereço</th><th>Status / resultado</th><th>Equipe</th><th>Chamado</th><th></th></tr></thead><tbody>
       ${l.slice(0, 600).map(r => `<tr><td class="nowrap">${dia(r.data)} ${esc(r.hora || '')}</td><td>${esc(tipoRot(r.tipo))}</td><td class="mono">${esc(numTxt(r))}</td>
         <td>${esc(r.cidade || '')}<div class="muted">${esc(r.endereco || '')}${(r.pontos || []).length ? '' : ' <span class="badge alerta">sem localização</span>'}</div></td>
@@ -307,8 +342,17 @@
       ${l.length > 600 ? '<p class="small muted">Mostrando 600: filtre ou exporte.</p>' : ''}` : '<p class="muted">Nada no filtro.</p>'}</div>`;
     ligarFiltros(pintarLista); ligarAcoes(SN.$('#cpCorpo'), pintarLista);
     SN.$('#fSemLoc').onchange = e => { semLocalFiltro = e.target.checked; pintarLista(); };
+    SN.$('#bRedeTodos').onclick = async () => {
+      const pend = lista().filter(r => !r.rede && ((r.pontos || []).length || r.endereco)), semCoord = pend.filter(r => !(r.pontos || []).length).length;
+      if (!pend.length) return SN.toast('Todos já foram conferidos.', 'ok');
+      if (!await SN.confirmar('Verificar rede de todos', `${pend.length} registro(s) sem conferência de rede. ${pend.length - semCoord} com coordenada (rápido)${semCoord ? ` e ${semCoord} só com endereço (localiza a rua: ~1 s cada)` : ''}.`, 'Verificar', 'prim')) return;
+      const fim = SN.cobrirCarregando('Conferindo a rede…'), passo = (i, n) => { const el = document.querySelector('.carregando-sobre p'); if (el) el.textContent = `Conferindo a rede… ${i}/${n}`; };
+      let res; try { res = await verificarLote(pend, { comRua: true, passo }); } finally { fim(); }
+      if (res) SN.toast(`${res.total} conferido(s): ${res.tem} com rede nossa, ${res.sem} sem, ${res.fora} fora da área${res.falha ? ', ' + res.falha + ' sem localização' : ''}.`, 'ok');
+      pintarLista();
+    };
     SN.$('#bExp').onclick = () => SN.exportar('acompanhamentos-cpfl', l.map(r => ({ 'AÇÃO': tipoRot(r.tipo).toUpperCase(), 'NOTIFICAÇÃO': r.numero, CIDADE: r.cidade, ENDERECO: r.endereco, COORDENADAS: (r.pontos || []).map(p => p.join(', ')).join('/') || r.coord_original || '',
-      DATA: dia(r.data), PRAZO: r.prazo, HORA: r.hora, STATUS: (C.STATUS[r.status] || {}).rot, EQUIPE: r.equipe, 'AÇÃO2': r.resultado, 'DATA DA ATUAÇÃO': dia(r.data_atuacao), POSTES: r.postes, 'CLIENTES EM RISCO': r.clientes, MASSIVA: r.massiva ? 'SIM' : '', CHAMADO: r.id_chamado || '', ORIGEM: r.origem })));
+      DATA: dia(r.data), PRAZO: r.prazo, HORA: r.hora, STATUS: (C.STATUS[r.status] || {}).rot, EQUIPE: r.equipe, 'AÇÃO2': r.resultado, 'DATA DA ATUAÇÃO': dia(r.data_atuacao), POSTES: r.postes, 'CLIENTES EM RISCO': r.clientes, MASSIVA: r.massiva ? 'SIM' : '', CHAMADO: r.id_chamado || '', 'REDE NET TURBO': r.rede ? (r.rede.fora ? 'FORA DA ÁREA' : r.rede.tem ? 'SIM' : 'NÃO') : '', 'CABO NOSSO (m)': r.rede && r.rede.tem ? r.rede.metros : '', ORIGEM: r.origem })));
   };
 
   // ─────────── Painel do mês ───────────
