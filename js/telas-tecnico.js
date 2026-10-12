@@ -418,9 +418,10 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     ${rasc ? '<div class="aviso info small" style="margin-bottom:10px">Rascunho recuperado deste aparelho (ainda não enviado).</div>' : ''}
     <div class="card" style="margin-top:12px"><div class="card-tit"><h3>Serviços</h3><span class="badge" id="lpuCont"></span></div>
       <p class="small muted" style="margin:0 0 6px">📷 ao lado da quantidade: fotos que justificam o serviço (opcional; pode pôr várias por linha).</p>
-      <input class="inp" id="lpuBusca" placeholder="Buscar serviço (código ou descrição)">
+      <input class="inp" id="lpuBusca" placeholder="Buscar serviço (código, nome ou descritivo)">
       <div class="chips" id="lpuClasses" style="margin-top:8px">${['', ...new Set(itens.map(i => i.classe))].map(k =>
-        `<button type="button" class="chip ${k === '' ? 'sel' : ''}" data-cl="${SN.esc(k)}">${k === '' ? 'Todas' : SN.esc(k)}</button>`).join('')}</div>
+        `<button type="button" class="chip ${k === '' ? 'sel' : ''}" data-cl="${SN.esc(k)}" title="${SN.esc(LPU_CLASSES[k] || '')}">${k === '' ? 'Todas' : SN.esc(k)}</button>`).join('')}</div>
+      <p class="small muted" id="lpuClasseTxt" style="margin:6px 0 0" hidden></p>
       <div id="lpuLista" style="margin-top:6px"></div></div>
     <div class="campo" style="margin-top:12px"><label>Observações</label><textarea class="inp" id="lpuObs" ${editavel ? '' : 'disabled'}>${SN.esc(rasc && rasc.obs != null ? rasc.obs : l ? l.obs : '')}</textarea></div>
     <div class="card"><h3>Assinatura do ${vinc === 'CLT' ? 'técnico' : 'prestador'}</h3>
@@ -430,9 +431,9 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   let classe = ''; // filtro por classe ('' = todas)
   const pintar = () => {
     const q = SN.normal(SN.$('#lpuBusca').value);
-    const vis = itens.filter(i => (!classe || i.classe === classe) && (!q || SN.normal(i.cod + ' ' + i.desc).includes(q)));
+    const vis = itens.filter(i => (!classe || i.classe === classe) && (!q || SN.normal(i.cod + ' ' + i.desc + ' ' + (i.tec || '')).includes(q)));
     if (prev) vis.sort((a, b) => (qtd[b.cod] ? 1 : 0) - (qtd[a.cod] ? 1 : 0)); // Preventiva: itens preenchidos primeiro
-    SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>
+    SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>${i.tec ? `<div class="t">${SN.esc(i.tec)}</div>` : ''}
       <div class="c">${i.cod} · ${i.classe} · por ${i.medida}
       ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label title="Marque quando o serviço foi em condição crítica (valor crítico da tabela); desmarcado = valor comum"><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>
       <label class="small" style="display:flex;flex-direction:column;gap:2px;color:var(--texto-2)">Qtd<input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}></label>
@@ -473,7 +474,8 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     try { localStorage.setItem(chaveRasc, JSON.stringify({ qtd, fator, fotos: fotosIt, obs: SN.$('#lpuObs') ? SN.$('#lpuObs').value : '', ts: SN.agora() })); } catch (e) { }
   };
   SN.$('#lpuBusca').oninput = SN.debounce(pintar, 150);
-  SN.$$('[data-cl]').forEach(b => b.onclick = () => { classe = b.dataset.cl; SN.$$('[data-cl]').forEach(x => x.classList.toggle('sel', x === b)); pintar(); });
+  SN.$$('[data-cl]').forEach(b => b.onclick = () => { classe = b.dataset.cl; SN.$$('[data-cl]').forEach(x => x.classList.toggle('sel', x === b));
+    const ct = SN.$('#lpuClasseTxt'); ct.textContent = classe ? classe + ': ' + (LPU_CLASSES[classe] || '') : ''; ct.hidden = !classe; pintar(); });
   pintar();
   if (!editavel) return;
   SN.$('#lpuObs').oninput = SN.debounce(() => guardarRasc(), 400);

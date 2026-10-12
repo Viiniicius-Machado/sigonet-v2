@@ -327,6 +327,20 @@ SN.gravarAcesso = async (tipo, reg, { pin, reset }) => {
   await SN.api('ACESSO', { tipo, id: reg.id, pin: pin || undefined, resetComplemento: !!reset });
   await SN.carregarStatusAcessos();
 };
+// Consulta da LPU de uma conta: cada serviço com o descritivo técnico (o que o item cobre) e a legenda das classes.
+SN.htmlLpuDaConta = cod => {
+  const c = SN.conta(cod); if (!c) return '';
+  const itens = SN.itensDaConta(cod), classes = [...new Set(itens.map(i => i.classe))];
+  return `<div class="card" id="lpuConta" style="margin-top:12px"><div class="card-tit"><h3>Serviços da LPU por conta</h3>
+      <select class="inp" id="lpuContaSel" style="max-width:320px">${SN.db.contas.map(x => `<option value="${x.codigo}" ${x.codigo === cod ? 'selected' : ''}>${SN.esc(SN.contaTxt(x.codigo))}</option>`).join('')}</select></div>
+    <div class="small" style="margin-bottom:8px">${classes.map(k => `<div><b>${SN.esc(k)}</b> — ${SN.esc(LPU_CLASSES[k] || '')}</div>`).join('')}</div>
+    <input class="inp" id="lpuContaBusca" placeholder="Buscar serviço (código, nome ou descritivo)">
+    <div class="tabela-wrap" style="margin-top:8px"><table class="tab small"><thead><tr><th>Código</th><th>Serviço e descritivo técnico</th><th>Classe</th><th>Medida</th><th class="num">Comum</th><th class="num">Crítico</th></tr></thead><tbody>
+    ${itens.map(i => `<tr data-lpubusca="${SN.esc(SN.normal(i.cod + ' ' + i.desc + ' ' + (i.tec || '')))}"><td class="mono">${i.cod}</td>
+      <td><b>${SN.esc(i.desc)}</b>${i.tec ? `<div class="lpu-tec">${SN.esc(i.tec)}</div>` : ''}</td><td class="nowrap">${SN.esc(i.classe)}</td><td>${SN.esc(i.medida)}</td>
+      <td class="num nowrap">${SN.brl(i.valor)}</td><td class="num nowrap">${SN.brl(i.valorCritico)}</td></tr>`).join('') || '<tr><td colspan="6" class="muted center">Nenhum serviço nesta conta.</td></tr>'}
+    </tbody></table></div></div>`;
+};
 SN.rota('/cadastros', () => {
   // Com servidor, atualiza quem já configurou o complemento (no máximo a cada 30s).
   if (SN.remoto && Date.now() - SN._acessosTs > 30000) SN.carregarStatusAcessos().then(() => { if (location.hash.startsWith('#/cadastros')) SN.render(); });
@@ -359,8 +373,9 @@ SN.rota('/cadastros', () => {
       <td><button class="btn sm perigo" data-deldisp="${x.id}">Excluir</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted center">Nenhum período registrado.</td></tr>'}</tbody></table></div></div>`;
   if (aba === 'contas') html = `<div class="card"><h3>Contas contábeis e budget mensal</h3>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Código</th><th>Conta</th><th>Grupo</th><th>Itens de LPU</th><th class="num">Budget mensal (R$)</th></tr></thead><tbody>
-    ${d.contas.map((c, i) => `<tr><td class="mono">${c.codigo}</td><td>${SN.esc(c.nome)}</td><td><span class="badge">${c.grupo}</span></td><td class="small">${SN.itensDaConta(c.codigo).length} serviços</td>
-      <td class="num"><input class="inp" type="number" min="0" step="100" data-budget="${i}" value="${c.budget}" style="width:140px;text-align:right" ${SN.ehGestor() ? '' : 'disabled'}></td></tr>`).join('')}</tbody></table></div></div>`;
+    ${d.contas.map((c, i) => `<tr><td class="mono">${c.codigo}</td><td>${SN.esc(c.nome)}</td><td><span class="badge">${c.grupo}</span></td><td class="small"><button type="button" class="btn sm" data-contalpu="${c.codigo}" title="Ver os serviços desta conta com o descritivo técnico">${SN.itensDaConta(c.codigo).length} serviços</button></td>
+      <td class="num"><input class="inp" type="number" min="0" step="100" data-budget="${i}" value="${c.budget}" style="width:140px;text-align:right" ${SN.ehGestor() ? '' : 'disabled'}></td></tr>`).join('')}</tbody></table></div></div>
+    ${SN.htmlLpuDaConta(SN.contaLpuSel || (d.contas[0] || {}).codigo)}`;
   if (aba === 'sistema') html = SN.remoto ? `<div class="grid g2">
     <div class="card"><h3>Onde os dados ficam</h3><p class="small">Conectado ao servidor do V2: os registros ficam na planilha <b>SigoNet V2 - Base</b> (uma aba por assunto)
       e fotos, PDFs e NFs na pasta do Drive <b>SigoNet V2 - Anexos</b>. O V1 não é alterado.</p>
@@ -382,6 +397,11 @@ SN.rota('/cadastros', () => {
   SN.$$('[data-deldisp]').forEach(b => b.onclick = () => { SN.db.disponibilidade = SN.db.disponibilidade.filter(x => x.id !== b.dataset.deldisp); SN.log('EXCLUIR_DISPONIBILIDADE', b.dataset.deldisp); SN.salvar(); SN.render(); });
   SN.$$('[data-budget]').forEach(inp => inp.onchange = () => { const c = SN.db.contas[+inp.dataset.budget]; const antes = c.budget; c.budget = +inp.value || 0;
     SN.log('ALTERAR_BUDGET', c.codigo, `${antes} → ${c.budget}`); SN.salvar(); SN.toast('Budget atualizado.', 'ok'); });
+  const verConta = cod => { SN.contaLpuSel = cod; SN.render(); const el = SN.$('#lpuConta'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  SN.$$('[data-contalpu]').forEach(b => b.onclick = () => verConta(b.dataset.contalpu));
+  if (SN.$('#lpuContaSel')) SN.$('#lpuContaSel').onchange = e => verConta(e.target.value);
+  if (SN.$('#lpuContaBusca')) SN.$('#lpuContaBusca').oninput = e => { const q = SN.normal(e.target.value);
+    SN.$$('[data-lpubusca]').forEach(tr => tr.hidden = !!q && !tr.dataset.lpubusca.includes(q)); };
   const q = id => SN.$('#' + id);
   if (q('bBackup')) {
     q('bBackup').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(SN.db)], { type: 'application/json' }));

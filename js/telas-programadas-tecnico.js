@@ -141,7 +141,7 @@
       const cat = SN.itensDaConta(prog().conta), its = f.itens || (f.itens = []);
       return `<div class="campo"><label>Serviços realizados (LPU ${esc(prog().conta.slice(-4))})</label>
         ${its.length ? `<div>${its.map((i, n) => { const it = SN.itemLpu(i.cod) || {};
-          return `<div class="item-lpu" style="grid-template-columns:1fr 90px auto;align-items:center"><div><div class="d">${esc(it.desc || i.cod)}</div><div class="c mono">${esc(i.cod)} · ${esc(it.medida || '')}</div></div>
+          return `<div class="item-lpu" style="grid-template-columns:1fr 90px auto;align-items:center"><div><div class="d">${esc(it.desc || i.cod)}</div><div class="c mono">${esc(i.cod)} · ${esc(it.medida || '')}</div>${it.tec ? `<div class="t">${esc(it.tec)}</div>` : ''}</div>
             <input class="inp" type="number" inputmode="decimal" min="0" step="any" data-qtd="${n}" value="${esc(i.qtd ?? '')}"><button type="button" class="btn sm" data-tira="${n}">×</button></div>`; }).join('')}</div>` : '<p class="small muted">Nenhum serviço ainda.</p>'}
         <div style="display:flex;gap:6px;margin-top:6px"><select class="inp" id="aNovoItem" style="flex:1;min-width:0"><option value="">Adicionar serviço…</option>${cat.filter(i => !its.some(x => x.cod === i.cod)).map(i => `<option value="${esc(i.cod)}">${esc(i.cod)} · ${esc(i.desc)} (${esc(i.medida)})</option>`).join('')}</select></div></div>`;
     })();

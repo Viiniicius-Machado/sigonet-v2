@@ -169,7 +169,7 @@ SN.detalheLpu = id => {
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Código</th><th>Serviço</th><th>Fator</th><th class="num">Qtd</th>
       ${l.vinculo === 'PRESTADOR' ? '<th class="num">Unit.</th><th class="num">Total</th>' : ''}${podeEditar ? '<th></th>' : ''}</tr></thead><tbody>
       ${itens.map((it, i) => { const c = SN.itemLpu(it.cod) || {}; const unit = it.fator === 'critico' && c.valorCritico != null ? c.valorCritico : c.valor;
-        return `<tr><td class="mono">${it.cod}</td><td>${SN.esc(c.desc || '')}<div class="small muted">${c.classe || ''} · ${c.medida || ''}</div></td>
+        return `<tr><td class="mono">${it.cod}</td><td>${SN.esc(c.desc || '')}${c.tec ? `<div class="lpu-tec">${SN.esc(c.tec)}</div>` : ''}<div class="small muted">${c.classe || ''} · ${c.medida || ''}</div></td>
           <td>${podeEditar && l.vinculo === 'PRESTADOR' ? `<select class="inp" data-fi="${i}"><option value="comum">Comum</option><option value="critico" ${it.fator === 'critico' ? 'selected' : ''}>Crítico</option></select>` : (it.fator === 'critico' ? 'Crítico' : 'Comum')}</td>
           <td class="num">${podeEditar ? `<input class="inp" type="number" step="any" min="0" data-qi="${i}" value="${it.qtd}" style="width:90px">` : SN.num(it.qtd, 2)}</td>
           ${l.vinculo === 'PRESTADOR' ? `<td class="num">${SN.brl(unit)}</td><td class="num">${SN.brl(SN.valorItem(it))}</td>` : ''}
