@@ -22,7 +22,7 @@
     const hoje = SN.agora().slice(0, 10);
     const card = r => {
       if (r.segmento === 'AEREA') return cardAereo(r);
-      const vs = d.vistorias.filter(v => v.id_rota === r.id_rota);
+      const vs = d.vistorias.filter(v => v.id_rota === r.id_rota && !VR.csForaDaRota(r, v.id_cs)); // CS tirada pelo planejamento não conta
       const n = s => vs.filter(v => v.status_revisao === s).length;
       const pend = locais.filter(l => l.id_rota === r.id_rota && l.status_local !== 'enviada').length;
       const rej = n('REJEITADA');

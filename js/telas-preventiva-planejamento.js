@@ -305,8 +305,14 @@
       // Rota já despachada: CS com vistoria enviada não sai e fica no começo do roteiro, na ordem enviada.
       const enviadas = f.modo_cs ? d.vistorias.filter(v => v.id_rota === f.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO')
         .sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0)).map(v => v.id_cs).filter((id, i, a) => a.indexOf(id) === i) : [];
+      // Status da vistoria enviada nesta rota (a mais recente por CS). Rejeitada pode sair da rota.
+      const stEnv = {}; if (f.modo_cs) d.vistorias.filter(v => v.id_rota === f.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO').forEach(v => { stEnv[v.id_cs] = v.status_revisao; });
+      const presas = enviadas.filter(id => stEnv[id] !== 'REJEITADA'), nRej = enviadas.length - presas.length;
       const nConc = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'CONCLUIDA').length, nRota = lista.filter(c => sit[c.id_cs] && sit[c.id_cs].situacao === 'EM_ROTA').length;
-      const selo = id => { const x = sit[id]; if (!x) return '<span class="muted">Disponível</span>';
+      const selo = id => { const x = sit[id], e = stEnv[id];
+        if (e === 'REJEITADA') return '<span class="badge erro" title="Vistoria rejeitada na revisão: pode tirar da rota">✖ Rejeitada · pode tirar</span>';
+        if (e === 'AGUARDANDO_REVISAO') return '<span class="badge alerta" title="Vistoria enviada, esperando a Revisão. Para tirar da rota, rejeite antes.">Enviada · aguardando revisão</span>';
+        if (!x) return '<span class="muted">Disponível</span>';
         return x.situacao === 'CONCLUIDA' ? `<span class="badge ok" title="Vistoria aprovada na rota ${esc(x.id_rota)}">✔ Concluída${x.em ? ' ' + esc(SN.dt(x.em).slice(0, 10)) : ''}</span>`
           : `<span class="badge info" title="Rota ${esc(x.id_rota)} · ${esc(x.status_rota || '')}">Em rota ${esc(x.id_rota)}</span>`; };
       f.cs_mostrar = f.cs_mostrar || 'disp';
@@ -316,7 +322,8 @@
           <label class="small" style="display:flex;align-items:center;gap:6px">Mostrar <select class="inp" id="fCsMostrar"><option value="disp">Disponíveis</option><option value="todas">Todas</option></select></label></div>
         <div class="small" style="margin-bottom:6px"><b>${lista.length}</b> CS no cluster · <b style="color:var(--ok)">${nConc}</b> concluída(s) · <b>${nRota}</b> em outra rota · <b>${lista.length - nConc - nRota}</b> disponível(is)</div>
         ${nRota ? `<div class="small muted" style="margin-bottom:6px">🔒 CS em outra rota não entram aqui (outra equipe já vai nelas). Para trocar de equipe, tire a CS da outra rota primeiro ("CS da rota" ou Editar).</div>` : ''}
-        ${enviadas.length ? `<div class="small muted" style="margin-bottom:6px">✔ ${enviadas.length} CS já com vistoria enviada nesta rota (não saem).</div>` : ''}
+        ${presas.length ? `<div class="small muted" style="margin-bottom:6px">✔ ${presas.length} CS já com vistoria enviada nesta rota (não saem; para tirar uma, rejeite a vistoria na Revisão antes).</div>` : ''}
+        ${nRej ? `<div class="small" style="margin-bottom:6px;color:var(--erro)">✖ ${nRej} CS com vistoria rejeitada: pode desmarcar para tirar da rota (a vistoria fica só no histórico).</div>` : ''}
         ${nConc ? `<div class="faixa small" style="margin-bottom:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="fForca" ${f.forcar ? 'checked' : ''}> <b>Forçar</b> nova vistoria de CS já concluída</label>
           <div id="fForcaMot" style="display:none;margin-top:6px"><textarea class="inp" id="fForcaTxt" placeholder="Motivo para despachar de novo (obrigatório; fica no histórico da rota)">${esc(f.forcar_motivo || '')}</textarea></div></div>` : ''}
         <div class="tabela-wrap" style="max-height:320px"><table class="tab small"><thead><tr><th></th><th title="Posição na rota que o técnico vai seguir">Na rota</th><th>CS</th><th>Situação</th><th>Endereço</th><th>Lat, Lng</th></tr></thead><tbody id="fCsLinhas"></tbody></table></div>
@@ -329,7 +336,7 @@
       const linhas = () => {
         const q = SN.normal(SN.$('#fCsQ').value);
         SN.$('#fCsLinhas').innerHTML = emSeq.filter(cs => (f.cs_mostrar === 'todas' || !travada(cs.id_cs) || f.cs_planejadas.includes(cs.id_cs)) && (!q || SN.normal(cs.id_cs + ' ' + (cs.endereco || '')).includes(q))).map(cs => {
-          const i = f.cs_planejadas.indexOf(cs.id_cs), fixa = enviadas.includes(cs.id_cs) && i >= 0;
+          const i = f.cs_planejadas.indexOf(cs.id_cs), fixa = presas.includes(cs.id_cs) && i >= 0;
           const trava = fixa ? 'disabled title="Já tem vistoria enviada nesta rota"' : i >= 0 ? '' : emOutra(cs.id_cs) ? 'disabled title="Em rota de outra equipe: tire de lá primeiro"' : travada(cs.id_cs) && !f.forcar ? 'disabled title="Marque Forçar para escolher"' : '';
           return `<tr style="${travada(cs.id_cs) ? 'opacity:.6' : ''}"><td><input type="checkbox" data-cs="${esc(cs.id_cs)}" ${i >= 0 ? 'checked' : ''} ${trava}></td><td><b>${i >= 0 ? i + 1 : ''}</b></td><td class="mono" ${cs.descricao ? `title="${esc(cs.descricao)}"` : ''}>${esc(cs.id_cs)}${cs.tipo_caixa ? ` <span class="badge">${esc(cs.tipo_caixa)}</span>` : ''}</td><td class="nowrap">${selo(cs.id_cs)}</td><td>${esc(cs.endereco || '')}</td>
             <td class="nowrap"><a target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs.lat},${cs.lng}">${cs.lat}, ${cs.lng}</a></td></tr>`;

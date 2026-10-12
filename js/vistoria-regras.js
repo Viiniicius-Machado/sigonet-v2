@@ -212,17 +212,21 @@ var VR = (function () {
 
   // Trocar / somar / tirar CS de rota já despachada (ou em campo).
   // CS que já tem vistoria enviada nesta rota não sai; a lista não fica vazia.
+  // CS tirada da rota pelo planejamento (ex.: vistoria rejeitada porque a CS não foi achada): a vistoria
+  // dela fica só no histórico e não conta mais para concluir a rota nem o chamado.
+  R.csForaDaRota = function (rota, idCs) { return !!idCs && ((rota && rota.cs_retiradas) || []).indexOf(idCs) >= 0 && ((rota && rota.cs_planejadas) || []).indexOf(idCs) < 0; };
   R.validarEdicaoCs = function (rota, novas, vistorias) {
     var erros = [], antes = (rota && rota.cs_planejadas) || [];
     novas = (novas || []).map(String);
-    var vist = {}; (vistorias || []).forEach(function (v) { if (v.id_rota === rota.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO') vist[v.id_cs] = v.status_revisao; });
+    // Rejeitada pode sair (o revisor já disse que não vale); aguardando revisão ou aprovada fica presa.
+    var vist = {}; (vistorias || []).forEach(function (v) { if (v.id_rota === rota.id_rota && v.id_cs && !v.cs_nova && v.status_revisao && v.status_revisao !== 'RASCUNHO' && v.status_revisao !== 'REJEITADA') vist[v.id_cs] = v.status_revisao; });
     var removidas = antes.filter(function (id) { return novas.indexOf(id) < 0; }), adicionadas = novas.filter(function (id) { return antes.indexOf(id) < 0; });
     var presas = removidas.filter(function (id) { return vist[id]; });
     if (!rota || rota.segmento === 'AEREA' || R.ehProg(rota)) erros.push('Só rota subterrânea tem CS.');
     else if (['DESPACHADA', 'EM_CAMPO'].indexOf(rota.status) < 0) erros.push('Só dá para mexer nas CS de rota despachada ou em campo (esta está ' + (rota.status || '?') + ').');
     if (!novas.length) erros.push('A rota precisa de pelo menos uma CS (para tirar tudo, use Cancelar).');
     if (novas.some(function (id, i) { return novas.indexOf(id) !== i; })) erros.push('CS repetida na lista.');
-    if (presas.length) erros.push('CS com vistoria já enviada não sai da rota: ' + presas.join(', ') + '.');
+    if (presas.length) erros.push('CS com vistoria enviada (aguardando revisão ou aprovada) não sai da rota: ' + presas.join(', ') + '. Para tirar, rejeite a vistoria na Revisão antes.');
     if (!removidas.length && !adicionadas.length && novas.join('|') === antes.join('|')) erros.push('Nada mudou.');
     return { ok: !erros.length, erros: erros, removidas: removidas, adicionadas: adicionadas, com_vistoria: Object.keys(vist) };
   };
@@ -490,7 +494,7 @@ var VR = (function () {
   };
   // Só conclui quando cada CS planejada foi enviada e nenhuma está rejeitada.
   R.podeConcluirRota = function (rota, vistorias) {
-    var daRota = (vistorias || []).filter(function (v) { return v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO'; });
+    var daRota = (vistorias || []).filter(function (v) { return v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO' && !R.csForaDaRota(rota, v.id_cs); });
     var faltam = (rota.cs_planejadas || []).filter(function (cs) { return !daRota.some(function (v) { return v.id_cs === cs; }); });
     var rejeitadas = daRota.filter(function (v) { return v.status_revisao === 'REJEITADA'; }).map(function (v) { return v.id_cs || v.id_vistoria; });
     var erros = [];
@@ -791,7 +795,7 @@ var VR = (function () {
   // A conclusão técnica do chamado só sai quando a rota está concluída E todas as
   // vistorias dela estão APROVADAS (regra: só aprovada entra no pagamento).
   R.resumoChamado = function (rota, vistorias) {
-    var daRota = (vistorias || []).filter(function (v) { return v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO'; });
+    var daRota = (vistorias || []).filter(function (v) { return v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO' && !R.csForaDaRota(rota, v.id_cs); });
     var ap = daRota.filter(function (v) { return v.status_revisao === 'APROVADA'; });
     var pendentes = daRota.length - ap.length;
     var cobertas = (rota.cs_planejadas || []).every(function (cs) { return ap.some(function (v) { return v.id_cs === cs; }); });

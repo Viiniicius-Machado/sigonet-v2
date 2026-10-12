@@ -37,6 +37,7 @@
     SN.casca('vst_revisao', SN.carregando('Carregando fila de revisão…'));
     const d = await carregar(); if (!d || location.hash !== '#/vst/revisao') return;
     const rm = {}; d.rotas.forEach(r => { rm[r.id_rota] = r; });
+    const semEsp = t => SN.normal(t).replace(/[\s\-_.]+/g, ''); // "CS5" acha "Treze de Maio - CS 5"
     const itens = [
       ...d.vistorias.filter(v => v.status_revisao === 'AGUARDANDO_REVISAO').map(v => ({ seg: 'SUBTERRANEA', id: v.id_vistoria, doc: v, rota: rm[v.id_rota] || {} })),
       ...(d.producao || []).filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && !a.importado_planilha).map(a => ({ seg: 'AEREA', id: a.id_apontamento, doc: a, rota: rm[a.id_rota] || {} }))
@@ -45,7 +46,7 @@
       ...d.vistorias.filter(v => v.data_revisao).map(v => ({ seg: 'SUBTERRANEA', doc: v, rota: rm[v.id_rota] || {} })),
       ...(d.producao || []).filter(a => a.data_revisao && !a.importado_planilha).map(a => ({ seg: 'AEREA', doc: a, rota: rm[a.id_rota] || {} }))
     ].sort((a, b) => String(b.doc.data_revisao).localeCompare(String(a.doc.data_revisao)))
-      .filter(x => !buscaRev || [x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.doc.prestador, x.rota.cluster].some(t => String(t || '').toLowerCase().includes(buscaRev.toLowerCase())))
+      .filter(x => !buscaRev || [x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.doc.prestador, x.rota.cluster].some(t => semEsp(t).includes(semEsp(buscaRev))))
       .slice(0, buscaRev ? 100 : 15);
     const temAlerta = (x, k) => { const a = x.doc, fl = a.flags || {};
       return k === 'suspeita' ? (a.fotos || []).some(f => f.flag_suspeita) : k === 'criterio' ? !!fl.fora_criterio : k === 'gps' ? !!fl.gps_divergente
@@ -55,9 +56,9 @@
     const rotasF = [...new Set(doSeg.filter(x => !fr.prest || (x.rota.prestador || x.doc.prestador) === fr.prest).map(x => x.doc.id_rota))].sort();
     if (fr.prest && !prests.includes(fr.prest)) fr.prest = '';
     if (fr.rota && !rotasF.includes(fr.rota)) fr.rota = '';
-    const qn = SN.normal(fr.q);
+    const qn = semEsp(fr.q);
     const vis = doSeg.filter(x => (!fr.prest || (x.rota.prestador || x.doc.prestador) === fr.prest) && (!fr.rota || x.doc.id_rota === fr.rota) && (!fr.alerta || temAlerta(x, fr.alerta))
-      && (!qn || SN.normal([x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.rota.prestador, x.rota.cluster, x.rota.cidade, x.rota.motivo].join(' ')).includes(qn)));
+      && (!qn || semEsp([x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.rota.prestador, x.rota.cluster, x.rota.cidade, x.rota.motivo].join(' ')).includes(qn)));
     const ordens = { antigas: (a, b) => String(a.doc.enviado_em).localeCompare(String(b.doc.enviado_em)), recentes: (a, b) => String(b.doc.enviado_em).localeCompare(String(a.doc.enviado_em)),
       rota: (a, b) => String(a.doc.id_rota).localeCompare(String(b.doc.id_rota)) || (Number(a.doc.ordem) || 0) - (Number(b.doc.ordem) || 0),
       alertas: (a, b) => ['suspeita', 'criterio', 'gps', 'refeita'].filter(k => temAlerta(b, k)).length - ['suspeita', 'criterio', 'gps', 'refeita'].filter(k => temAlerta(a, k)).length || ordens.antigas(a, b) };
