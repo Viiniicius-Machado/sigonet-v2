@@ -19,6 +19,13 @@
 // A contagem exata vem do Google Earth: o projetista ajusta no mapa (satélite) ou importa o KMZ com os
 // postes marcados — o importador reconhece os ícones do padrão acima.
 //
+// Base do projeto (pedido 2026-10-13): melhoria SOBRE A REDE EXISTENTE (onde a empresa tem documentação e
+// permissão para lançar — o SigoNet segue os cabos do GeoGrid) ou NOVA IMPLANTAÇÃO (segue a posteação da
+// companhia elétrica — o SigoNet sugere pelas ruas). Em ambos o projetista decide por onde o cabo passa:
+// desenha no mapa, arrasta e inclui pontos. Cada trecho (vão) é aéreo ou subterrâneo, e a obra pode mesclar:
+// ponto com todos os trechos subterrâneos vira CAIXA SUBTERRÂNEA (t 'C'); poste entre aéreo e subterrâneo é
+// DESCIDA (encabeçamento + eletrotubo).
+//
 // Roda no navegador (window.PRJ) e no Node (require) para os testes.
 (function (raiz) {
   'use strict';
@@ -84,7 +91,15 @@
     ['SEV0082', ['SOROCABA', 'SALTO', 'ITU', 'INDAIATUBA']]
   ];
   P.PARAMS_PADRAO = { cabo: '12', ancoragem: 'FITA', vao: 40, encCada: 5, angCanto: 30, rtCada: 400, rtMetros: 20, pontaMetros: 10,
-    folgaPct: 3, fioEspinarRend: 100, otdr: true, sangria: false, deslocamentos: null, critico: false };
+    folgaPct: 3, fioEspinarRend: 100, otdr: true, sangria: false, deslocamentos: null, critico: false,
+    base: 'EXISTENTE', caixaCada: 80, descidaM: 6, duto: 'EXIST', foraTol: 20 };
+  P.BASES = {
+    EXISTENTE: { rot: 'Melhoria sobre a rede existente', sub: 'segue os cabos do GeoGrid — onde temos documentação e permissão para lançar' },
+    NOVA: { rot: 'Nova implantação', sub: 'segue a posteação da companhia elétrica — o SigoNet sugere pelas ruas' }
+  };
+  P.OBRAS = { AEREA: 'Aérea', SUB: 'Subterrânea', MISTA: 'Mista (aérea + subterrânea)' };
+  P.DUTOS = { EXIST: 'Duto existente (só passar o cabo)', NOVO: 'Duto novo (obra civil: vala / MND)' };
+  P.LPU_SUB = { cabo: 'SEV0011', drop: 'SEV0015', tampa: 'SEV0022b', descida: 'SEV0023' };
 
   // ─────────── Geometria ───────────
   var R_TERRA = 6371008.8, rad = function (g) { return g * Math.PI / 180; };
@@ -135,39 +150,100 @@
   // linha: [[lat,lng],…] (caminho pelas ruas). Devolve postes [{lat,lng,t:'E'|'P',c:canto}].
   // Um poste em cada canto (giro ≥ angCanto) e, entre cantos, vãos iguais de até "vao" metros.
   // Encabeçamento (E): início, fim, cantos e a cada "encCada" postes; os demais são passagem (P).
-  P.gerarPostes = function (linha, opts) {
-    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {}), pts = P.simplificar(linha || [], 4);
+  // Pontos ao longo da linha: um em cada canto e, entre cantos, espaçamento igual de até "vao" metros.
+  var amostrar = function (linha, vao, angCanto) {
+    var pts = P.simplificar(linha || [], 4);
     if (pts.length < 2) return [];
     var fixos = [0];
-    for (var i = 1; i < pts.length - 1; i++) if (P.giro(pts[i - 1], pts[i], pts[i + 1]) >= o.angCanto) fixos.push(i);
+    for (var i = 1; i < pts.length - 1; i++) if (P.giro(pts[i - 1], pts[i], pts[i + 1]) >= angCanto) fixos.push(i);
     fixos.push(pts.length - 1);
-    var vao = Math.max(10, Number(o.vao) || 40), postes = [{ lat: arred(pts[0][0]), lng: arred(pts[0][1]), t: 'E', c: false }];
+    vao = Math.max(10, Number(vao) || 40);
+    var out = [{ lat: arred(pts[0][0]), lng: arred(pts[0][1]) }];
     for (var k = 1; k < fixos.length; k++) {
       var trecho = pts.slice(fixos[k - 1], fixos[k] + 1), L = P.comprimento(trecho), n = Math.max(1, Math.ceil(L / vao - 0.15));
-      for (var j = 1; j <= n; j++) {
-        var p = j === n ? pts[fixos[k]] : pontoEm(trecho, L * j / n);
-        postes.push({ lat: arred(p[0]), lng: arred(p[1]), t: 'P', c: j === n && k < fixos.length - 1 });
-      }
+      for (var j = 1; j <= n; j++) { var p = j === n ? pts[fixos[k]] : pontoEm(trecho, L * j / n); out.push({ lat: arred(p[0]), lng: arred(p[1]) }); }
     }
-    return P.reclassificar(postes, o);
+    return out;
   };
-  // Refaz E/P depois de mexer nos postes (cantos recalculados pela geometria dos postes).
+  // opts.sub = true: o traçado todo é subterrâneo (caixas a cada "caixaCada" metros e nos cantos).
+  P.gerarPostes = function (linha, opts) {
+    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {});
+    var ps = amostrar(linha, o.sub ? o.caixaCada : o.vao, o.angCanto);
+    if (o.sub) ps.forEach(function (p, i) { if (i < ps.length - 1) p.s = true; });
+    return P.reclassificar(ps, o);
+  };
+  // Desenho à mão com "cada clique é um poste": os pontos clicados viram os postes (ou caixas).
+  P.postesDosPontos = function (linha, opts) {
+    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {}), ps = [];
+    (linha || []).forEach(function (c) { var u = ps[ps.length - 1]; if (!u || P.dist([u.lat, u.lng], c) > 1) ps.push({ lat: arred(c[0]), lng: arred(c[1]) }); });
+    if (o.sub) ps.forEach(function (p, i) { if (i < ps.length - 1) p.s = true; });
+    return ps.length < 2 ? [] : P.reclassificar(ps, o);
+  };
+  // Marca o trecho do ponto "de" ao ponto "ate" como aéreo ('A') ou subterrâneo ('S'). Com reamostrar (padrão),
+  // os pontos do meio são refeitos: postes pelo vão médio (aéreo) ou caixas a cada "caixaCada" m (subterrâneo).
+  // Elementos do meio vão para o ponto novo mais perto; os de depois andam junto. Devolve {postes, elementos}.
+  P.marcarTrecho = function (postes, elementos, de, ate, modo, opts) {
+    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {}), sub = modo === 'S', n = (postes || []).length;
+    de = Math.max(0, Math.min(n - 1, de | 0)); ate = Math.max(0, Math.min(n - 1, ate | 0));
+    if (de > ate) { var tr = de; de = ate; ate = tr; }
+    if (n < 2 || de === ate) return { postes: (postes || []).slice(), elementos: (elementos || []).slice() };
+    var copia = function (p) { return Object.assign({}, p); };
+    var meio = postes.slice(de + 1, ate).map(copia);
+    if (o.reamostrar !== false) meio = amostrar(postes.slice(de, ate + 1).map(function (p) { return [p.lat, p.lng]; }), sub ? o.caixaCada : o.vao, o.angCanto).slice(1, -1);
+    var novo = postes.slice(0, de + 1).map(copia).concat(meio).concat(postes.slice(ate).map(copia)), fim = de + meio.length + 1, delta = fim - ate;
+    for (var i = de; i < fim; i++) { if (sub) novo[i].s = true; else delete novo[i].s; }
+    // tipo fixo de poste no meio de trecho que virou subterrâneo (ou de caixa no que virou aéreo) deixa de valer
+    for (var j = de + 1; j < fim; j++) if (sub ? novo[j].fixo !== 'C' : novo[j].fixo === 'C') delete novo[j].fixo;
+    var els = (elementos || []).map(function (e) {
+      if (e.i >= ate) return Object.assign({}, e, { i: e.i + delta });
+      if (e.i <= de) return Object.assign({}, e);
+      var pos = [postes[e.i].lat, postes[e.i].lng], k = de, dm = Infinity;
+      for (var q = de; q <= fim; q++) { var d = P.dist(pos, [novo[q].lat, novo[q].lng]); if (d < dm) { dm = d; k = q; } }
+      return Object.assign({}, e, { i: k });
+    });
+    return { postes: P.reclassificar(novo, o), elementos: els };
+  };
+  // Obra pelo tipo dos trechos: 'AEREA', 'SUB' ou 'MISTA' ('' sem traçado).
+  P.obraDoTracado = function (postes) {
+    var ps = postes || [], s = 0; if (ps.length < 2) return '';
+    for (var i = 0; i < ps.length - 1; i++) if (ps[i].s) s++;
+    return !s ? 'AEREA' : s === ps.length - 1 ? 'SUB' : 'MISTA';
+  };
+  // Trechos contínuos do mesmo tipo: [{de, ate, sub}] (índices dos pontos das pontas).
+  P.trechos = function (postes) {
+    var out = [];
+    for (var i = 0; i < (postes || []).length - 1; i++) { var s = !!postes[i].s, u = out[out.length - 1]; if (u && u.sub === s) u.ate = i + 1; else out.push({ de: i, ate: i + 1, sub: s }); }
+    return out;
+  };
+  // Refaz E/P/C depois de mexer nos pontos (cantos recalculados pela geometria).
+  // p.s = o trecho DEPOIS do ponto é subterrâneo. Ponto só com trechos subterrâneos = caixa ('C'), a não ser que
+  // o projetista fixe poste; poste com algum trecho subterrâneo = descida (d), sempre encabeçamento.
   P.reclassificar = function (postes, opts) {
-    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {}), desde = 0, encCada = Math.max(0, Number(o.encCada) || 0);
+    var o = Object.assign({}, P.PARAMS_PADRAO, opts || {}), desde = 0, encCada = Math.max(0, Number(o.encCada) || 0), ult = postes.length - 1;
     return postes.map(function (p, i, a) {
-      var canto = i > 0 && i < a.length - 1 && P.giro([a[i - 1].lat, a[i - 1].lng], [p.lat, p.lng], [a[i + 1].lat, a[i + 1].lng]) >= o.angCanto;
-      var fixo = p.fixo === 'E' || p.fixo === 'P' ? p.fixo : null;
-      var t = fixo || (i === 0 || i === a.length - 1 || canto || (encCada && desde + 1 >= encCada) ? 'E' : 'P');
-      desde = t === 'E' ? 0 : desde + 1;
+      var canto = i > 0 && i < ult && P.giro([a[i - 1].lat, a[i - 1].lng], [p.lat, p.lng], [a[i + 1].lat, a[i + 1].lng]) >= o.angCanto;
+      var fixo = p.fixo === 'E' || p.fixo === 'P' || p.fixo === 'C' ? p.fixo : null;
+      var sAnt = i > 0 && !!a[i - 1].s, sProx = i < ult && !!p.s;
+      var aereo = (i > 0 && !a[i - 1].s) || (i < ult && !p.s);
+      var caixa = fixo === 'C' || (!aereo && !fixo && ult > 0);
+      var descida = !caixa && (sAnt || sProx);
+      var t = caixa ? 'C' : fixo || (i === 0 || i === ult || canto || descida || (encCada && desde + 1 >= encCada) ? 'E' : 'P');
+      desde = t === 'P' ? desde + 1 : 0;
       var out = { lat: p.lat, lng: p.lng, t: t, c: canto };
       if (fixo) out.fixo = fixo;
+      if (sProx) out.s = true;
+      if (descida) out.d = true;
       return out;
     });
   };
-  // Formato compacto para a planilha: "lat,lng,t[,fixo]" separados por ";".
-  P.codificarPostes = function (postes) { return (postes || []).map(function (p) { return [arred(p.lat), arred(p.lng), p.t].concat(p.fixo ? [p.fixo] : []).join(','); }).join(';'); };
+  // Formato compacto para a planilha: "lat,lng,t[,fixo][,S]" separados por ";" (S = trecho seguinte subterrâneo).
+  P.codificarPostes = function (postes) { return (postes || []).map(function (p, i, a) { return [arred(p.lat), arred(p.lng), p.t].concat(p.fixo ? [p.fixo] : []).concat(p.s && i < a.length - 1 ? ['S'] : []).join(','); }).join(';'); };
   P.decodificarPostes = function (txt, opts) {
-    var ps = String(txt || '').split(';').filter(Boolean).map(function (s) { var x = s.split(','); var p = { lat: Number(x[0]), lng: Number(x[1]), t: x[2] === 'E' ? 'E' : 'P' }; if (x[3]) p.fixo = x[3]; return p; });
+    var ps = String(txt || '').split(';').filter(Boolean).map(function (s) {
+      var x = s.split(','), p = { lat: Number(x[0]), lng: Number(x[1]), t: x[2] === 'E' || x[2] === 'C' ? x[2] : 'P' };
+      x.slice(3).forEach(function (k) { if (k === 'S') p.s = true; else if (/^[EPC]$/.test(k)) p.fixo = k; });
+      return p;
+    });
     return P.reclassificar(ps, opts);
   };
 
@@ -224,8 +300,11 @@
       if (e.t === 'CTO_NOVA' && p.c) out.push('CTO nova no poste ' + (e.i + 1) + ': é vedado projetar CTO em poste de esquina (item 5.6.1 e).');
       if ((e.t === 'CEO_NOVA' || e.t === 'RT') && els.some(function (x) { return x.t === 'TRAVESSIA' && x.i === e.i; })) out.push(rot + ' no vão do poste ' + (e.i + 1) + ': é vedado projetar CEO/RT em travessia (item 5.7.2 a).');
     });
-    var longos = []; for (var i = 1; i < postes.length; i++) { var d = P.dist([postes[i - 1].lat, postes[i - 1].lng], [postes[i].lat, postes[i].lng]); if (d > 60) longos.push(i); }
-    if (longos.length) out.push(longos.length + ' vão(s) acima de 60 m (postes ' + longos.slice(0, 6).map(function (i) { return i + '–' + (i + 1); }).join(', ') + (longos.length > 6 ? '…' : '') + '): confira no satélite se falta poste.');
+    var longos = [], subLongos = [];
+    for (var i = 1; i < postes.length; i++) { var d = P.dist([postes[i - 1].lat, postes[i - 1].lng], [postes[i].lat, postes[i].lng]); if (postes[i - 1].s) { if (d > 150) subLongos.push(i); } else if (d > 60) longos.push(i); }
+    var lista = function (l) { return l.slice(0, 6).map(function (i) { return i + '–' + (i + 1); }).join(', ') + (l.length > 6 ? '…' : ''); };
+    if (longos.length) out.push(longos.length + ' vão(s) aéreo(s) acima de 60 m (pontos ' + lista(longos) + '): confira no satélite se falta poste.');
+    if (subLongos.length) out.push(subLongos.length + ' trecho(s) subterrâneo(s) acima de 150 m sem caixa (pontos ' + lista(subLongos) + '): confira as caixas de passagem.');
     return out;
   };
 
@@ -238,20 +317,27 @@
     return achou;
   };
   // Métricas do traçado e do cabo. Cabo = traçado × (1 + folga) + reservas técnicas + sobra nas pontas emendadas.
+  // Cada descida soma "descidaM" metros de cabo (e de eletrotubo). Cabo subterrâneo = traçado subterrâneo com a
+  // folga + descidas + a parte proporcional das reservas e pontas; o aéreo é o resto.
   P.metricas = function (proj) {
     var o = Object.assign({}, P.PARAMS_PADRAO, proj.params || {}), postes = proj.postes || [], els = proj.elementos || [];
-    var tracado = P.comprimento(postes.map(function (p) { return [p.lat, p.lng]; }));
+    var tracado = 0, sub = 0;
+    for (var i = 1; i < postes.length; i++) { var d = P.dist([postes[i - 1].lat, postes[i - 1].lng], [postes[i].lat, postes[i].lng]); tracado += d; if (postes[i - 1].s) sub += d; }
     var nRT = els.filter(function (e) { return e.t === 'RT'; }).length;
     var pontas = els.filter(function (e) { return (P.ELEMENTOS[e.t] || {}).fusao; }).length;
-    var cabo = Math.ceil(tracado * (1 + (Number(o.folgaPct) || 0) / 100) + nRT * (Number(o.rtMetros) || 0) + pontas * (Number(o.pontaMetros) || 0));
-    return { tracado: Math.round(tracado), cabo: postes.length > 1 ? cabo : 0, postes: postes.length, enc: postes.filter(function (p) { return p.t === 'E'; }).length,
-      pas: postes.filter(function (p) { return p.t === 'P'; }).length, rt: nRT, pontas: pontas };
+    var descidas = postes.filter(function (p) { return p.d; }).length, descM = Number(o.descidaM) || 0, folga = 1 + (Number(o.folgaPct) || 0) / 100;
+    var extras = nRT * (Number(o.rtMetros) || 0) + pontas * (Number(o.pontaMetros) || 0);
+    var cabo = Math.ceil(tracado * folga + extras + descidas * descM), ok = postes.length > 1;
+    var caboSub = sub > 0 ? Math.min(cabo, Math.ceil(sub * folga + descidas * descM + extras * sub / tracado)) : 0;
+    return { tracado: Math.round(tracado), tracadoSub: Math.round(sub), tracadoAereo: Math.round(tracado) - Math.round(sub), cabo: ok ? cabo : 0, caboSub: ok ? caboSub : 0, caboAereo: ok ? cabo - caboSub : 0,
+      postes: postes.filter(function (p) { return p.t !== 'C'; }).length, caixas: postes.filter(function (p) { return p.t === 'C'; }).length, descidas: descidas, pontos: postes.length,
+      enc: postes.filter(function (p) { return p.t === 'E'; }).length, pas: postes.filter(function (p) { return p.t === 'P'; }).length, rt: nRT, pontas: pontas };
   };
   // Quantidades automáticas e a memória de cálculo (cada linha diz de onde veio o número).
   P.quantidades = function (proj) {
     var o = Object.assign({}, P.PARAMS_PADRAO, proj.params || {}), cabo = P.CABOS[o.cabo] || P.CABOS['12'], anc = P.ANCORAGENS[o.ancoragem] || P.ANCORAGENS.FITA;
     var kit = P.KIT[o.ancoragem === 'FITA' ? 'FITA' : 'BAP'], m = P.metricas(proj), mat = {}, lpu = {}, memo = [];
-    if (m.postes < 2) return { mat: mat, lpu: lpu, memoria: ['Desenhe o traçado (pelo menos 2 postes).'], metricas: m };
+    if (m.pontos < 2) return { mat: mat, lpu: lpu, memoria: ['Desenhe o traçado (pelo menos 2 pontos).'], metricas: m };
     // Ancoragem por poste
     var fitaM = 0;
     ['E', 'P'].forEach(function (t) {
@@ -260,16 +346,26 @@
     });
     memo.push(m.enc + ' encabeçamento(s) e ' + m.pas + ' passagem(ns) — ' + anc.rot + ' (composição do padrão por poste).');
     if (fitaM) { soma(mat, P.FITA.cod, Math.ceil(fitaM / P.FITA.metrosRolo)); memo.push(fitaM + ' m de fita de aço = aprox. ' + Math.ceil(fitaM / P.FITA.metrosRolo) + ' rolo(s) de ' + P.FITA.metrosRolo + ' m.'); }
-    soma(lpu, anc.enc, m.enc); soma(lpu, anc.pas, m.pas); soma(lpu, 'SEV0005', m.postes);
+    soma(lpu, anc.enc, m.enc); soma(lpu, anc.pas, m.pas); soma(lpu, 'SEV0005', m.postes + m.caixas);
     // Cabo
     if (cabo.mat) soma(mat, cabo.mat, m.cabo);
-    soma(lpu, anc.lancCabo || cabo.lanc, m.cabo);
-    memo.push(cabo.rot + ': ' + m.tracado + ' m de traçado + ' + o.folgaPct + '% de folga + ' + m.rt + ' RT × ' + o.rtMetros + ' m + ' + m.pontas + ' ponta(s) × ' + o.pontaMetros + ' m = ' + m.cabo + ' m.' + (cabo.mat ? '' : ' (cabo sem código no catálogo: inclua no orçamento.)'));
-    if (anc.cordoalha) { soma(mat, P.CORDOALHA, m.tracado); soma(lpu, 'SEV0009', m.tracado); memo.push('Cordoalha dielétrica nova: ' + m.tracado + ' m (traçado).'); }
-    if (anc.espinar) {
-      soma(lpu, 'SEV0007', m.tracado);
+    soma(lpu, anc.lancCabo || cabo.lanc, m.caboAereo);
+    memo.push(cabo.rot + ': ' + m.tracado + ' m de traçado + ' + o.folgaPct + '% de folga + ' + m.rt + ' RT × ' + o.rtMetros + ' m + ' + m.pontas + ' ponta(s) × ' + o.pontaMetros + ' m'
+      + (m.descidas ? ' + ' + m.descidas + ' descida(s) × ' + o.descidaM + ' m' : '') + ' = ' + m.cabo + ' m.' + (cabo.mat ? '' : ' (cabo sem código no catálogo: inclua no orçamento.)'));
+    // Subterrâneo: cabo em duto, tampa de cada caixa e eletrotubo nas descidas
+    if (m.tracadoSub) {
+      var lancSub = o.cabo === 'DROP' ? P.LPU_SUB.drop : P.LPU_SUB.cabo;
+      soma(lpu, lancSub, m.caboSub);
+      memo.push('Trecho subterrâneo: ' + m.tracadoSub + ' m de traçado → ' + m.caboSub + ' m de cabo em duto (' + lancSub + '); aéreo: ' + m.caboAereo + ' m de cabo.');
+      if (m.caixas) { soma(lpu, P.LPU_SUB.tampa, m.caixas); memo.push(m.caixas + ' caixa(s) subterrânea(s): abertura e fechamento de tampa em cada uma.'); }
+      if (o.duto === 'NOVO') memo.push('Duto novo: a obra civil (vala ou MND, duto e caixas) de ' + m.tracadoSub + ' m NÃO está na LPU — inclua no orçamento.');
+    }
+    if (m.descidas) { soma(lpu, P.LPU_SUB.descida, m.descidas * (Number(o.descidaM) || 0)); memo.push(m.descidas + ' descida(s) de poste para o subterrâneo: ' + o.descidaM + ' m de eletrotubo cada (encabeçamento no poste).'); }
+    if (anc.cordoalha && m.tracadoAereo) { soma(mat, P.CORDOALHA, m.tracadoAereo); soma(lpu, 'SEV0009', m.tracadoAereo); memo.push('Cordoalha dielétrica nova: ' + m.tracadoAereo + ' m (traçado aéreo).'); }
+    if (anc.espinar && m.tracadoAereo) {
+      soma(lpu, 'SEV0007', m.tracadoAereo);
       var rend = Number(o.fioEspinarRend) || 0;
-      if (rend > 0) { soma(mat, P.FIO_ESPINAR, Math.ceil(m.tracado / rend)); memo.push('Fio de espinar: 1 a cada ' + rend + ' m de traçado.'); }
+      if (rend > 0) { soma(mat, P.FIO_ESPINAR, Math.ceil(m.tracadoAereo / rend)); memo.push('Fio de espinar: 1 a cada ' + rend + ' m de traçado aéreo.'); }
       else memo.push('Fio de espinar: informe o rendimento (m por unidade) nos parâmetros para calcular.'); // padrão: 1 unidade rende 100 m (informado em 2026-10-12)
     }
     // Elementos
@@ -312,16 +408,33 @@
       estilo('cabo', '<LineStyle><color>' + P.corKml(cabo.cor, 1) + '</color><width>4</width></LineStyle>'),
       estilo('cordoalha', '<LineStyle><color>' + P.corKml('#FFFFFF', 1) + '</color><width>4</width></LineStyle>'),
       estilo('rede_existente', '<LineStyle><color>' + P.corKml('#FF7F1E', 0.7) + '</color><width>15</width></LineStyle>'),
+      estilo('cabo_sub', '<LineStyle><color>' + P.corKml(cabo.cor, 0.8) + '</color><width>6</width></LineStyle>'),
       icoEst('poste_E', kitIco.E, 0.8), icoEst('poste_P', kitIco.P, 0.6)
     ].concat(Object.keys(P.ELEMENTOS).map(function (k) { return icoEst('el_' + k, P.ELEMENTOS[k].icone, 1.1); }));
-    var desc = [proj.nome ? 'Projeto: ' + proj.nome : '', proj.cidade ? 'Cidade: ' + proj.cidade : '', 'Cabo: ' + cabo.rot, 'Ancoragem: ' + anc.rot,
-      'Traçado: ' + m.tracado + ' m · cabo previsto: ' + m.cabo + ' m', 'Postes: ' + m.postes + ' (' + m.enc + ' encabeçamentos, ' + m.pas + ' passagens)'].filter(Boolean).join('\n');
+    var desc = [proj.nome ? 'Projeto: ' + proj.nome : '', proj.cidade ? 'Cidade: ' + proj.cidade : '', (P.BASES[o.base] || P.BASES.EXISTENTE).rot, 'Cabo: ' + cabo.rot, 'Ancoragem: ' + anc.rot,
+      'Traçado: ' + m.tracado + ' m · cabo previsto: ' + m.cabo + ' m',
+      m.tracadoSub ? 'Obra ' + P.OBRAS[P.obraDoTracado(postes)] + ': ' + m.tracadoAereo + ' m aéreo, ' + m.tracadoSub + ' m subterrâneo, ' + m.caixas + ' caixa(s), ' + m.descidas + ' descida(s)' : '',
+      'Postes: ' + m.postes + ' (' + m.enc + ' encabeçamentos, ' + m.pas + ' passagens)'].filter(Boolean).join('\n');
     var pm = function (nome, est, geo, d) { return '<Placemark><name>' + escXml(nome) + '</name>' + (d ? '<description>' + escXml(d) + '</description>' : '') + '<styleUrl>#' + est + '</styleUrl>' + geo + '</Placemark>'; };
     var ponto = function (lat, lng) { return '<Point><coordinates>' + lng + ',' + lat + ',0</coordinates></Point>'; };
-    var linhas = [pm(cabo.rot + ' · ' + m.cabo + ' m', 'cabo', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>', desc)];
-    if (anc.cordoalha) linhas.push(pm('Cordoalha dielétrica · ' + m.tracado + ' m', 'cordoalha', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>'));
-    if (o.ancoragem === 'BAP_EXIST') linhas.unshift(pm('Rede existente', 'rede_existente', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>'));
-    var ps = postes.map(function (p, i) { return pm('P' + String(i + 1).padStart(2, '0'), 'poste_' + p.t, ponto(p.lat, p.lng), (p.t === 'E' ? 'Encabeçamento' : 'Passagem') + ' · ' + anc.rot); });
+    var linhas = [];
+    if (!m.tracadoSub) {
+      linhas.push(pm(cabo.rot + ' · ' + m.cabo + ' m', 'cabo', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>', desc));
+      if (anc.cordoalha) linhas.push(pm('Cordoalha dielétrica · ' + m.tracado + ' m', 'cordoalha', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>'));
+      if (o.ancoragem === 'BAP_EXIST') linhas.unshift(pm('Rede existente', 'rede_existente', '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>'));
+    } else P.trechos(postes).forEach(function (tr, n) { // obra mista: uma linha por trecho
+      var pp = postes.slice(tr.de, tr.ate + 1), mm = Math.round(P.comprimento(pp.map(function (p) { return [p.lat, p.lng]; })));
+      var geo = '<LineString><tessellate>1</tessellate><coordinates>' + pp.map(function (p) { return p.lng + ',' + p.lat + ',0'; }).join(' ') + '</coordinates></LineString>';
+      if (tr.sub) return linhas.push(pm(cabo.rot + ' · SUBTERRÂNEO · ' + mm + ' m', 'cabo_sub', geo, (n ? '' : desc + '\n') + 'Trecho subterrâneo · ' + P.DUTOS[o.duto === 'NOVO' ? 'NOVO' : 'EXIST']));
+      if (o.ancoragem === 'BAP_EXIST') linhas.push(pm('Rede existente', 'rede_existente', geo));
+      if (anc.cordoalha) linhas.push(pm('Cordoalha dielétrica · ' + mm + ' m', 'cordoalha', geo));
+      linhas.push(pm(cabo.rot + ' · AÉREO · ' + mm + ' m', 'cabo', geo, n ? '' : desc));
+    });
+    var ps = postes.map(function (p, i) {
+      var num = String(i + 1).padStart(2, '0');
+      if (p.t === 'C') return pm('CX' + num, 'el_CAIXA_SUB', ponto(p.lat, p.lng), 'Caixa subterrânea');
+      return pm('P' + num, 'poste_' + p.t, ponto(p.lat, p.lng), (p.t === 'E' ? 'Encabeçamento' : 'Passagem') + ' · ' + anc.rot + (p.d ? ' · DESCIDA para o subterrâneo' : ''));
+    });
     var els = (proj.elementos || []).map(function (e) {
       var pos = P.posicaoElemento(e, postes), def = P.ELEMENTOS[e.t]; if (!pos || !def) return '';
       var nome = e.t === 'INFO' ? (e.txt || 'INFORMAÇÃO') : (e.nome || def.kml);
@@ -366,7 +479,7 @@
     if (/paddle\/r\.png|\/r\.png/.test(h) || /^R\.?\s?T\b/.test(n)) return { el: 'RT' };
     if (/grn-blank|grn-circle|green/.test(h)) return { el: 'CLIENTE' };
     if (/triangle/.test(h)) return { el: 'SPLITTER' };
-    if (/square/.test(h)) return { el: 'CAIXA_SUB' };
+    if (/square/.test(h) || /^CX\s?\d+$/.test(n)) return { poste: 'C' }; // caixa subterrânea = ponto do traçado
     if (/info/.test(h)) return { el: 'INFO' };
     if (/^CEO NOVA/.test(n)) return { el: 'CEO_NOVA' };
     if (/^CTO NOVA/.test(n)) return { el: 'CTO_NOVA' };
@@ -379,7 +492,7 @@
     var postesPts = [], elementos = [], ancs = {};
     (lido.pontos || []).forEach(function (pt) {
       var c = P.classificarPonto(pt);
-      if (c.poste) { postesPts.push({ lat: pt.lat, lng: pt.lng, fixo: c.anc ? c.poste : null }); if (c.anc) ancs[c.anc] = (ancs[c.anc] || 0) + 1; }
+      if (c.poste) { postesPts.push({ lat: pt.lat, lng: pt.lng, fixo: c.poste === 'C' ? 'C' : c.anc ? c.poste : null }); if (c.anc) ancs[c.anc] = (ancs[c.anc] || 0) + 1; }
       else elementos.push({ t: c.el, lat: pt.lat, lng: pt.lng, nome: pt.nome, txt: c.el === 'INFO' ? pt.nome : '' });
     });
     var linha = (lido.linhas || []).slice().sort(function (a, b) { return P.comprimento(b.pts) - P.comprimento(a.pts); })[0];
@@ -397,7 +510,8 @@
       while (resto.length) { var u = postes[postes.length - 1], k = 0, dm = Infinity; resto.forEach(function (q, i) { var d = P.dist([u.lat, u.lng], [q.lat, q.lng]); if (d < dm) { dm = d; k = i; } }); postes.push(resto.splice(k, 1)[0]); }
     } else if (linha) postes = P.gerarPostes(linha.pts, opts);
     else postes = [];
-    postes = postes.map(function (p) { var o = { lat: arred(p.lat), lng: arred(p.lng), t: p.t || 'P' }; if (p.fixo) o.fixo = p.fixo; return o; });
+    postes = postes.map(function (p) { var o = { lat: arred(p.lat), lng: arred(p.lng), t: p.t || 'P' }; if (p.fixo) o.fixo = p.fixo; if (p.s) o.s = true; return o; });
+    postes.forEach(function (p, i) { var q = postes[i + 1]; if (q && (p.fixo === 'C' || q.fixo === 'C')) p.s = true; }); // trecho que encosta em caixa é subterrâneo
     postes = P.reclassificar(postes, opts);
     var els = elementos.map(function (e) {
       var k = 0, dm = Infinity; postes.forEach(function (p, i) { var d = P.dist([p.lat, p.lng], [e.lat, e.lng]); if (d < dm) { dm = d; k = i; } });
@@ -423,7 +537,7 @@
     if (!String(proj.nome || '').trim()) e.push('Dê um nome ao projeto.');
     if (!String(proj.cidade || '').trim()) e.push('Informe a cidade.');
     if (!String(proj.conta || '').trim()) e.push('Escolha a conta contábil.');
-    if (m.postes < 2) e.push('Desenhe o traçado: pelo menos 2 postes.');
+    if (m.pontos < 2) e.push('Desenhe o traçado: pelo menos 2 pontos.');
     if (!(proj.elementos || []).some(function (x) { return (P.ELEMENTOS[x.t] || {}).fusao || x.t === 'CLIENTE'; })) e.push('Marque a origem e o destino (CEO, CTO ou cliente) no traçado.');
     if (P.codificarPostes(proj.postes).length > 36000) e.push('Traçado grande demais para um projeto só (' + m.postes + ' postes): divida em dois projetos.');
     return { ok: !e.length, erros: e };

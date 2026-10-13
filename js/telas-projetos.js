@@ -26,6 +26,8 @@
   const postesDe = p => PR.decodificarPostes(p.postes || '', p.params);
   const params = p => Object.assign({}, PR.PARAMS_PADRAO, p.params || {});
   const fmtM = v => SN.num(Math.round(v || 0)) + ' m';
+  const nPonto = i => String(i + 1).padStart(2, '0');
+  const rotPonto = (x, i) => x.t === 'C' ? 'CX' + nPonto(i) + ' · caixa' : 'P' + nPonto(i) + (x.d ? ' · descida' : '');
 
   // ─────────── Preços (catálogo vigente) e unidades ───────────
   const CABOS_MAT = Object.values(PR.CABOS).map(c => c.mat).filter(Boolean);
@@ -73,7 +75,7 @@
         ${vis.map(p => { const m = PR.metricas({ ...p, postes: postesDe(p) }), cab = PR.CABOS[params(p).cabo] || {};
           return `<tr><td><b>${esc(p.nome || '(sem nome)')}</b><div class="small muted mono">${esc(p.id)}</div>${p.cliente ? `<div class="small muted">${esc(p.cliente)}</div>` : ''}</td>
           <td>${esc(p.cidade || '')}<div class="small muted">${p.pop ? esc(p.pop) + ' · ' : ''}conta ${esc(String(p.conta || '—').slice(-4))}</div></td>
-          <td class="small">${m.postes ? `${esc(cab.rot || '')}<div class="muted">${fmtM(m.tracado)} · ${m.postes} postes · cabo ${fmtM(m.cabo)}</div>` : '<span class="muted">sem traçado</span>'}</td>
+          <td class="small">${m.pontos > 1 ? `${esc(cab.rot || '')}<div class="muted">${fmtM(m.tracado)} · ${m.postes} postes${m.tracadoSub ? ' · ' + fmtM(m.tracadoSub) + ' subterrâneo' : ''} · cabo ${fmtM(m.cabo)}</div>` : '<span class="muted">sem traçado</span>'}<div class="muted">${esc((PR.BASES[params(p).base] || PR.BASES.EXISTENTE).rot)}</div></td>
           <td class="num nowrap">${p.orcamento ? SN.brl(p.orcamento.total) : `<span class="muted">${SN.brl(orcar(p).total)}</span>`}</td>
           <td>${SN.badge(PR.STATUS, p.status)}${p.status === 'REPROVADO' && p.reprovacao ? `<div class="small muted">${esc(p.reprovacao.motivo)}</div>` : ''}</td>
           <td class="small">${p.id_rota ? `<a href="#/prj/planejamento">${esc(p.id_rota)}</a><div class="muted">${esc((p.aprovacao || {}).prestador || '')}</div>` : '—'}</td>
@@ -84,7 +86,7 @@
     SN.$('#bNovoPrj').onclick = async () => {
       try {
         const id = await SN.novoId('PRJ'), u = SN.usuario() || {};
-        const p = { id, nome: '', cliente: '', cidade: '', pop: '', conta: '', solicitante: '', obs: '', status: 'RASCUNHO', params: { ...PR.PARAMS_PADRAO, origemTipo: 'CEO_EXIST', destinoTipo: 'CTO_NOVA' },
+        const p = { id, nome: '', cliente: '', cidade: '', pop: '', conta: '', solicitante: '', obs: '', status: 'RASCUNHO', params: { ...PR.PARAMS_PADRAO, ancoragem: 'BAP_EXIST', origemTipo: 'CEO_EXIST', destinoTipo: 'CTO_NOVA' },
           origem: null, destino: null, vias: [], postes: '', elementos: [], ruas: [], ajustes: { mat: {}, lpu: {} }, criadoEm: SN.agora(), criadoPor: u.nome || '', historico: [] };
         hist(p, 'CRIADO'); projetos().push(p); SN.log('PROJETO_CRIADO', id, ''); SN.salvar(); SN.navegar('#/prj/projeto/' + encodeURIComponent(id));
       } catch (e) { SN.toast(e.message, 'erro'); }
@@ -103,7 +105,7 @@
     if (!p) { SN.toast('Projeto não encontrado.', 'erro'); return SN.navegar('#/prj/projetos'); }
     const e = E(id), abas = [['DESENHO', '1 · Informações e traçado'], ['ORCAMENTO', '2 · Orçamento'], ['APROVACAO', p.status === 'APROVADO' ? '3 · Aprovado · obra' : '3 · Aprovação']];
     SN.casca('prj_projetos', `
-      <div class="cab-pagina"><div><a href="#/prj/projetos" class="small">← Projetos</a><h1 style="margin-top:4px">${esc(p.nome || 'Novo projeto')} <span class="small muted mono">${esc(p.id)}</span></h1>
+      <div class="cab-pagina"><div><a href="#/prj/projetos" class="small">← Projetos</a><h1 style="margin-top:4px;overflow-wrap:anywhere">${esc(p.nome || 'Novo projeto')} <span class="small muted mono">${esc(p.id)}</span></h1>
         <p>${SN.badge(PR.STATUS, p.status)} ${p.cidade ? esc(p.cidade) + ' · ' : ''}${p.conta ? 'conta ' + esc(SN.contaTxt(p.conta)) : 'sem conta'}${p.criadoPor ? ' · criado por ' + esc(p.criadoPor) : ''}</p></div>
         <div class="acoes"><button class="btn" id="bKmz" title="KMZ no padrão construtivo (Google Earth)">⬇️ KMZ</button><button class="btn" id="bPdfEq" title="Desenho + materiais + LPU, sem valores">📄 PDF da equipe</button><button class="btn" id="bPdfOrc" title="Orçamento com valores (gestão)">📄 PDF do orçamento</button></div></div>
       ${p.status === 'REPROVADO' && p.reprovacao ? `<div class="aviso erro small" style="margin-bottom:10px">Reprovado por ${esc(p.reprovacao.por)} em ${SN.dt(p.reprovacao.ts)}: ${esc(p.reprovacao.motivo)}. Ajuste e envie de novo.</div>` : ''}
@@ -123,6 +125,7 @@
   const lerCoord = t => { const m = String(t || '').trim().match(/^(-?\d{1,2}(?:\.\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:\.\d+)?)$/); return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null; };
   const pintarDesenho = p => {
     const e = E(p.id), o = params(p), ed = editavel(p), dis = ed ? '' : 'disabled';
+    const ps = postesDe(p), obra = obraAtual(p), existente = o.base !== 'NOVA';
     const contas = SN.db.contas.map(c => [c.codigo, SN.contaTxt(c.codigo)]);
     const cidades = [...new Set(projetos().map(x => x.cidade).concat(SN.db.chamados.map(c => c.cidade)).filter(Boolean))].sort();
     SN.$('#prjCorpo').innerHTML = `<div class="prj-grade">
@@ -150,30 +153,49 @@
           <div class="linha-form">
             <div class="campo"><label>Sobra por emenda (m)</label><input class="inp" type="number" min="0" data-pp="pontaMetros" data-num="1" value="${esc(o.pontaMetros)}" ${dis}></div>
             <div class="campo"><label>Folga do cabo (%)</label><input class="inp" type="number" min="0" max="30" data-pp="folgaPct" data-num="1" value="${esc(o.folgaPct)}" ${dis}></div></div>
-          <p class="small muted" style="margin:0">Mudou vão ou encabeçamento? Clique em "Traçar pelas ruas" de novo, ou ajuste os postes no mapa.</p>
+          <p class="small muted" style="margin:0">Mudou vão ou encabeçamento? Trace de novo (Traçado, abaixo) ou ajuste os postes no mapa.</p>
         </div>
         <div class="card"><h3>Traçado</h3>
-          <div class="campo"><label>Origem — ${esc((PR.ELEMENTOS[o.origemTipo] || {}).rot || '')}</label>
+          <div class="campo"><label>Tipo de projeto</label>
+            <div class="prj-opcs">${Object.entries(PR.BASES).map(([k, b]) => `<button type="button" class="prj-opc ${o.base === k ? 'sel' : ''}" data-base="${k}" ${dis}><b>${esc(b.rot)}</b><span>${esc(b.sub)}</span></button>`).join('')}</div></div>
+          <div class="linha-form">
+            <div class="campo"><label>Obra</label><select class="inp" id="pObra" ${dis}>${opt(Object.entries(PR.OBRAS), obra)}</select></div>
+            ${obra !== 'AEREA' ? `<div class="campo"><label>Subterrâneo</label><select class="inp" data-pp="duto" ${dis}>${opt(Object.entries(PR.DUTOS), o.duto)}</select></div>` : ''}</div>
+          ${obra !== 'AEREA' ? `<div class="linha-form">
+            <div class="campo"><label>Caixa a cada (m)</label><input class="inp" type="number" min="20" max="300" data-pp="caixaCada" data-num="1" value="${esc(o.caixaCada)}" ${dis}></div>
+            <div class="campo"><label>Eletrotubo por descida (m)</label><input class="inp" type="number" min="0" max="20" data-pp="descidaM" data-num="1" value="${esc(o.descidaM)}" ${dis}></div></div>` : ''}
+          ${obra === 'MISTA' && ps.length > 1 && ed ? `<div class="small"><b>Marcar trecho</b> <span class="muted">(ou clique num ponto do mapa e escolha o trecho até o seguinte)</span></div>
+            <div class="prj-trecho">
+              <div class="campo"><label>De</label><select class="inp" id="tDe">${ps.map((x, i) => `<option value="${i}">${rotPonto(x, i)}</option>`).join('')}</select></div>
+              <div class="campo"><label>Até</label><select class="inp" id="tAte">${ps.map((x, i) => `<option value="${i}" ${i === ps.length - 1 ? 'selected' : ''}>${rotPonto(x, i)}</option>`).join('')}</select></div>
+              <div class="campo"><label>Passa</label><select class="inp" id="tModo"><option value="S">Subterrâneo</option><option value="A">Aéreo</option></select></div>
+              <button class="btn sm" id="bTrecho">Aplicar</button></div>` : ''}
+          <div class="campo" style="margin-top:10px"><label>Origem — ${esc((PR.ELEMENTOS[o.origemTipo] || {}).rot || '')}</label>
             <div class="prj-linha"><input class="inp" id="pOrig" value="${esc(p.origem ? (p.origem.txt || coordTxt(p.origem)) : '')}" placeholder="lat, lng" ${dis}>
-              <button class="btn sm" data-modo="origem" ${dis} title="Clique no mapa">📍</button><button class="btn sm" id="bGeoCeo" ${dis} title="Caixa do GeoGrid mais perto do destino">🔎 GeoGrid</button><button class="btn sm" id="bBaseCeo" ${dis} title="CEO/CTO da Base KML da Preventiva">Base</button></div>
+              <button class="btn sm" data-modo="origem" ${dis} title="Clique no mapa para marcar a origem">Marcar no mapa</button></div>
+            <div class="prj-linha" style="margin-top:4px"><button class="btn sm" id="bGeoCeo" ${dis} title="Caixas do GeoGrid mais perto do destino">Caixa do GeoGrid</button><button class="btn sm" id="bBaseCeo" ${dis} title="CEO/CTO da Base KML da Preventiva">CEO da Base KML</button></div>
             <select class="inp" data-pp="origemTipo" style="margin-top:4px" ${dis}>${opt([['CEO_EXIST', 'Sai de CEO/CTO existente'], ['CEO_NOVA', 'Sai de CEO nova (sangria)'], ['', 'Sem emenda na origem']], o.origemTipo)}</select></div>
           <div class="campo"><label>Destino — endereço ou lat, lng</label>
             <div class="prj-linha"><input class="inp" id="pDest" value="${esc(p.destino ? (p.destino.txt || coordTxt(p.destino)) : '')}" placeholder="Rua, número, cidade — ou lat, lng" ${dis}>
-              <button class="btn sm" id="bBuscaDest" ${dis}>Buscar</button><button class="btn sm" data-modo="destino" ${dis} title="Clique no mapa">📍</button></div>
+              <button class="btn sm" id="bBuscaDest" ${dis}>Buscar</button><button class="btn sm" data-modo="destino" ${dis} title="Clique no mapa para marcar o destino">Marcar no mapa</button></div>
             <select class="inp" data-pp="destinoTipo" style="margin-top:4px" ${dis}>${opt([['CTO_NOVA', 'Chega em CTO nova'], ['CEO_NOVA', 'Chega em CEO nova'], ['CEO_EXIST', 'Chega em CEO existente'], ['CLIENTE', 'Chega no cliente (ponto final)']], o.destinoTipo)}</select></div>
-          <div class="small" style="margin-bottom:6px">Pontos de passagem: <b>${(p.vias || []).length}</b> ${ed ? `<button class="btn sm" data-modo="via">📍 Adicionar</button>${(p.vias || []).length ? ' <button class="btn sm" id="bLimpaVias">Limpar</button>' : ''}` : ''}
-            <div class="muted">Use para obrigar o traçado a passar por uma rua (a rota sai pelo caminho mais curto a pé).</div></div>
-          ${ed ? `<div class="acoes"><button class="btn prim" id="bTracar">✏️ Traçar pelas ruas</button>
-            <label class="btn">📥 Importar KMZ do Google Earth<input type="file" id="fKmzImp" accept=".kmz,.kml" hidden></label></div>
-            <p class="small muted" style="margin:6px 0 0">A contagem exata de postes vem do Google Earth: confira no satélite e ajuste, ou importe o KMZ com os postes marcados (ícones do padrão: rosca/proibido = BAP, ponto/alvo = fita).</p>` : ''}
+          ${ed ? `<div class="small" style="margin:4px 0 6px"><b>Por onde o cabo passa</b> — o SigoNet sugere, o projeto decide:</div>
+            <div class="prj-tracar">
+              ${existente ? '<button class="btn prim" id="bSegueRede" title="Caminho mais curto sobre os cabos lançados do GeoGrid">Seguir a rede existente</button>' : ''}
+              <button class="btn ${existente ? '' : 'prim'}" id="bTracar" title="Caminho a pé pelas ruas (onde há posteação da companhia elétrica)">Sugerir pelas ruas</button>
+              <button class="btn ${e.modo === 'desenho' ? 'prim' : ''}" data-modo="desenho" title="Clique no mapa, ponto a ponto, por onde o cabo deve passar">Desenhar no mapa</button>
+              <label class="btn">Importar KMZ<input type="file" id="fKmzImp" accept=".kmz,.kml" hidden></label></div>
+            <p class="small muted" style="margin:6px 0 0">${existente ? 'Melhoria: o cabo vai por onde já temos rede (documentação e permissão). Trecho fora da rede aparece em vermelho no mapa.' : 'Nova implantação: a sugestão segue as ruas; confira a posteação da companhia elétrica no satélite e desenhe ou ajuste por onde o cabo deve passar.'}
+              Depois, arraste os pontos, insira postes e marque trechos subterrâneos. A contagem exata de postes vem do Google Earth (importe o KMZ com os postes marcados).</p>
+            ${!existente ? `<div class="small" style="margin-top:6px">Pontos de passagem da sugestão: <b>${(p.vias || []).length}</b> <button class="btn sm" data-modo="via">Adicionar no mapa</button>${(p.vias || []).length ? ' <button class="btn sm" id="bLimpaVias">Limpar</button>' : ''}</div>` : ''}` : ''}
         </div>
       </div>
       <div class="prj-mapa-col">
         <div class="card" style="padding:8px">
-          <div class="prj-barra">${ed ? `<span class="small muted">Clique num poste para editar.</span>
+          <div class="prj-barra">${ed ? `<span class="small muted">Clique num ponto do traçado para editar o poste, a caixa ou o trecho.</span>
             <button class="btn sm ${e.modo === 'poste' ? 'prim' : ''}" data-modo="poste">➕ Inserir poste</button>
             <button class="btn sm" id="bRts" title="Refaz as reservas técnicas pelo parâmetro">↻ RTs</button>` : '<span class="small muted">Somente leitura.</span>'}
-            <span id="prjModo" class="small"></span></div>
+            <div id="prjModo" class="small" style="flex-basis:100%"></div></div>
           <div id="prjMapa" class="prj-mapa"></div>
           <div id="prjMetricas" style="margin-top:8px"></div>
         </div>
@@ -191,7 +213,34 @@
       if (k === 'origemTipo' || k === 'destinoTipo') trocarPonta(p, k === 'origemTipo' ? 0 : -1, i.value);
       mudou(p); pintarDesenho(p);
     });
-    SN.$$('[data-modo]').forEach(b => b.onclick = () => { e.modo = e.modo === b.dataset.modo ? '' : b.dataset.modo; pintarModo(p); });
+    SN.$$('[data-modo]').forEach(b => b.onclick = () => {
+      e.modo = e.modo === b.dataset.modo ? '' : b.dataset.modo;
+      if (e.modo === 'desenho') e.rasc = p.origem ? [[p.origem.lat, p.origem.lng]] : [];
+      pintarModo(p); pintarRascunho(p);
+    });
+    SN.$$('[data-base]').forEach(b => b.onclick = () => {
+      const base = b.dataset.base, pr = params(p); if (pr.base === base) return;
+      const anc = base === 'EXISTENTE' && pr.ancoragem !== 'BAP_EXIST' ? 'BAP_EXIST' : base === 'NOVA' && pr.ancoragem === 'BAP_EXIST' ? 'FITA' : pr.ancoragem;
+      p.params = { ...pr, base, ancoragem: anc }; hist(p, 'TIPO DE PROJETO', PR.BASES[base].rot); mudou(p);
+      if (anc !== pr.ancoragem) SN.toast('Ancoragem: ' + PR.ANCORAGENS[anc].rot + ' (troque em "Rede" se for outra).', 'ok');
+      pintarDesenho(p);
+    });
+    if (SN.$('#pObra')) SN.$('#pObra').onchange = async ev => {
+      const v = ev.target.value, ps = postesDe(p);
+      if (v !== 'MISTA' && ps.length > 1 && PR.obraDoTracado(ps) !== v) {
+        if (!await SN.confirmar('Obra ' + PR.OBRAS[v].toLowerCase(), v === 'SUB' ? 'O traçado todo passa a ser subterrâneo: os postes do meio viram caixas a cada ' + params(p).caixaCada + ' m.' : 'O traçado todo passa a ser aéreo: as caixas viram postes pelo vão médio.', 'Aplicar', 'prim')) return pintarDesenho(p);
+        const r = PR.marcarTrecho(ps, p.elementos, 0, ps.length - 1, v === 'SUB' ? 'S' : 'A', params(p)); p.elementos = r.elementos; p.params = { ...params(p), obra: v }; gravarPostes(p, r.postes);
+      } else { p.params = { ...params(p), obra: v }; mudou(p); }
+      pintarDesenho(p);
+    };
+    if (SN.$('#bTrecho')) SN.$('#bTrecho').onclick = () => {
+      const de = +SN.$('#tDe').value, ate = +SN.$('#tAte').value, modo = SN.$('#tModo').value;
+      if (de === ate) return SN.toast('Escolha dois pontos diferentes.', 'erro');
+      const r = PR.marcarTrecho(postesDe(p), p.elementos, de, ate, modo, params(p)); p.elementos = r.elementos;
+      hist(p, 'TRECHO ' + (modo === 'S' ? 'SUBTERRÂNEO' : 'AÉREO'), `pontos ${Math.min(de, ate) + 1} a ${Math.max(de, ate) + 1}`);
+      gravarPostes(p, r.postes); pintarDesenho(p);
+    };
+    if (SN.$('#bSegueRede')) SN.$('#bSegueRede').onclick = async ev => { const b = ev.target; b.disabled = true; try { await seguirRede(p); } catch (err) { SN.toast(err.message, 'erro'); } finally { b.disabled = false; } };
     if (SN.$('#bLimpaVias')) SN.$('#bLimpaVias').onclick = () => { p.vias = []; mudou(p); pintarDesenho(p); };
     if (SN.$('#pOrig')) SN.$('#pOrig').onchange = ev => { const c = lerCoord(ev.target.value); if (c) { p.origem = { ...c, txt: '' }; mudou(p); desenharMapa(p); } else if (ev.target.value) SN.toast('Use "lat, lng" (ex.: -22.97, -46.99) ou escolha na Base / no mapa.', 'erro'); };
     if (SN.$('#pDest')) SN.$('#pDest').onchange = ev => { const c = lerCoord(ev.target.value); if (c) { p.destino = { ...c, txt: '' }; mudou(p); desenharMapa(p); } };
@@ -207,8 +256,16 @@
   };
   const pintarModo = p => {
     const e = E(p.id), el = SN.$('#prjModo'); if (!el) return;
-    el.innerHTML = e.modo ? `<b>${{ origem: 'Clique no mapa para marcar a origem', destino: 'Clique no mapa para marcar o destino', via: 'Clique no mapa para incluir um ponto de passagem', poste: 'Clique no mapa, perto do traçado, para inserir um poste' }[e.modo]}</b> <button class="btn sm" id="bSaiModo">Cancelar</button>` : '';
-    if (SN.$('#bSaiModo')) SN.$('#bSaiModo').onclick = () => { e.modo = ''; pintarModo(p); };
+    if (e.modo === 'desenho') {
+      const r = e.rasc || [];
+      el.innerHTML = `<div class="prj-desenho"><b>Desenhando:</b> clique no mapa, ponto a ponto, por onde o cabo passa (${r.length} ponto(s) · ${fmtM(PR.comprimento(r))}).
+        <label class="small" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="cCadaPoste" ${e.cadaPoste ? 'checked' : ''}> cada clique é um poste</label>
+        <button class="btn sm" id="bDesfaz" ${r.length ? '' : 'disabled'}>Desfazer</button><button class="btn sm ok" id="bConclui" ${r.length > 1 ? '' : 'disabled'}>Concluir traçado</button><button class="btn sm" id="bSaiModo">Cancelar</button></div>`;
+      SN.$('#cCadaPoste').onchange = ev => { e.cadaPoste = ev.target.checked; };
+      SN.$('#bDesfaz').onclick = () => { r.pop(); pintarModo(p); pintarRascunho(p); };
+      SN.$('#bConclui').onclick = () => concluirDesenho(p).catch(err => SN.toast(err.message, 'erro'));
+    } else el.innerHTML = e.modo ? `<b>${{ origem: 'Clique no mapa para marcar a origem', destino: 'Clique no mapa para marcar o destino', via: 'Clique no mapa para incluir um ponto de passagem', poste: 'Clique no mapa, perto do traçado, para inserir um poste' }[e.modo]}</b> <button class="btn sm" id="bSaiModo">Cancelar</button>` : '';
+    if (SN.$('#bSaiModo')) SN.$('#bSaiModo').onclick = () => { e.modo = ''; e.rasc = []; pintarModo(p); pintarRascunho(p); };
     SN.$$('[data-modo]').forEach(b => b.classList.toggle('prim', b.dataset.modo === e.modo));
     const m = SN.$('#prjMapa'); if (m) m.style.cursor = e.modo ? 'crosshair' : '';
   };
@@ -223,13 +280,16 @@
 
   // Métricas, ruas e avisos do padrão
   const pintarResumo = p => {
-    const ps = postesDe(p), proj = { ...p, postes: ps }, m = PR.metricas(proj), av = PR.avisos(proj);
+    const ps = postesDe(p), proj = { ...p, postes: ps }, m = PR.metricas(proj), av = PR.avisos(proj), f = foraDaRede(p, ps);
+    if (f && f.metros) av.unshift(`${SN.num(f.metros)} m do traçado fora da rede existente (vão(s) ${f.vaos.slice(0, 8).map(i => (i + 1) + '–' + (i + 2)).join(', ')}${f.vaos.length > 8 ? '…' : ''}, em vermelho no mapa). Melhoria só onde temos rede (documentação e permissão): use "Seguir a rede existente", ajuste o traçado ou mude o tipo para Nova implantação.`);
     const el = SN.$('#prjMetricas');
-    if (el) el.innerHTML = m.postes ? `<div class="prj-metricas">
+    if (el) el.innerHTML = m.pontos > 1 ? `<div class="prj-metricas">
       <div><b>${fmtM(m.tracado)}</b><span>traçado</span></div><div><b>${fmtM(m.cabo)}</b><span>cabo previsto</span></div>
+      ${m.tracadoSub ? `<div><b>${fmtM(m.tracadoAereo)} / ${fmtM(m.tracadoSub)}</b><span>aéreo / subterrâneo</span></div><div><b>${m.caixas} / ${m.descidas}</b><span>caixas / descidas</span></div>` : ''}
       <div><b>${m.postes}</b><span>postes</span></div><div><b>${m.enc} / ${m.pas}</b><span>encab. / passagem</span></div>
       <div><b>${m.rt}</b><span>RT</span></div><div><b>${(p.elementos || []).filter(x => ['CEO_NOVA', 'CTO_NOVA'].includes(x.t)).length}</b><span>CEO/CTO novas</span></div></div>
-      <div class="prj-legenda small">${legendaHtml(p)}</div>` : '<p class="small muted" style="margin:0">Sem traçado ainda: marque origem e destino e clique em "Traçar pelas ruas", ou importe um KMZ.</p>';
+      ${p.redeSeguida && (p.redeSeguida.cabos || []).length ? `<div class="small muted" style="margin-top:6px">Segue a rede existente: ${esc(p.redeSeguida.cabos.join(' → '))}</div>` : ''}
+      <div class="prj-legenda small">${legendaHtml(p, m, f)}</div>` : '<p class="small muted" style="margin:0">Sem traçado ainda: marque origem e destino e escolha como traçar (seguir a rede, sugerir pelas ruas ou desenhar no mapa), ou importe um KMZ.</p>';
     const ea = SN.$('#prjAvisos');
     if (ea) ea.innerHTML = av.length ? `<div class="aviso alerta small" style="margin:10px 0">${av.map(esc).join('<br>')}</div>` : '';
     const er = SN.$('#prjRuas');
@@ -238,11 +298,19 @@
       : '<p class="small muted">Os nomes de rua saem do traçado pelas ruas.</p>'}${ps.length && editavel(p) ? '<button class="btn sm" id="bNomesRua" style="margin-top:6px">↻ Atualizar nomes de rua</button>' : ''}`;
     if (SN.$('#bNomesRua')) SN.$('#bNomesRua').onclick = ev => { ev.target.disabled = true; nomesDeRua(p).catch(err => SN.toast(err.message, 'erro')).finally(() => { if (ev.target) ev.target.disabled = false; }); };
   };
-  const legendaHtml = p => {
+  const legendaHtml = (p, m, f) => {
     const o = params(p), cabo = PR.CABOS[o.cabo] || {}, k = o.ancoragem === 'FITA' ? 'FITA' : 'BAP';
     return `<span><i class="prj-traco" style="background:${cabo.cor}"></i>${esc(cabo.rot || '')}</span>
       ${o.ancoragem === 'BAP' ? '<span><i class="prj-traco" style="background:#fff;border:1px solid #999"></i>Cordoalha dielétrica</span>' : ''}${o.ancoragem === 'BAP_EXIST' ? '<span><i class="prj-traco" style="background:#FF7F1E;opacity:.7;height:7px"></i>Rede existente</span>' : ''}
-      <span>${svgPoste(k, 'E')}Encabeçamento</span><span>${svgPoste(k, 'P')}Passagem</span>`;
+      ${m && m.tracadoSub ? `<span><i class="prj-traco" style="background:repeating-linear-gradient(90deg,${cabo.cor} 0 6px,#6b4423 6px 10px);height:6px"></i>Trecho subterrâneo</span><span>${svgPoste(k, 'C')}Caixa subterrânea</span>` : ''}
+      <span>${svgPoste(k, 'E')}Encabeçamento</span><span>${svgPoste(k, 'P')}Passagem</span>
+      ${f && f.metros ? '<span><i class="prj-traco" style="background:#e53e3e;height:7px"></i>Fora da rede existente</span>' : ''}`;
+  };
+  // Vãos longe da rede existente (só em projeto de melhoria, com a rede da cidade carregada).
+  const foraDaRede = (p, ps) => {
+    const M = mapas[p.id], o = params(p); if (o.base === 'NOVA' || !M || !M.redeDados || ps.length < 2 || !window.REDE) return null;
+    const chave = p.postes + '|' + o.foraTol; if (M.foraChave === chave) return M.fora;
+    M.foraChave = chave; M.fora = REDE.foraDaRede(M.redeDados, ps.map(x => [x.lat, x.lng]), o.foraTol); return M.fora;
   };
 
   // ─────────── Mapa (Leaflet) ───────────
@@ -257,7 +325,8 @@
   const RUAS_SAT = 'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}';
   const OSM = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   // Ícones (SVG) parecidos com os do Google Earth do padrão.
-  const svgPoste = (k, t) => k === 'BAP'
+  const svgPoste = (k, t) => t === 'C' ? '<svg width="14" height="14" viewBox="0 0 18 18"><rect x="2" y="2" width="14" height="14" fill="#fff" stroke="#222" stroke-width="2.6"/></svg>'
+    : k === 'BAP'
     ? (t === 'E' ? '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="none" stroke="#222" stroke-width="3.6"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="#fff" stroke-width="2"/></svg>'
       : '<svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5" fill="#fff" fill-opacity=".25" stroke="#222" stroke-width="3.4"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="#fff" stroke-width="1.8"/><path d="M4.3 4.3l7.4 7.4" stroke="#222" stroke-width="3.2"/><path d="M4.3 4.3l7.4 7.4" stroke="#fff" stroke-width="1.6"/></svg>')
     : (t === 'E' ? '<svg width="16" height="16" viewBox="0 0 16 16"><defs><radialGradient id="g" cx=".35" cy=".35"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#6b6b6b"/></radialGradient></defs><circle cx="8" cy="8" r="6.5" fill="url(#g)" stroke="#444" stroke-width=".8"/></svg>'
@@ -288,7 +357,7 @@
       el.addEventListener('change', ev => acaoPopup(p, ev));
     }
     // Rede existente da cidade do projeto (recarrega quando a cidade muda).
-    if (M.redeCidade !== (p.cidade || '')) { M.redeCidade = p.cidade || ''; if (M.rede) { M.ctl.removeLayer(M.rede); M.mapa.removeLayer(M.rede); M.rede = null; } camadaRede(p, M); }
+    if (M.redeCidade !== (p.cidade || '')) { M.redeCidade = p.cidade || ''; if (M.rede) { M.ctl.removeLayer(M.rede); M.mapa.removeLayer(M.rede); M.rede = null; M.redeDados = null; } camadaRede(p, M); }
     pintarCamada(p);
     const ps = postesDe(p), pts = ps.map(x => [x.lat, x.lng]).concat([p.origem, p.destino].filter(Boolean).map(c => [c.lat, c.lng]));
     if (!M.enquadrado && pts.length) { M.mapa.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 18, animate: false }); M.enquadrado = true; }
@@ -299,14 +368,22 @@
     const L = window.L, M = mapas[p.id]; if (!M) return;
     const o = params(p), k = o.ancoragem === 'FITA' ? 'FITA' : 'BAP', ps = postesDe(p), ed = editavel(p), cabo = PR.CABOS[o.cabo] || PR.CABOS['12'];
     M.camada.clearLayers();
-    const linha = ps.map(x => [x.lat, x.lng]);
-    if (linha.length > 1) {
-      if (o.ancoragem === 'BAP_EXIST') L.polyline(linha, { color: '#FF7F1E', weight: 12, opacity: 0.7 }).addTo(M.camada);
+    const f = foraDaRede(p, ps), fora = new Set(f ? f.vaos : []), vao = i => [[ps[i].lat, ps[i].lng], [ps[i + 1].lat, ps[i + 1].lng]];
+    // vão fora da rede: vermelho por baixo (e sem o laranja de "rede existente", que ali não existe)
+    fora.forEach(i => L.polyline(vao(i), { color: '#e53e3e', weight: 12, opacity: 0.85 }).addTo(M.camada).bindTooltip('Fora da rede existente'));
+    PR.trechos(ps).forEach(tr => {
+      const linha = ps.slice(tr.de, tr.ate + 1).map(x => [x.lat, x.lng]);
+      if (tr.sub) {
+        L.polyline(linha, { color: '#6b4423', weight: 9, opacity: 0.55 }).addTo(M.camada).bindTooltip('Trecho subterrâneo');
+        L.polyline(linha, { color: cabo.cor, weight: 3.5, opacity: 1, dashArray: '8 6' }).addTo(M.camada);
+        return;
+      }
+      if (o.ancoragem === 'BAP_EXIST') for (let i = tr.de; i < tr.ate; i++) if (!fora.has(i)) L.polyline(vao(i), { color: '#FF7F1E', weight: 12, opacity: 0.7 }).addTo(M.camada);
       if (o.ancoragem === 'BAP') L.polyline(linha, { color: '#ffffff', weight: 6, opacity: 1 }).addTo(M.camada);
       L.polyline(linha, { color: cabo.cor, weight: 3.5, opacity: 1 }).addTo(M.camada);
-    }
+    });
     ps.forEach((x, i) => {
-      const mk = L.marker([x.lat, x.lng], { icon: icone(svgPoste(k, x.t), 16, 16), draggable: ed, title: 'P' + String(i + 1).padStart(2, '0') }).addTo(M.camada);
+      const mk = L.marker([x.lat, x.lng], { icon: icone(svgPoste(k, x.t), 16, 16), draggable: ed, title: 'P' + nPonto(i) }).addTo(M.camada);
       mk.bindPopup(() => popupPoste(p, i), { minWidth: 230 });
       mk.on('dragend', ev => { const ll = ev.target.getLatLng(), atual = postesDe(p); atual[i] = { ...atual[i], lat: Math.round(ll.lat * 1e6) / 1e6, lng: Math.round(ll.lng * 1e6) / 1e6 }; gravarPostes(p, atual); });
     });
@@ -323,7 +400,16 @@
     if (p.destino && !ps.length) L.marker([p.destino.lat, p.destino.lng], { icon: ico('B', '#c53030') }).addTo(M.camada).bindTooltip('Destino');
     (p.vias || []).forEach((v, i) => L.marker(v, { icon: ico(String(i + 1), '#6b7280'), draggable: ed }).addTo(M.camada).bindTooltip('Ponto de passagem ' + (i + 1))
       .on('dragend', ev => { const ll = ev.target.getLatLng(); p.vias[i] = [Math.round(ll.lat * 1e6) / 1e6, Math.round(ll.lng * 1e6) / 1e6]; mudou(p); }));
-    pintarBase(p);
+    pintarBase(p); pintarRascunho(p);
+  };
+  // Caminho que o projetista está desenhando (modo "Desenhar no mapa").
+  const pintarRascunho = p => {
+    const M = mapas[p.id], e = E(p.id); if (!M || !window.L) return;
+    if (!M.rasc) M.rasc = window.L.layerGroup().addTo(M.mapa);
+    M.rasc.clearLayers();
+    if (e.modo !== 'desenho' || !(e.rasc || []).length) return;
+    window.L.polyline(e.rasc, { color: '#ff9f1c', weight: 4, opacity: 0.95, dashArray: '10 6', interactive: false }).addTo(M.rasc);
+    e.rasc.forEach((c, i) => window.L.circleMarker(c, { radius: i ? 4 : 6, color: '#222', weight: 1.5, fillColor: '#ff9f1c', fillOpacity: 1, interactive: false }).addTo(M.rasc));
   };
   // Rede existente da cidade (GeoGrid, telas-rede.js): cabos nas cores do GeoGrid e caixas; clicar numa caixa a usa como origem.
   const camadaRede = async (p, M) => {
@@ -334,8 +420,13 @@
     d.cabos.forEach(c => L.polyline(c.pts, { color: c.cor, weight: 2, opacity: 0.75, renderer: r, interactive: false }).addTo(g));
     d.caixas.forEach(c => L.circleMarker([c.lat, c.lng], { radius: 4, color: '#222', weight: 1, fillColor: c.cor || '#fff', fillOpacity: 1, renderer: r }).addTo(g)
       .bindTooltip(esc(c.n) + ' (GeoGrid)' + (editavel(p) ? ' — clique para usar como origem' : ''))
-      .on('click', ev => { L.DomEvent.stopPropagation(ev); if (!editavel(p)) return; usarCaixaOrigem(p, c); }));
-    M.rede = g; g.addTo(M.mapa); M.ctl.addOverlay(g, 'Rede existente (GeoGrid · ' + esc(d.cidade) + ')');
+      .on('click', ev => {
+        L.DomEvent.stopPropagation(ev); if (!editavel(p)) return;
+        if (E(p.id).modo === 'desenho') return cliqueMapa(p, { lat: c.lat, lng: c.lng }); // desenhando: a caixa vira ponto do caminho
+        usarCaixaOrigem(p, c);
+      }));
+    M.rede = g; M.redeDados = d; M.foraChave = null; g.addTo(M.mapa); M.ctl.addOverlay(g, 'Rede existente (GeoGrid · ' + esc(d.cidade) + ')');
+    pintarCamada(p); pintarResumo(p); // agora dá para medir o que ficou fora da rede
   };
   const usarCaixaOrigem = (p, c) => {
     p.origem = { lat: c.lat, lng: c.lng, txt: c.n + ' (GeoGrid)' }; p.params = { ...params(p), origemTipo: 'CEO_EXIST' }; mudou(p);
@@ -370,9 +461,11 @@
     const ps = postesDe(p), x = ps[i], ed = editavel(p), els = (p.elementos || []).map((e, n) => ({ ...e, n })).filter(e => e.i === i);
     const d = (a, b) => a && b ? Math.round(PR.dist([a.lat, a.lng], [b.lat, b.lng])) + ' m' : '—';
     const tipos = Object.entries(PR.ELEMENTOS).map(([k, v]) => [k, v.rot + (v.vao ? ' (no vão seguinte)' : '')]);
-    return `<div class="prj-pop"><b>Poste P${String(i + 1).padStart(2, '0')}</b> · ${x.t === 'E' ? 'Encabeçamento' : 'Passagem'}${x.c ? ' · <span style="color:#b45309">esquina</span>' : ''}
-      <div class="small muted">vão anterior ${d(ps[i - 1], x)} · seguinte ${d(x, ps[i + 1])}</div>
-      ${ed ? `<div style="margin-top:6px"><select class="inp" data-pt="${i}"><option value="">Tipo automático</option><option value="E" ${x.fixo === 'E' ? 'selected' : ''}>Encabeçamento (fixo)</option><option value="P" ${x.fixo === 'P' ? 'selected' : ''}>Passagem (fixo)</option></select></div>` : ''}
+    const titulo = x.t === 'C' ? `<b>Caixa subterrânea CX${nPonto(i)}</b>` : `<b>Poste P${nPonto(i)}</b> · ${x.t === 'E' ? 'Encabeçamento' : 'Passagem'}${x.d ? ' · <span style="color:#6b4423">descida p/ subterrâneo</span>' : ''}`;
+    return `<div class="prj-pop">${titulo}${x.c ? ' · <span style="color:#b45309">esquina</span>' : ''}
+      <div class="small muted">${x.t === 'C' ? 'trecho' : 'vão'} anterior ${d(ps[i - 1], x)} · seguinte ${d(x, ps[i + 1])}</div>
+      ${ed ? `<div style="margin-top:6px"><select class="inp" data-pt="${i}"><option value="">Tipo automático</option><option value="E" ${x.fixo === 'E' ? 'selected' : ''}>Poste de encabeçamento (fixo)</option><option value="P" ${x.fixo === 'P' ? 'selected' : ''}>Poste de passagem (fixo)</option><option value="C" ${x.fixo === 'C' ? 'selected' : ''}>Caixa subterrânea (fixo)</option></select></div>` : ''}
+      ${i < ps.length - 1 ? (ed ? `<label class="small" style="display:block;margin-top:6px">Trecho até o ponto ${i + 2}:<select class="inp" data-ts="${i}"><option value="A">Aéreo</option><option value="S" ${x.s ? 'selected' : ''}>Subterrâneo</option></select></label>` : `<div class="small">Trecho seguinte: ${x.s ? 'subterrâneo' : 'aéreo'}</div>`) : ''}
       ${els.map(e => `<div class="prj-pop-el"><b>${esc((PR.ELEMENTOS[e.t] || {}).rot || e.t)}</b>${e.t === 'INFO' ? ': ' + esc(e.txt || '') : e.nome ? ' ' + esc(e.nome) : ''}
         ${(PR.ELEMENTOS[e.t] || {}).fusao ? `<label class="small"> fusões ${ed ? `<input class="inp" type="number" min="0" style="width:64px" data-fus="${e.n}" value="${esc(e.fus || 0)}">` : esc(e.fus || 0)}</label>` : ''}
         ${ed ? `<button class="btn sm" data-tiraeld="${e.n}">×</button>` : ''}</div>`).join('')}
@@ -384,6 +477,10 @@
     const t = ev.target; if (!t || !t.dataset || !editavel(p)) return;
     const M = mapas[p.id];
     if (ev.type === 'change' && t.dataset.pt != null) { const ps = postesDe(p), i = +t.dataset.pt; if (t.value) ps[i].fixo = t.value; else delete ps[i].fixo; M.mapa.closePopup(); return gravarPostes(p, ps); }
+    if (ev.type === 'change' && t.dataset.ts != null) { // só este vão, sem refazer pontos
+      const ps = postesDe(p), i = +t.dataset.ts; if (t.value === 'S') ps[i].s = true; else delete ps[i].s;
+      M.mapa.closePopup(); gravarPostes(p, ps); return pintarDesenho(p);
+    }
     if (ev.type === 'change' && t.dataset.fus != null) { p.elementos[+t.dataset.fus].fus = Math.max(0, Number(t.value) || 0); mudou(p); pintarResumo(p); return; }
     if (ev.type === 'change' && t.dataset.novoel != null && t.value) {
       const i = +t.dataset.novoel, tipo = t.value, fo = (PR.CABOS[params(p).cabo] || {}).fo || 12; M.mapa.closePopup();
@@ -413,11 +510,12 @@
     if (e.modo === 'origem') { p.origem = { ...c, txt: '' }; e.modo = ''; mudou(p); return pintarDesenho(p); }
     if (e.modo === 'destino') { p.destino = { ...c, txt: '' }; e.modo = ''; mudou(p); return pintarDesenho(p); }
     if (e.modo === 'via') { p.vias = (p.vias || []).concat([[c.lat, c.lng]]); mudou(p); return pintarDesenho(p); }
+    if (e.modo === 'desenho') { (e.rasc = e.rasc || []).push([c.lat, c.lng]); pintarModo(p); return pintarRascunho(p); }
     if (e.modo === 'poste') {
       const ps = postesDe(p); if (ps.length < 2) return SN.toast('Trace primeiro: o poste entra entre dois postes do traçado.', 'erro');
       let melhor = 0, dm = Infinity; // vão mais perto do clique
       for (let i = 1; i < ps.length; i++) { const mx = (ps[i - 1].lat + ps[i].lat) / 2, my = (ps[i - 1].lng + ps[i].lng) / 2, d = PR.dist([c.lat, c.lng], [mx, my]) + 0.5 * (PR.dist([c.lat, c.lng], [ps[i - 1].lat, ps[i - 1].lng]) + PR.dist([c.lat, c.lng], [ps[i].lat, ps[i].lng])); if (d < dm) { dm = d; melhor = i; } }
-      ps.splice(melhor, 0, { lat: c.lat, lng: c.lng, t: 'P' });
+      ps.splice(melhor, 0, { lat: c.lat, lng: c.lng, t: 'P', s: !!ps[melhor - 1].s }); // no subterrâneo vira caixa
       p.elementos = (p.elementos || []).map(x => x.i >= melhor ? { ...x, i: x.i + 1 } : x);
       gravarPostes(p, ps);
     }
@@ -471,24 +569,61 @@
       if (PR.dist(linha[0], [p.origem.lat, p.origem.lng]) > 3) linha.unshift([p.origem.lat, p.origem.lng]);
       if (PR.dist(linha[linha.length - 1], [p.destino.lat, p.destino.lng]) > 3) linha.push([p.destino.lat, p.destino.lng]);
       const passos = []; (rota.legs || []).forEach(l => (l.steps || []).forEach(s => { if (s.geometry && s.geometry.coordinates.length > 1) passos.push({ nome: s.name || '', pts: s.geometry.coordinates.map(c => [c[1], c[0]]) }); }));
-      const o = params(p), ps = PR.gerarPostes(linha, o);
-      E(p.id).passos = passos;
-      p.postes = PR.codificarPostes(ps); p.elementos = [];
-      if (o.origemTipo) trocarPonta(p, 0, o.origemTipo);
-      if (o.destinoTipo) trocarPonta(p, -1, o.destinoTipo);
-      p.elementos = p.elementos.concat(PR.rtsAutomaticas(ps, o));
-      p.ruas = PR.ruasDosPostes(ps, passos); p.ajustes = { mat: {}, lpu: {} };
-      hist(p, 'TRAÇADO', `${ps.length} postes · ${Math.round(PR.comprimento(ps.map(x => [x.lat, x.lng])))} m`);
-      mudou(p); const M = mapas[p.id]; if (M) M.enquadrado = false;
-      SN.toast(`Traçado pronto: ${ps.length} postes (vão médio ${o.vao} m). Confira no satélite e ajuste os postes.`, 'ok');
-      pintarDesenho(p);
+      const ps = PR.gerarPostes(linha, { ...params(p), sub: obraAtual(p) === 'SUB' });
+      delete p.redeSeguida;
+      aplicarTracado(p, ps, passos, 'TRAÇADO PELAS RUAS');
+      SN.toast(`Sugestão pelas ruas: ${ps.length} pontos. Confira a posteação no satélite e ajuste por onde o cabo deve passar.`, 'ok');
     } finally { fim(); }
   };
+  // Obra escolhida para um traçado novo (SUB = todo subterrâneo; o resto começa aéreo).
+  // Obra do projeto: a dos trechos; "Mista" escolhida vale mesmo antes de marcar o primeiro trecho subterrâneo.
+  const obraAtual = p => { const d = PR.obraDoTracado(postesDe(p)), o = params(p).obra; return d === 'MISTA' || (o === 'MISTA' && d) ? 'MISTA' : d || o || 'AEREA'; };
+  // Grava um traçado novo: pontas (origem/destino), RT automáticas, ruas e orçamento automático.
+  const aplicarTracado = (p, ps, passos, acao) => {
+    const o = params(p), pt = x => ({ lat: x.lat, lng: x.lng }), longe = (c, x) => !c || PR.dist([c.lat, c.lng], [x.lat, x.lng]) > 15;
+    if (longe(p.origem, ps[0])) p.origem = { ...pt(ps[0]), txt: '' };
+    if (longe(p.destino, ps[ps.length - 1])) p.destino = { ...pt(ps[ps.length - 1]), txt: '' };
+    E(p.id).passos = passos || null;
+    p.postes = PR.codificarPostes(ps); p.elementos = [];
+    if (o.origemTipo) trocarPonta(p, 0, o.origemTipo);
+    if (o.destinoTipo) trocarPonta(p, -1, o.destinoTipo);
+    p.elementos = p.elementos.concat(PR.rtsAutomaticas(ps, o));
+    p.ruas = passos ? PR.ruasDosPostes(ps, passos) : []; p.ajustes = { mat: {}, lpu: {} };
+    hist(p, acao, `${ps.length} pontos · ${Math.round(PR.comprimento(ps.map(x => [x.lat, x.lng])))} m`);
+    mudou(p); const M = mapas[p.id]; if (M) M.enquadrado = false;
+    pintarDesenho(p);
+    if (!passos) nomesDeRua(p, true).catch(() => { });
+  };
+  // Melhoria: caminho mais curto sobre os cabos lançados do GeoGrid (rede-regras.js).
+  const seguirRede = async p => {
+    if (!p.origem || !p.destino) return SN.toast('Marque a origem e o destino.', 'erro');
+    if (!p.cidade) return SN.toast('Informe a cidade.', 'erro');
+    const d = SN.rede ? await SN.rede.daCidade(p.cidade) : null;
+    if (!d) return SN.toast('Sem rede do GeoGrid para ' + p.cidade + ' (menu Rede GeoGrid). Desenhe o caminho no mapa.', 'erro');
+    const r = REDE.rotaPelaRede(d, [p.origem.lat, p.origem.lng], [p.destino.lat, p.destino.lng], { maxPonta: 500 });
+    if (r.erro) return SN.toast(r.erro, 'erro');
+    if (p.postes && !await SN.confirmar('Seguir a rede existente', `Caminho de ${SN.num(r.metros)} m sobre ${r.cabos.length} cabo(s) do GeoGrid (${esc(r.cabos.join(' → '))}). O traçado atual (pontos, elementos e ajustes) será substituído.`, 'Traçar', 'prim')) return;
+    const ps = PR.gerarPostes(r.pts, { ...params(p), sub: obraAtual(p) === 'SUB' });
+    p.redeSeguida = { cabos: r.cabos, metros: r.metros };
+    aplicarTracado(p, ps, null, 'TRAÇADO PELA REDE EXISTENTE');
+    const lig = [r.ligA > 20 ? `origem a ${r.ligA} m do cabo` : '', r.ligB > 20 ? `destino a ${r.ligB} m do cabo` : ''].filter(Boolean);
+    SN.toast(`Pela rede existente: ${SN.num(r.metros)} m sobre ${r.cabos.join(' → ')}.${lig.length ? ' Atenção: ' + lig.join(' e ') + ' (trecho fora da rede).' : ''} Confira os postes no satélite.`, lig.length ? 'alerta' : 'ok');
+  };
+  const concluirDesenho = async p => {
+    const e = E(p.id), linha = (e.rasc || []).slice();
+    if (linha.length < 2) return SN.toast('Clique pelo menos 2 pontos no mapa.', 'erro');
+    const o = { ...params(p), sub: obraAtual(p) === 'SUB' }, ps = e.cadaPoste ? PR.postesDosPontos(linha, o) : PR.gerarPostes(linha, o);
+    if (ps.length < 2) return SN.toast('Caminho curto demais.', 'erro');
+    if (p.postes && !await SN.confirmar('Usar o desenho', `Caminho de ${fmtM(PR.comprimento(linha))} com ${ps.length} pontos. O traçado atual (pontos, elementos e ajustes) será substituído.`, 'Usar', 'prim')) return;
+    e.modo = ''; e.rasc = []; delete p.redeSeguida;
+    aplicarTracado(p, ps, null, 'TRAÇADO DESENHADO');
+    SN.toast(`Traçado desenhado: ${ps.length} pontos${e.cadaPoste ? ' (cada clique um poste)' : ', postes pelo vão médio'}. Marque os trechos subterrâneos, se houver.`, 'ok');
+  };
   // Nomes de rua para traçado importado (sem os passos da rota): consulta alguns postes (1 por segundo).
-  const nomesDeRua = async p => {
-    const ps = postesDe(p); if (!ps.length) return;
+  const nomesDeRua = async (p, quieto) => { // quieto: em segundo plano, sem cobrir a tela
+    const ps = postesDe(p), cod = p.postes; if (!ps.length) return;
     const passo = Math.max(1, Math.ceil(ps.length / 30)), amostra = []; for (let i = 0; i < ps.length; i += passo) amostra.push(i); if (amostra[amostra.length - 1] !== ps.length - 1) amostra.push(ps.length - 1);
-    const fim = SN.cobrirCarregando(`Buscando os nomes de rua (${amostra.length} consultas)…`), nomes = {};
+    const fim = quieto ? () => { } : SN.cobrirCarregando(`Buscando os nomes de rua (${amostra.length} consultas)…`), nomes = {};
     try {
       for (const i of amostra) {
         try { const r = await (await tempo(`https://nominatim.openstreetmap.org/reverse?format=json&zoom=17&lat=${ps[i].lat}&lon=${ps[i].lng}`, 12000)).json(); nomes[i] = (r.address && (r.address.road || r.address.pedestrian || r.address.footway)) || ''; }
@@ -498,6 +633,7 @@
       const passos = []; let atual = null;
       amostra.forEach((i, k) => { const n = nomes[i] || '(sem nome)', ini = k ? amostra[k - 1] : 0; if (!atual || atual.nome !== n) passos.push(atual = { nome: n, pts: [] }); for (let j = ini; j <= i; j++) atual.pts.push([ps[j].lat, ps[j].lng]); });
       passos.forEach(s => { if (s.pts.length === 1) s.pts.push(s.pts[0]); });
+      if (p.postes !== cod) return; // o traçado mudou enquanto buscava
       E(p.id).passos = passos; p.ruas = PR.ruasDosPostes(ps, passos); mudou(p); pintarResumo(p);
     } finally { fim(); }
   };
@@ -512,7 +648,7 @@
     p.postes = PR.codificarPostes(im.postes); p.elementos = im.elementos; p.ruas = []; p.ajustes = { mat: {}, lpu: {} };
     if (im.ancoragem && im.ancoragem !== (params(p).ancoragem === 'FITA' ? 'FITA' : 'BAP')) p.params = { ...params(p), ancoragem: im.ancoragem };
     p.origem = { lat: im.postes[0].lat, lng: im.postes[0].lng, txt: '' }; p.destino = { lat: im.postes[im.postes.length - 1].lat, lng: im.postes[im.postes.length - 1].lng, txt: '' };
-    E(p.id).passos = null; hist(p, 'KMZ IMPORTADO', file.name + ' · ' + im.postes.length + ' postes');
+    E(p.id).passos = null; delete p.redeSeguida; hist(p, 'KMZ IMPORTADO', file.name + ' · ' + im.postes.length + ' postes');
     mudou(p); const M = mapas[p.id]; if (M) M.enquadrado = false;
     SN.toast(`KMZ importado: ${im.postes.length} postes, ${im.elementos.length} elemento(s). Buscando os nomes de rua…`, 'ok');
     pintarDesenho(p); nomesDeRua(p).catch(() => { });
@@ -626,7 +762,8 @@
   const pacote = p => {
     const o = p.orcamento, m = o.metricas || PR.metricas({ ...p, postes: postesDe(p) }), pr = params(p);
     return { nome: p.nome, cabo: pr.cabo, cabo_rot: (PR.CABOS[pr.cabo] || {}).rot || '', ancoragem: pr.ancoragem, ancoragem_rot: (PR.ANCORAGENS[pr.ancoragem] || {}).rot || '',
-      metros_tracado: m.tracado, metros_cabo: m.cabo, n_postes: m.postes, postes: p.postes, elementos: (p.elementos || []).map(({ t, i, nome, txt, fus }) => ({ t, i, nome: nome || '', txt: txt || '', fus: fus || 0 })),
+      metros_tracado: m.tracado, metros_cabo: m.cabo, n_postes: m.postes, metros_sub: m.tracadoSub || 0, n_caixas: m.caixas || 0, n_descidas: m.descidas || 0,
+      base_rot: (PR.BASES[pr.base] || PR.BASES.EXISTENTE).rot, duto_rot: m.tracadoSub ? PR.DUTOS[pr.duto === 'NOVO' ? 'NOVO' : 'EXIST'] : '', postes: p.postes, elementos: (p.elementos || []).map(({ t, i, nome, txt, fus }) => ({ t, i, nome: nome || '', txt: txt || '', fus: fus || 0 })),
       ruas: (p.ruas || []).map(({ nome, postes, metros }) => ({ nome, postes, metros })), materiais: o.materiais.map(({ cod, desc, qtd, un }) => ({ cod, desc, qtd, un })), lpu: o.lpu.map(({ cod, qtd }) => ({ cod, qtd })) };
   };
   const aprovar = async (p, bt) => {
@@ -647,7 +784,7 @@
       passo('Obra…');
       const ruas = (p.ruas || []).map(r => r.nome).filter(n => n && n !== '(sem nome)');
       const rota = { segmento: 'PROJETO', cidade: p.cidade, pop: p.pop || '', endereco: ruas.length ? (ruas.length > 2 ? ruas[0] + ' → … → ' + ruas[ruas.length - 1] : ruas.join(' → ')) : (p.destino && p.destino.txt) || p.nome,
-        servico: `${p.nome} — ${(PR.CABOS[params(p).cabo] || {}).rot || ''}, ${SN.num((p.orcamento.metricas || {}).cabo)} m de cabo, ${(p.orcamento.metricas || {}).postes || 0} postes (${(PR.ANCORAGENS[params(p).ancoragem] || {}).rot || ''})`,
+        servico: `${p.nome} — ${(PR.CABOS[params(p).cabo] || {}).rot || ''}, ${SN.num((p.orcamento.metricas || {}).cabo)} m de cabo, ${(p.orcamento.metricas || {}).postes || 0} postes (${(PR.ANCORAGENS[params(p).ancoragem] || {}).rot || ''})${(p.orcamento.metricas || {}).tracadoSub ? `, ${SN.num(p.orcamento.metricas.tracadoSub)} m subterrâneo` : ''}`,
         solicitante: p.solicitante || '', notificacao: '', metros_previstos: (p.orcamento.metricas || {}).cabo || '', local_url: up.url, prestador: emp, tecnico: tec, data_planejada: data, data_limite: lim,
         observacao: p.obs || '', anexos: anexos.filter(x => /^drive:/.test(String(x.id || ''))), conta: p.conta, id_projeto: p.id, chave_cliente: p.id, projeto: pacote(p) };
       const r = await SN.vst.exec('VST_ROTA_SALVAR', { rota });
@@ -682,16 +819,21 @@
     if (!(opts && opts.semFundo)) { await desenhar(SAT); await desenhar(RUAS_SAT); }
     const P_ = (lat, lng) => [lon2x(lng, z) - x0, lat2y(lat, z) - y0];
     g.save(); const ES = (opts && opts.escala) || 1;
-    const pts = ps.map(x => P_(x.lat, x.lng)), linha = (cor, w, a) => { g.globalAlpha = a; g.strokeStyle = cor; g.lineWidth = w; g.lineJoin = 'round'; g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); g.globalAlpha = 1; };
-    if (o.ancoragem === 'BAP_EXIST') linha('#FF7F1E', 12 * ES, 0.7);
-    if (o.ancoragem === 'BAP') linha('#ffffff', 6 * ES, 1);
-    linha((PR.CABOS[o.cabo] || PR.CABOS['12']).cor, 3.5 * ES, 1);
+    const pts = ps.map(x => P_(x.lat, x.lng)), corCabo = (PR.CABOS[o.cabo] || PR.CABOS['12']).cor;
+    const linha = (tr, cor, w, a, tracejado) => { g.globalAlpha = a; g.strokeStyle = cor; g.lineWidth = w; g.lineJoin = 'round'; g.setLineDash(tracejado || []); g.beginPath(); pts.slice(tr.de, tr.ate + 1).forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); g.globalAlpha = 1; g.setLineDash([]); };
+    PR.trechos(ps).forEach(tr => {
+      if (tr.sub) { linha(tr, '#6b4423', 9 * ES, 0.6); linha(tr, corCabo, 3.5 * ES, 1, [10 * ES, 7 * ES]); return; }
+      if (o.ancoragem === 'BAP_EXIST') linha(tr, '#FF7F1E', 12 * ES, 0.7);
+      if (o.ancoragem === 'BAP') linha(tr, '#ffffff', 6 * ES, 1);
+      linha(tr, corCabo, 3.5 * ES, 1);
+    });
     ps.forEach((x, i) => { const [px, py] = pts[i]; g.save(); g.translate(px, py); g.scale(ES, ES); g.translate(-px, -py);
-      if (k === 'BAP') { g.lineWidth = 3; g.strokeStyle = '#222'; g.beginPath(); g.arc(px, py, 5, 0, 7); g.stroke(); g.lineWidth = 1.6; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 5, 0, 7); g.stroke();
+      if (x.t === 'C') { g.fillStyle = '#fff'; g.strokeStyle = '#222'; g.lineWidth = 2; g.fillRect(px - 5, py - 5, 10, 10); g.strokeRect(px - 5, py - 5, 10, 10); }
+      else if (k === 'BAP') { g.lineWidth = 3; g.strokeStyle = '#222'; g.beginPath(); g.arc(px, py, 5, 0, 7); g.stroke(); g.lineWidth = 1.6; g.strokeStyle = '#fff'; g.beginPath(); g.arc(px, py, 5, 0, 7); g.stroke();
         if (x.t === 'P') { g.strokeStyle = '#222'; g.lineWidth = 2.6; g.beginPath(); g.moveTo(px - 3.5, py - 3.5); g.lineTo(px + 3.5, py + 3.5); g.stroke(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); } }
       else if (x.t === 'E') { const gr = g.createRadialGradient(px - 2, py - 2, 1, px, py, 6); gr.addColorStop(0, '#fff'); gr.addColorStop(1, '#666'); g.fillStyle = gr; g.beginPath(); g.arc(px, py, 6, 0, 7); g.fill(); }
       else { g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 1.4; g.beginPath(); g.arc(px, py, 4.5, 0, 7); g.fill(); g.stroke(); g.fillStyle = '#111'; g.beginPath(); g.arc(px, py, 1.8, 0, 7); g.fill(); }
-      if (opts && opts.numerar && (i % opts.numerar === 0 || i === ps.length - 1)) { g.font = '10px Arial'; g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 3; g.strokeText('P' + (i + 1), px + 7, py - 6); g.fillText('P' + (i + 1), px + 7, py - 6); }
+      if (opts && opts.numerar && (i % opts.numerar === 0 || i === ps.length - 1)) { g.font = '10px Arial'; g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 3; const r = (x.t === 'C' ? 'CX' : 'P') + (i + 1); g.strokeText(r, px + 7, py - 6); g.fillText(r, px + 7, py - 6); }
       g.restore(); });
     const CORES = { CEO_EXIST: '#F5E400', CEO_NOVA: '#7B4DFF', CTO_NOVA: '#FF5FB0', TERCEIRO: '#F04B4B', RT: '#FF6B5A', CLIENTE: '#5BE36B' };
     els.forEach(e => { const pos = PR.posicaoElemento(e, ps); if (!pos) return; const [px, py] = P_(pos[0], pos[1]), def = PR.ELEMENTOS[e.t] || {}; g.save(); g.translate(px, py); g.scale(ES, ES); g.translate(-px, -py);
@@ -724,7 +866,9 @@
     const lx = 220; let y = 22; doc.setFontSize(9);
     const lin = (r, v) => { doc.setFont('helvetica', 'bold'); doc.text(r, lx, y); doc.setFont('helvetica', 'normal'); const t = doc.splitTextToSize(String(v || '—'), 40); doc.text(t, lx + 28, y); y += 4.6 * t.length; };
     lin('Cidade', p.cidade); lin('POP', p.pop); lin('Conta', p.conta ? p.conta.slice(-4) + ' · ' + ((SN.conta(p.conta) || {}).nome || '') : ''); lin('Cliente', p.cliente);
+    lin('Projeto', (PR.BASES[pr.base] || PR.BASES.EXISTENTE).rot);
     lin('Cabo', (PR.CABOS[pr.cabo] || {}).rot); lin('Ancoragem', (PR.ANCORAGENS[pr.ancoragem] || {}).rot); lin('Traçado', fmtM(m.tracado)); lin('Cabo previsto', fmtM(m.cabo));
+    if (m.tracadoSub) { lin('Obra', `${PR.OBRAS[PR.obraDoTracado(ps)]}: ${fmtM(m.tracadoAereo)} aéreo · ${fmtM(m.tracadoSub)} subterrâneo`); lin('Subterrâneo', `${m.caixas} caixa(s) · ${m.descidas} descida(s) · ${PR.DUTOS[pr.duto === 'NOVO' ? 'NOVO' : 'EXIST']}`); }
     lin('Postes', `${m.postes} (${m.enc} encab. · ${m.pas} passagem)`); lin('RT', String(m.rt)); lin('Status', (PR.STATUS[p.status] || {}).rot); lin('Data', SN.data(SN.agora()));
     y += 2; doc.setFont('helvetica', 'bold'); doc.text('Legenda', lx, y); y += 4; doc.setFont('helvetica', 'normal');
     const cor = h => { const n = parseInt(String(h).slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
@@ -732,7 +876,9 @@
     leg(cor((PR.CABOS[pr.cabo] || PR.CABOS['12']).cor), (PR.CABOS[pr.cabo] || {}).rot || 'Cabo');
     if (pr.ancoragem === 'BAP') leg([190, 190, 190], 'Cordoalha dielétrica');
     if (pr.ancoragem === 'BAP_EXIST') leg([255, 127, 30], 'Rede existente', 2.5);
+    if (m.tracadoSub) leg([107, 68, 35], 'Trecho subterrâneo (tracejado)', 2.5);
     doc.setLineWidth(0.3); doc.setDrawColor(0);
+    if (m.caixas) { doc.rect(lx + 3.4, y - 2.9, 3.2, 3.2); doc.text('Caixa subterrânea', lx + 13, y); y += 4.4; }
     [['Encabeçamento', 'E'], ['Passagem', 'P']].forEach(([t, k]) => { doc.circle(lx + 5, y - 1.3, 1.6); if (k === 'P' && pr.ancoragem !== 'FITA') doc.line(lx + 3.9, y - 2.4, lx + 6.1, y - 0.2); doc.text(t + (pr.ancoragem === 'FITA' ? ' c/ fita' : ' c/ BAP'), lx + 13, y); y += 4.4; });
     const tiposEl = [...new Set((p.elementos || []).map(e => e.t))];
     tiposEl.forEach(t => { const c = { CEO_EXIST: [245, 228, 0], CEO_NOVA: [123, 77, 255], CTO_NOVA: [255, 95, 176], TERCEIRO: [240, 75, 75], RT: [255, 107, 90], CLIENTE: [91, 227, 107] }[t] || [255, 255, 255];
@@ -752,7 +898,7 @@
     [['Cidade / POP', [p.cidade, p.pop].filter(Boolean).join(' · ')], ['Conta', SN.contaTxt(p.conta)], ['Solicitante', p.solicitante], ['Observação', p.obs]].forEach(([r, v]) => { if (v) linha([r, v], [40, 146]); });
     if ((p.ruas || []).length) { sec('Ruas do trajeto'); linha(['Rua', 'Postes', 'Metros'], Object.assign([120, 30, 36], { al: ['', 'num', 'num'] }), true); p.ruas.forEach(r => linha([r.nome, r.postes, SN.num(r.metros)], Object.assign([120, 30, 36], { al: ['', 'num', 'num'] }))); }
     const elementos = (p.elementos || []).filter(e => e.t !== 'INFO' || e.txt);
-    if (elementos.length) { sec('Elementos da rede'); elementos.forEach(e => linha([`P${String(e.i + 1).padStart(2, '0')}`, ((PR.ELEMENTOS[e.t] || {}).rot || e.t) + (e.nome ? ' ' + e.nome : '') + (e.t === 'INFO' ? ': ' + e.txt : '') + (e.fus ? ` · ${e.fus} fusão(ões)` : '')], [20, 166])); }
+    if (elementos.length) { sec('Elementos da rede'); elementos.forEach(e => linha([`${ps[e.i] && ps[e.i].t === 'C' ? 'CX' : 'P'}${nPonto(e.i)}`, ((PR.ELEMENTOS[e.t] || {}).rot || e.t) + (e.nome ? ' ' + e.nome : '') + (e.t === 'INFO' ? ': ' + e.txt : '') + (e.fus ? ` · ${e.fus} fusão(ões)` : '')], [20, 166])); }
     const LM = comValores ? Object.assign([24, 92, 22, 22, 26], { al: ['', '', 'num', 'num', 'num'] }) : Object.assign([26, 120, 40], { al: ['', '', 'num'] });
     sec('Materiais');
     linha(comValores ? ['Código', 'Material', 'Qtd', 'Unit.', 'Total'] : ['Código', 'Material', 'Quantidade'], LM, true);
@@ -774,7 +920,8 @@
     htmlPacoteTecnico: r => {
       const pj = r.projeto || {}, cab = pj.cabo_rot || '';
       return `<div class="card" style="margin-bottom:10px"><h3>📐 Projeto ${esc(r.id_projeto || '')}</h3>
-        <div class="small">${esc(cab)} · ${esc(pj.ancoragem_rot || '')}<br>Traçado <b>${fmtM(pj.metros_tracado)}</b> · cabo previsto <b>${fmtM(pj.metros_cabo)}</b> · <b>${SN.num(pj.n_postes)}</b> postes</div>
+        <div class="small">${pj.base_rot ? esc(pj.base_rot) + '<br>' : ''}${esc(cab)} · ${esc(pj.ancoragem_rot || '')}<br>Traçado <b>${fmtM(pj.metros_tracado)}</b> · cabo previsto <b>${fmtM(pj.metros_cabo)}</b> · <b>${SN.num(pj.n_postes)}</b> postes
+          ${pj.metros_sub ? `<br>Subterrâneo <b>${fmtM(pj.metros_sub)}</b> · <b>${SN.num(pj.n_caixas)}</b> caixa(s) · <b>${SN.num(pj.n_descidas)}</b> descida(s)${pj.duto_rot ? ' · ' + esc(pj.duto_rot) : ''}` : ''}</div>
         <div class="acoes" style="margin-top:8px">${r.local_url ? `<a class="btn sm prim" href="${esc(r.local_url)}" target="_blank" rel="noopener">🌍 Abrir KMZ</a>` : ''}<button class="btn sm" id="pjVerMapa">🗺️ Ver traçado</button></div>
         <div id="pjMapa" class="prj-mapa prj-mapa-tec" hidden></div>
         ${(pj.ruas || []).length ? `<details style="margin-top:8px"><summary class="small"><b>Ruas</b> (${pj.ruas.length})</summary><div class="small">${pj.ruas.map(x => `${esc(x.nome)} — ${SN.num(x.postes)} postes, ${SN.num(x.metros)} m`).join('<br>')}</div></details>` : ''}
@@ -793,8 +940,11 @@
           await carregarLeaflet(); const L = window.L, pj = r.projeto, ps = PR.decodificarPostes(pj.postes || '', { ancoragem: pj.ancoragem }), k = pj.ancoragem === 'FITA' ? 'FITA' : 'BAP';
           const mapa = L.map(el).setView([ps[0].lat, ps[0].lng], 17); el._feito = true;
           L.layerGroup([L.tileLayer(SAT, { maxNativeZoom: 19, maxZoom: 21 }), L.tileLayer(RUAS_SAT, { maxNativeZoom: 19, maxZoom: 21 })]).addTo(mapa);
-          L.polyline(ps.map(x => [x.lat, x.lng]), { color: (PR.CABOS[pj.cabo] || PR.CABOS['12']).cor, weight: 4 }).addTo(mapa);
-          ps.forEach((x, i) => L.marker([x.lat, x.lng], { icon: icone(svgPoste(k, x.t), 16, 16) }).addTo(mapa).bindTooltip('P' + (i + 1) + ' · ' + (x.t === 'E' ? 'encabeçamento' : 'passagem')));
+          const corT = (PR.CABOS[pj.cabo] || PR.CABOS['12']).cor;
+          PR.trechos(ps).forEach(tr => { const lin = ps.slice(tr.de, tr.ate + 1).map(x => [x.lat, x.lng]);
+            if (tr.sub) L.polyline(lin, { color: '#6b4423', weight: 9, opacity: 0.55 }).addTo(mapa).bindTooltip('Trecho subterrâneo');
+            L.polyline(lin, { color: corT, weight: 4, dashArray: tr.sub ? '8 6' : null }).addTo(mapa); });
+          ps.forEach((x, i) => L.marker([x.lat, x.lng], { icon: icone(svgPoste(k, x.t), 16, 16) }).addTo(mapa).bindTooltip(x.t === 'C' ? 'CX' + (i + 1) + ' · caixa subterrânea' : 'P' + (i + 1) + ' · ' + (x.t === 'E' ? 'encabeçamento' : 'passagem') + (x.d ? ' · descida' : '')));
           (pj.elementos || []).forEach(e => { const pos = PR.posicaoElemento(e, ps), svg = SVG_EL[e.t]; if (pos && svg) L.marker(pos, { icon: icone(svg, 22, 30, 29) }).addTo(mapa).bindTooltip(esc(e.t === 'INFO' ? e.txt : e.nome || (PR.ELEMENTOS[e.t] || {}).kml || e.t), { permanent: true, direction: 'right', className: 'prj-rot' }); });
           mapa.fitBounds(L.latLngBounds(ps.map(x => [x.lat, x.lng])).pad(0.1));
           if (navigator.geolocation) navigator.geolocation.getCurrentPosition(g => L.circleMarker([g.coords.latitude, g.coords.longitude], { radius: 7, color: '#fff', fillColor: '#2b6cb0', fillOpacity: 1, weight: 2 }).addTo(mapa).bindTooltip('Você'), () => { }, { timeout: 8000 });

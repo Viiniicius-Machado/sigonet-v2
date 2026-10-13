@@ -215,6 +215,85 @@
     return l.sort(function (a, b) { return b.km - a.km; })[0] || null;
   };
 
+  // ─────────── Traçado pela rede existente (projetos de melhoria) ───────────
+  // Caminho mais curto de "a" até "b" andando sobre os cabos lançados (os "NÃO LANÇADO" ficam de fora).
+  // Os cabos viram um grafo: vértices iguais (~1 m) se ligam, e a ponta de um cabo se liga ao cabo mais
+  // perto a até "ligar" metros (cabos se encontram na caixa sem vértice em comum). "a" e "b" entram no
+  // cabo mais perto a até "maxPonta" metros. Devolve { pts, metros, ligA, ligB, cabos: [nomes na ordem] }
+  // ou { erro }.
+  var proj = function (p, a, b) {
+    var P = xy(p, a), B = xy(b, a), L2 = B[0] * B[0] + B[1] * B[1], t = L2 ? Math.max(0, Math.min(1, (P[0] * B[0] + P[1] * B[1]) / L2)) : 0;
+    return { d: Math.sqrt((P[0] - t * B[0]) * (P[0] - t * B[0]) + (P[1] - t * B[1]) * (P[1] - t * B[1])), t: t };
+  };
+  R.rotaPelaRede = function (d, a, b, opts) {
+    var o = opts || {}, ligar = o.ligar || 15, maxPonta = o.maxPonta || 300;
+    var nos = [], idx = {}, adj = [], segs = [], grade = {};
+    var no = function (p) { var k = Math.round(p[0] * 1e5) + '|' + Math.round(p[1] * 1e5); if (idx[k] == null) { idx[k] = nos.length; nos.push(p); adj.push([]); } return idx[k]; };
+    var aresta = function (u, v, w, c) { if (u === v) return; adj[u].push([v, w, c]); adj[v].push([u, w, c]); };
+    (d.cabos || []).forEach(function (c, k) {
+      if (R.naoLancado(c.n, c.d) || !c.pts || c.pts.length < 2) return;
+      for (var i = 1; i < c.pts.length; i++) {
+        var u = no(c.pts[i - 1]), v = no(c.pts[i]), w = R.dist(c.pts[i - 1], c.pts[i]), s = segs.length;
+        aresta(u, v, w, k); segs.push({ u: u, v: v, a: c.pts[i - 1], b: c.pts[i], w: w, k: k });
+        var a0 = c.pts[i - 1], b0 = c.pts[i];
+        for (var x = Math.floor(Math.min(a0[0], b0[0]) / G); x <= Math.floor(Math.max(a0[0], b0[0]) / G); x++)
+          for (var y = Math.floor(Math.min(a0[1], b0[1]) / G); y <= Math.floor(Math.max(a0[1], b0[1]) / G); y++) (grade[x + '|' + y] = grade[x + '|' + y] || []).push(s);
+      }
+    });
+    if (!segs.length) return { erro: 'A cidade não tem cabos lançados no GeoGrid.' };
+    var maisPerto = function (p, raio, evitar) {
+      var r = Math.ceil(raio / 100) + 1, bx = Math.floor(p[0] / G), by = Math.floor(p[1] / G), m = null, visto = {};
+      for (var x = bx - r; x <= bx + r; x++) for (var y = by - r; y <= by + r; y++) (grade[x + '|' + y] || []).forEach(function (s) {
+        if (visto[s]) return; visto[s] = 1; var sg = segs[s]; if (evitar != null && (sg.u === evitar || sg.v === evitar)) return;
+        var q = proj(p, sg.a, sg.b); if (q.d <= raio && (!m || q.d < m.d)) m = { s: s, d: q.d, t: q.t };
+      });
+      return m;
+    };
+    var dividir = function (m) {
+      var sg = segs[m.s]; if (m.t <= 0.001) return sg.u; if (m.t >= 0.999) return sg.v;
+      var n = nos.length; nos.push([sg.a[0] + m.t * (sg.b[0] - sg.a[0]), sg.a[1] + m.t * (sg.b[1] - sg.a[1])]); adj.push([]);
+      aresta(n, sg.u, sg.w * m.t, sg.k); aresta(n, sg.v, sg.w * (1 - m.t), sg.k); return n;
+    };
+    var nSegs = segs.length;
+    (d.cabos || []).forEach(function (c) {
+      if (R.naoLancado(c.n, c.d) || !c.pts || c.pts.length < 2) return;
+      [c.pts[0], c.pts[c.pts.length - 1]].forEach(function (p) { var u = no(p), m = maisPerto(p, ligar, u); if (m && m.s < nSegs) aresta(u, dividir(m), m.d, -1); });
+    });
+    var ma = maisPerto(a, maxPonta), mb = maisPerto(b, maxPonta);
+    if (!ma) return { erro: 'A origem está a mais de ' + maxPonta + ' m de qualquer cabo lançado do GeoGrid.' };
+    if (!mb) return { erro: 'O destino está a mais de ' + maxPonta + ' m de qualquer cabo lançado do GeoGrid.' };
+    var na = nos.length; nos.push(a); adj.push([]); aresta(na, dividir(ma), ma.d, -1);
+    var nb = nos.length; nos.push(b); adj.push([]); aresta(nb, dividir(mb), mb.d, -1);
+    // Dijkstra com heap binário
+    var dist = new Float64Array(nos.length).fill(Infinity), ant = new Int32Array(nos.length).fill(-1), via = new Int32Array(nos.length).fill(-1), h = [];
+    var sobe = function (i) { while (i > 0) { var pai = (i - 1) >> 1; if (h[pai][0] <= h[i][0]) break; var t = h[pai]; h[pai] = h[i]; h[i] = t; i = pai; } };
+    var desce = function (i) { for (;;) { var l = 2 * i + 1, r = l + 1, m = i; if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r; if (m === i) break; var t = h[m]; h[m] = h[i]; h[i] = t; i = m; } };
+    dist[na] = 0; h.push([0, na]);
+    while (h.length) {
+      var top = h[0], last = h.pop(); if (h.length) { h[0] = last; desce(0); }
+      var u = top[1]; if (top[0] > dist[u]) continue; if (u === nb) break;
+      adj[u].forEach(function (e) { var nd = dist[u] + e[1]; if (nd < dist[e[0]]) { dist[e[0]] = nd; ant[e[0]] = u; via[e[0]] = e[2]; h.push([nd, e[0]]); sobe(h.length - 1); } });
+    }
+    if (!isFinite(dist[nb])) return { erro: 'Os cabos do GeoGrid perto da origem e do destino não se ligam: desenhe o caminho no mapa.' };
+    var pts = [], cabos = [];
+    for (var k = nb; k !== -1; k = ant[k]) { pts.push(nos[k]); if (via[k] >= 0) { var nm = d.cabos[via[k]].n; if (cabos[cabos.length - 1] !== nm) cabos.push(nm); } }
+    pts.reverse(); cabos.reverse();
+    return { pts: pts, metros: Math.round(dist[nb]), ligA: Math.round(ma.d), ligB: Math.round(mb.d), cabos: cabos };
+  };
+  // Quanto do traçado está longe da rede existente: amostra a cada ~10 m e mede até o cabo lançado mais perto.
+  // Devolve { metros, vaos: [índice do 1º ponto de cada vão fora] } — vão fora = mais da metade das amostras a > tol.
+  R.foraDaRede = function (d, pts, tol) {
+    tol = tol || 20; var out = { metros: 0, vaos: [] };
+    if (!d._lanc) Object.defineProperty(d, '_lanc', { value: { cidade: d.cidade, cabos: (d.cabos || []).filter(function (c) { return !R.naoLancado(c.n, c.d); }), caixas: [] }, enumerable: false });
+    for (var i = 1; i < (pts || []).length; i++) {
+      var a = pts[i - 1], b = pts[i], L = R.dist(a, b), n = Math.max(2, Math.ceil(L / 10)), fora = 0;
+      for (var j = 0; j <= n; j++) { var f = j / n; if (R.caboMaisPerto(d._lanc, a[0] + f * (b[0] - a[0]), a[1] + f * (b[1] - a[1])).d > tol) fora++; }
+      if (fora / (n + 1) > 0.5) { out.vaos.push(i - 1); out.metros += L; }
+    }
+    out.metros = Math.round(out.metros);
+    return out;
+  };
+
   if (typeof module !== 'undefined' && module.exports) module.exports = R;
   else raiz.REDE = R;
 })(typeof window !== 'undefined' ? window : this);
