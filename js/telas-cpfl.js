@@ -460,8 +460,12 @@
       const mp = L.map(m, { zoomAnimation: false }); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(mp);
       const pts = res.seq.map(x => pt(porId[x.id]));
       L.polyline(pts, { color: '#2563eb', weight: 4, opacity: 0.8, dashArray: '8 6' }).addTo(mp);
-      res.seq.forEach((x, k) => L.marker(pts[k], { icon: L.divIcon({ className: 'prj-ico', html: `<div class="cp-num ${x.conflito ? 'erro' : ''}">${x.ordem}</div>`, iconSize: [26, 26], iconAnchor: [13, 13] }) }).addTo(mp)
-        .bindTooltip(`${x.ordem} · ${x.inicio} · ${esc(tipoRot(porId[x.id].tipo))} ${esc(numTxt(porId[x.id]))}`));
+      // Paradas no mesmo lugar (até ~30 m) viram um alfinete só ("1·2"); senão o número de cima esconde o de baixo.
+      const grupos = [];
+      res.seq.forEach((x, k) => { const g = grupos.find(g => mp.distance(g.p, pts[k]) < 30); if (g) g.itens.push(x); else grupos.push({ p: pts[k], itens: [x] }); });
+      grupos.forEach(g => { const rot = g.itens.map(x => x.ordem).join('·'), larg = Math.max(26, 12 + rot.length * 8);
+        L.marker(g.p, { icon: L.divIcon({ className: 'prj-ico', html: `<div class="cp-num ${g.itens.some(x => x.conflito) ? 'erro' : ''}" style="width:${larg}px;border-radius:13px">${rot}</div>`, iconSize: [larg, 26], iconAnchor: [larg / 2, 13] }) }).addTo(mp)
+          .bindTooltip(g.itens.map(x => `${x.ordem} · ${x.inicio} · ${esc(tipoRot(porId[x.id].tipo))} ${esc(numTxt(porId[x.id]))}`).join('<br>')); });
       mp.fitBounds(L.latLngBounds(pts).pad(0.2), { animate: false, maxZoom: 16 }); }).catch(() => { });
   };
   // Despacha a rota inteira: conta + técnico; cria/atualiza os chamados com a ordem e a hora prevista.
