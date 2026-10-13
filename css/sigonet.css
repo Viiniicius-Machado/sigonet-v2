@@ -599,6 +599,8 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 .prj-mapa-col{min-width:0;display:flex;flex-direction:column;gap:12px}
 .prj-mapa-col .card{margin:0}
 .prj-mapa{height:min(68vh,720px);min-height:360px;border-radius:8px;overflow:hidden;background:#dfe4da}
+/* As camadas do Leaflet usam z-index 400–1000; isolar o mapa impede que passem por cima dos modais (z-index 100). */
+.leaflet-container{isolation:isolate}
 .prj-mapa-tec{height:340px;min-height:0;margin-top:8px}
 .prj-barra{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
 .prj-linha{display:flex;gap:6px;align-items:center}
