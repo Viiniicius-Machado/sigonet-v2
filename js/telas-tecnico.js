@@ -460,13 +460,13 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     SN.$('#lpuLista').innerHTML = vis.map(i => `<div class="item-lpu ${qtd[i.cod] ? 'tem' : ''}"><div><div class="d">${SN.esc(i.desc)}</div>${i.tec ? `<div class="t">${SN.esc(i.tec)}</div>` : ''}
       <div class="c">${i.cod} · ${i.classe} · por ${i.medida}
       ${vinc === 'PRESTADOR' && i.valorCritico != null ? ` · <label title="Marque quando o serviço foi em condição crítica (valor crítico da tabela); desmarcado = valor comum"><input type="checkbox" data-f="${i.cod}" ${fator[i.cod] === 'critico' ? 'checked' : ''} ${editavel ? '' : 'disabled'}> condição crítica</label>` : ''}</div></div>
-      <label class="small" style="display:flex;flex-direction:column;gap:2px;color:var(--texto-2)">Qtd<input class="inp" type="number" min="0" step="any" inputmode="decimal" data-q="${i.cod}" value="${qtd[i.cod] || ''}" placeholder="0" ${editavel ? '' : 'disabled'}></label>
+      <label class="small" style="display:flex;flex-direction:column;gap:2px;color:var(--texto-2)">Qtd<input class="inp" type="text" inputmode="decimal" autocomplete="off" data-br="1" data-q="${i.cod}" value="${SN.numeroBrTxt(qtd[i.cod] || '')}" placeholder="0" ${editavel ? '' : 'disabled'}></label>
       ${editavel ? `<button type="button" class="btn lpu-foto-bt" data-fb="${i.cod}" title="Fotos deste serviço">Fotos${(fotosIt[i.cod] || []).length ? `<span class="n">${fotosIt[i.cod].length}</span>` : ''}</button>` : '<span></span>'}
       <div class="lpu-foto-acoes" data-fa="${i.cod}" hidden>
         <label class="btn sm prim">📷 Tirar foto<input type="file" accept="image/*" capture="environment" hidden data-cam="${i.cod}"></label>
         <label class="btn sm">🖼 Galeria<input type="file" accept="image/*" multiple hidden data-gal="${i.cod}"></label></div>
       <div class="fotos mini" data-fl="${i.cod}"></div></div>`).join('') || '<p class="muted">Nenhum serviço.</p>';
-    SN.$$('[data-q]').forEach(inp => inp.oninput = () => { const v = parseFloat(inp.value); if (v > 0) qtd[inp.dataset.q] = v; else delete qtd[inp.dataset.q];
+    SN.$$('[data-q]').forEach(inp => inp.oninput = () => { const v = SN.numeroBr(inp.value); if (v > 0) qtd[inp.dataset.q] = v; else delete qtd[inp.dataset.q];
       inp.parentElement.classList.toggle('tem', v > 0); SN.$('#lpuCont').textContent = Object.keys(qtd).length + ' item(ns)'; });
     SN.$$('[data-f]').forEach(cb => cb.onchange = () => { fator[cb.dataset.f] = cb.checked ? 'critico' : 'comum'; guardarRasc(); });
     SN.$$('[data-q]').forEach(inp => inp.addEventListener('change', guardarRasc));

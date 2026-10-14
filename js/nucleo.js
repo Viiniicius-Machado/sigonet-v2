@@ -61,6 +61,25 @@ SN.dt = iso => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', mon
 SN.data = iso => iso ? new Date(iso).toLocaleDateString('pt-BR') : '—';
 SN.hora = iso => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—';
 SN.brl = v => (v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+// Número digitado do jeito brasileiro (14/10/2026: o técnico digitou "2.213" m e o campo
+// numérico do celular entendeu 2,213 → saiu "2 m"). Ponto separa milhar, vírgula é decimal.
+// "2.213" → 2213 · "2.213,5" → 2213.5 · "12,5" → 12.5 · "1.5" → 1.5 · "" → ''. Inválido → NaN.
+SN.numeroBr = v => {
+  let s = String(v == null ? '' : v).replace(/\s/g, ''); if (s === '') return '';
+  if (/^\d{1,3}(\.\d{3})+(,\d*)?$/.test(s) || (s.includes('.') && s.includes(','))) s = s.replace(/\./g, '').replace(',', '.');
+  else s = s.replace(',', '.');
+  return /^\d*\.?\d+$|^\d+\.$/.test(s) ? Number(s) : NaN;
+};
+SN.numeroBrTxt = v => v === '' || v == null ? '' : String(v).replace('.', ','); // valor guardado → campo de texto
+// Campos <input data-br>: mostra embaixo como o número foi entendido quando tem ponto ou vírgula.
+document.addEventListener('input', ev => {
+  const i = ev.target; if (!i || !i.matches || !i.matches('input[data-br]')) return;
+  let h = i.parentElement.querySelector(':scope > .br-lido');
+  if (!h) { h = document.createElement('div'); h.className = 'br-lido small'; i.insertAdjacentElement('afterend', h); }
+  const v = SN.numeroBr(i.value);
+  h.style.color = Number.isNaN(v) ? 'var(--erro)' : 'var(--texto-3)';
+  h.textContent = Number.isNaN(v) ? 'Número inválido' : /[.,]/.test(i.value) ? 'Entendido: ' + v.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + (i.dataset.br !== '1' ? ' ' + i.dataset.br : '') : '';
+});
 SN.num = (v, d = 0) => (v == null || isNaN(v)) ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: d, minimumFractionDigits: d });
 SN.min = (a, b) => (a && b) ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null;
 SN.dur = m => {

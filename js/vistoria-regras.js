@@ -567,8 +567,7 @@ var VR = (function () {
       var v = campos[d.k];
       if (d.tipo === 'num' || d.tipo === 'int') {
         if (v === '' || v == null) v = '';
-        else if (!numero(String(v).replace(',', '.'))) { erros.push(d.rot + ': número inválido.'); return; }
-        else v = Number(String(v).replace(',', '.'));
+        else { v = R.numeroBr(v); if (!numero(v)) { erros.push(d.rot + ': número inválido.'); return; } }
         if (d.tipo === 'int' && v !== '' && (v < 0 || Math.floor(v) !== v)) { erros.push(d.rot + ': use um número inteiro.'); return; }
       } else v = v == null ? '' : String(v).trim();
       if (d.tipo === 'lista' && v !== '' && L.valores(d.lista).indexOf(v) < 0) { erros.push(d.rot + ': valor fora da lista.'); return; }
@@ -881,6 +880,15 @@ var VR = (function () {
     return out;
   };
 
+  // Número no jeito brasileiro: ponto = milhar, vírgula = decimal ("2.213" → 2213; "12,5" → 12.5).
+  // Igual a SN.numeroBr do app; aqui para valer também no servidor (correção do revisor).
+  R.numeroBr = function (x) {
+    if (typeof x === 'number') return x;
+    var s = String(x == null ? '' : x).replace(/\s/g, ''); if (s === '') return '';
+    if (/^\d{1,3}(\.\d{3})+(,\d*)?$/.test(s) || (s.indexOf('.') >= 0 && s.indexOf(',') >= 0)) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(',', '.');
+    return /^\d*\.?\d+$|^\d+\.$/.test(s) ? Number(s) : NaN;
+  };
   R.CAMPOS_PRODUCAO = ['metros', 'postes', 'cordoalha', 'plaquetas', 'caixas', 'sobra'];
   R.validarApontamento = function (a) {
     a = a || {}; var erros = [];
@@ -889,6 +897,8 @@ var VR = (function () {
     if (['parcial', 'final'].indexOf(a.tipo) < 0) erros.push('Escolha Parcial ou Finalizado.');
     if (R.ms(a.data) == null) erros.push('Informe a data do apontamento.');
     if (!numero(a.metros) || Number(a.metros) < 0) erros.push('Informe os metros percorridos (0 se não percorreu).');
+    // Metros quebrados = quase sempre "2.213" lido como 2,213 por app antigo (14/10/2026).
+    else if (Number(a.metros) % 1 !== 0) erros.push('Rota percorrida: informe os metros inteiros (ex.: 2213). Recebido ' + a.metros + ' — se digitou 2.213, o certo é 2213.');
     ['postes', 'plaquetas', 'caixas', 'sobra'].forEach(function (k) { if (!inteiroNaoNeg(a[k] === '' || a[k] == null ? 0 : a[k])) erros.push('Número inválido em ' + k + '.'); });
     if (a.cordoalha !== '' && a.cordoalha != null && (!numero(a.cordoalha) || Number(a.cordoalha) < 0)) erros.push('Número inválido em cordoalha.');
     if (a.tipo === 'parcial' && !(Number(a.metros) > 0) && !R.CAMPOS_PRODUCAO.some(function (k) { return Number(a[k]) > 0; }))

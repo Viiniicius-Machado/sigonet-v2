@@ -146,14 +146,14 @@
         ${faltamDoProjeto.length ? `<button type="button" class="btn sm" id="aUsarProjeto" style="margin-bottom:6px">📐 Trazer os ${faltamDoProjeto.length} serviço(s) do projeto (quantidade estimada — ajuste para o que fez)</button>` : ''}
         ${its.length ? `<div>${its.map((i, n) => { const it = SN.itemLpu(i.cod) || {};
           return `<div class="item-lpu" style="grid-template-columns:1fr 90px auto;align-items:center"><div><div class="d">${esc(it.desc || i.cod)}</div><div class="c mono">${esc(i.cod)} · ${esc(it.medida || '')}</div>${it.tec ? `<div class="t">${esc(it.tec)}</div>` : ''}</div>
-            <input class="inp" type="number" inputmode="decimal" min="0" step="any" data-qtd="${n}" value="${esc(i.qtd ?? '')}"><button type="button" class="btn sm" data-tira="${n}">×</button></div>`; }).join('')}</div>` : '<p class="small muted">Nenhum serviço ainda.</p>'}
+            <input class="inp" type="text" inputmode="decimal" autocomplete="off" data-br="1" data-qtd="${n}" value="${esc(SN.numeroBrTxt(i.qtd ?? ''))}"><button type="button" class="btn sm" data-tira="${n}">×</button></div>`; }).join('')}</div>` : '<p class="small muted">Nenhum serviço ainda.</p>'}
         <div style="display:flex;gap:6px;margin-top:6px"><select class="inp" id="aNovoItem" style="flex:1;min-width:0"><option value="">Adicionar serviço…</option>${cat.filter(i => !its.some(x => x.cod === i.cod)).map(i => `<option value="${esc(i.cod)}">${esc(i.cod)} · ${esc(i.desc)} (${esc(i.medida)})</option>`).join('')}</select></div></div>`;
     })();
     el.innerHTML = `<div class="card vst-bloco"><h3>${f.refazendo ? '✏️ Refazer apontamento' : '➕ Apontar produção'}</h3>
       <div class="campo"><label>Tipo *</label><div class="chips">${L.tipo_apontamento.map(([v, r]) => `<button type="button" class="chip ${f.tipo === v ? 'sel' : ''}" data-tipo="${v}">${r}</button>`).join('')}</div>
         <div class="small muted">"Finalizado" conclui a atividade. Use "Parcial" quando a equipe volta outro dia.</div></div>
       <div class="campo"><label>Data *</label><input class="inp" type="date" data-a="data" value="${esc(String(f.data || '').slice(0, 10))}"></div>
-      ${ret() ? L.producao_retirada.map(c => `<div class="campo"><label>${esc(c.rot)}${c.k === 'metros' ? ' *' : ''}</label><input class="inp" type="number" inputmode="decimal" min="0" step="any" data-a="${c.k}" data-num="1" value="${esc(f[c.k] ?? '')}"></div>`).join('') : servicos}
+      ${ret() ? L.producao_retirada.map(c => `<div class="campo"><label>${esc(c.rot)}${c.k === 'metros' ? ' *' : ''}</label><input class="inp" type="text" inputmode="decimal" autocomplete="off" data-br="${c.k === 'metros' ? 'm' : '1'}" data-a="${c.k}" data-num="1" value="${esc(SN.numeroBrTxt(f[c.k] ?? ''))}"></div>`).join('') : servicos}
       <div class="small muted" style="margin:6px 0">📷 Fotos obrigatórias (saem com data, hora, endereço e coordenadas).</div>
       ${(L.fotos_prog[A.rota.segmento] || []).map(c => `<div class="vst-foto"><div class="rot">${esc((L.foto(c.tipo) || {}).rot)} <span data-cont="${c.tipo}"></span> <span class="muted">· ${esc(c.regra)}</span></div><div class="vst-thumbs" data-fotos="${c.tipo}"></div></div>`).join('')}
       <div class="campo"><label>Observação</label><textarea class="inp" data-a="observacao">${esc(f.observacao || '')}</textarea></div>
@@ -162,8 +162,8 @@
       ${f.refazendo ? '<button class="btn bloco" id="aCancelar" style="margin-top:6px">Cancelar</button>' : ''}</div>`;
     pintarThumbs(); validarNaTela();
     SN.$$('[data-tipo]', el).forEach(b => b.onclick = () => { f.tipo = f.tipo === b.dataset.tipo ? '' : b.dataset.tipo; salvarRascunho(); pintarForm(); });
-    SN.$$('[data-a]', el).forEach(i => i.oninput = () => { const k = i.dataset.a; f[k] = i.dataset.num ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); });
-    SN.$$('[data-qtd]', el).forEach(i => i.oninput = () => { f.itens[+i.dataset.qtd].qtd = i.value === '' ? '' : Number(i.value); salvarRascunho(); validarNaTela(); });
+    SN.$$('[data-a]', el).forEach(i => i.oninput = () => { const k = i.dataset.a; f[k] = i.dataset.num ? SN.numeroBr(i.value) : i.value; salvarRascunho(); validarNaTela(); });
+    SN.$$('[data-qtd]', el).forEach(i => i.oninput = () => { f.itens[+i.dataset.qtd].qtd = SN.numeroBr(i.value); salvarRascunho(); validarNaTela(); });
     SN.$$('[data-tira]', el).forEach(b => b.onclick = () => { f.itens.splice(+b.dataset.tira, 1); salvarRascunho(); pintarForm(); });
     if (SN.$('#aUsarProjeto')) SN.$('#aUsarProjeto').onclick = () => { (A.rota.projeto.lpu || []).forEach(x => { if (!f.itens.some(i => i.cod === x.cod)) f.itens.push({ cod: x.cod, qtd: x.qtd }); }); salvarRascunho(); pintarForm(); };
     if (SN.$('#aNovoItem')) SN.$('#aNovoItem').onchange = ev => { if (!ev.target.value) return; f.itens.push({ cod: ev.target.value, qtd: '' }); salvarRascunho(); pintarForm();

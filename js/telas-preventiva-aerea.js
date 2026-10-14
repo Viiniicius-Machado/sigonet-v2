@@ -198,7 +198,7 @@
     const f = A.form || (A.form = novoForm());
     // Cada item da produção tem o seu quadro de fotos; a quantidade exigida acompanha o número digitado.
     const item = c => `<div class="vst-foto" data-item="${c.k}"><div class="campo" style="margin-bottom:6px"><label>${c.rot}${c.k === 'metros' ? ' *' : ''}</label>
-        <input class="inp" type="number" inputmode="decimal" min="0" step="any" data-a="${c.k}" value="${esc(f[c.k] ?? '')}"></div>
+        <input class="inp" type="text" inputmode="decimal" autocomplete="off" data-br="${c.un || '1'}" data-a="${c.k}" value="${esc(SN.numeroBrTxt(f[c.k] ?? ''))}"></div>
       <div class="rot"><span data-cont="${c.k}"></span> <span class="muted">· ${esc(c.regra)}</span></div>
       <div class="vst-thumbs" data-fotos="${c.k}"></div></div>`;
     el.innerHTML = `<div class="card vst-bloco"><h3>${f.refazendo ? '✏️ Refazer apontamento' : '➕ Apontar produção'}</h3>
@@ -214,7 +214,7 @@
       ${f.refazendo ? '<button class="btn bloco" id="aCancelar" style="margin-top:6px">Cancelar</button>' : ''}</div>`;
     pintarThumbs(); validarNaTela();
     SN.$$('[data-tipo]', el).forEach(b => b.onclick = () => { f.tipo = f.tipo === b.dataset.tipo ? '' : b.dataset.tipo; salvarRascunho(); pintarForm(); });
-    SN.$$('[data-a]', el).forEach(i => { i.oninput = () => { const k = i.dataset.a; f[k] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; salvarRascunho(); validarNaTela(); contarFotos(); }; });
+    SN.$$('[data-a]', el).forEach(i => { i.oninput = () => { const k = i.dataset.a; f[k] = i.dataset.br ? SN.numeroBr(i.value) : i.value; salvarRascunho(); validarNaTela(); contarFotos(); }; });
     SN.$('#aEnviar').onclick = enviar;
     if (SN.$('#aCancelar')) SN.$('#aCancelar').onclick = () => { A.form = null; pintarForm(); };
   };
