@@ -114,8 +114,8 @@
       <div id="prjCorpo"></div>`);
     SN.$$('[data-abaprj]').forEach(b => b.onclick = () => { e.aba = b.dataset.abaprj; abrirProjeto(id); });
     SN.$('#bKmz').onclick = () => baixarKmz(p).catch(err => SN.toast(err.message, 'erro'));
-    SN.$('#bPdfEq').onclick = () => SN.abrirPdfDepois(() => pdfProjeto(p, false));
-    SN.$('#bPdfOrc').onclick = () => SN.abrirPdfDepois(() => pdfProjeto(p, true));
+    SN.$('#bPdfEq').onclick = () => SN.abrirPdfDepois(() => pdfProjeto(p, false), [p.id, p.nome, p.cidade, 'Equipe'].filter(Boolean).join(' - '));
+    SN.$('#bPdfOrc').onclick = () => SN.abrirPdfDepois(() => pdfProjeto(p, true), [p.id, p.nome, p.cidade, 'Orçamento'].filter(Boolean).join(' - '));
     ({ DESENHO: pintarDesenho, ORCAMENTO: pintarOrcamento, APROVACAO: pintarAprovacao })[e.aba](p);
   };
 

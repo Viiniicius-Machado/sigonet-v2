@@ -151,6 +151,9 @@ SN.vst.resumoAprovado = (prev, comItens) => {
 // Chamado ligado a uma rota (c.preventiva): nome do assunto e tela do técnico.
 SN.vst.progDe = prev => prev && VR_LISTAS.programas[prev.segmento] || null;
 SN.vst.nomePrev = prev => { const p = SN.vst.progDe(prev); return p ? p.rot : 'Preventiva'; };
+// Nome do arquivo da obra (PDFs): id, tipo, cidade e o que é a obra (motivo / serviço / cluster).
+SN.vst.nomeObra = r => [r.id_rota, SN.vst.progDe(r) ? SN.vst.nomePrev(r) : 'Preventiva ' + (r.segmento === 'AEREA' ? 'aérea' : 'subterrânea'), r.cidade,
+  r.motivo || r.servico || (r.cluster ? 'Cluster ' + r.cluster : '') || r.regiao].filter(Boolean).map(x => String(x).trim()).filter(Boolean).join(' - ');
 SN.vst.hrefPrev = prev => (SN.vst.progDe(prev) ? '#/tec/prog/' : '#/tec/vistoria/') + encodeURIComponent(prev.id_rota);
 
 // Data de um dia ('AAAA-MM-DD') sem fuso: SN.data leria como meia-noite UTC e,

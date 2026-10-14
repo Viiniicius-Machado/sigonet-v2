@@ -151,8 +151,8 @@
     // (completa / resumo / não), como na Preventiva. As fotos vêm do Drive pelo servidor.
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.pdf); if (!r) return;
       const montar = async cv => SN.vst.pdfResumoProg(r, aps(), cv, await fotosDaAtividade(r));
-      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, montar);
-      else SN.abrirPdfDepois(() => montar(null)); });
+      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, montar, SN.vst.nomeObra(r));
+      else SN.abrirPdfDepois(() => montar(null), SN.vst.nomeObra(r)); });
     SN.$$('[data-zip]').forEach(b => b.onclick = () => { const r = rotas().find(x => x.id_rota === b.dataset.zip); if (r) baixarTudo(r, b); });
     SN.$$('[data-vivo]').forEach(b => b.onclick = () => { const h = location.hash; SN.vst.abrirAoVivo(b.dataset.vivo).then(() => { if (location.hash === h) return recarregar(); }).catch(() => { }); });
   };

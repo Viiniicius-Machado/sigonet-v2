@@ -217,7 +217,7 @@ SN.detalheLpu = id => {
   SN.modal({ titulo: `${l.id} · ${SN.LPU_STATUS[l.status].rot}`, largo: true, corpo: corpo(), botoes, aoAbrir: ligar });
 };
 
-SN.pdfLpu = l => SN.abrirPdfDepois(() => SN.montarPdfLpu(l));
+SN.pdfLpu = l => SN.abrirPdfDepois(() => SN.montarPdfLpu(l), () => { const c = SN.db.chamados.find(x => x.id === l.chamadoId); return ['LPU ' + l.id, c ? SN.nomePdfChamado(c) : l.chamadoId, l.empresa].filter(Boolean).join(' - '); });
 SN.montarPdfLpu = async l => {
   const doc = SN.novoPdf('LPU ' + l.id + ' · chamado ' + l.chamadoId); if (!doc) return null;
   doc.secao('Identificação');

@@ -386,7 +386,7 @@ SN.rota('/tec/os/:id', id => {
       SN.hist(c, 'Conclusão técnica', `MTTR ${SN.dur(SN.metricas(c).mttr)}`);
       SN.salvar();
       SN.toast('Gerando o PDF do atendimento com as fotos…');
-      const ax = await SN.anexarPdf(await SN.pdfChamado(c, false), `Atendimento ${c.id}.pdf`, c.id);
+      const ax = await SN.anexarPdf(await SN.pdfChamado(c, false), SN.nomeArquivo(SN.nomePdfChamado(c)) + ".pdf", c.id);
       if (ax) c.fotos.push(ax);
       SN.int.ellevenStatus(c, 'Concluída pelo técnico');
       SN.log('CONCLUIR_TECNICO', c.id, ''); SN.salvar(); SN.toast('Atendimento concluído! Agora aponte LPU e materiais.', 'ok'); SN.render();

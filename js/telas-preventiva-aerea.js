@@ -277,6 +277,13 @@
     if (!r.ok) return SN.toast(r.erros[0], 'erro');
     if (fotosProcessando) return SN.toast('Aguarde a foto terminar de processar (GPS e endereço) antes de enviar.', 'erro');
     const final = f.tipo === 'final';
+    // Metragem do Finalizado longe da prevista (±20%): confere o número; se estiver certo, explica o motivo.
+    const cm = VR.conferirMetros(A.rota.metros_previstos, VR.metrosDaRota(A.rota, lista().map(x => ({ ...x.dados, status_revisao: (x.servidor || {}).status_revisao || 'AGUARDANDO_REVISAO' })), f), f.tipo);
+    if (cm.fora) {
+      const just = await SN.pedirTexto('Confira a metragem', `${cm.texto} Se digitou errado, cancele e corrija os metros. Se o número está certo, explique por que ${cm.abaixo ? 'percorreu menos' : 'passou'} do previsto *`);
+      if (!just) return;
+      f.justificativa_metros = just.trim(); salvarRascunho();
+    } else delete f.justificativa_metros;
     if (!await SN.confirmar(final ? 'Finalizar rota' : 'Enviar apontamento parcial',
       `${SN.num(f.metros)} m · ${SN.num(f.postes || 0)} postes · ${SN.num(f.cordoalha || 0)} m cordoalha · ${SN.num(f.plaquetas || 0)} plaquetas · ${SN.num(f.caixas || 0)} caixas/CEO · sobra ${SN.num(f.sobra || 0)}.<br>`
       + (final ? '<b>Isto conclui a rota.</b> A produção vai para a revisão e, aprovada, libera a LPU.' : 'A rota continua aberta para os próximos dias.'), final ? 'Finalizar' : 'Enviar', 'prim')) return;

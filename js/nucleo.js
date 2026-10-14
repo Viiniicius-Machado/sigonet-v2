@@ -257,18 +257,21 @@ SN.pintarFotos = async (el, lista, opc) => {
   }
   if (vez !== el._vez) return;
   el.innerHTML = lista.length ? '' : (opc && opc.vazio != null ? opc.vazio : '<span class="muted small">Nenhum anexo.</span>');
+  // Com opc.remover, todo item (foto, PDF ou ainda subindo) ganha o ✕.
+  const comRemover = (a, item) => {
+    if (!(opc && opc.remover)) return el.appendChild(item);
+    const w = document.createElement('span'); w.className = 'foto-rm';
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'rm'; x.textContent = '✕'; x.title = a.tipo === 'imagem' ? 'Remover foto' : 'Remover anexo';
+    x.onclick = ev => { ev.stopPropagation(); opc.remover(a); };
+    w.append(item, x); el.appendChild(w);
+  };
   for (const [a, d] of itens) {
-    if (a.pendente && !d) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = '⏳ ' + (a.tipo === 'imagem' ? 'foto' : a.nome) + ' subindo do celular'; el.appendChild(b); continue; }
+    if (a.pendente && !d) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = '⏳ ' + (a.tipo === 'imagem' ? 'foto' : a.nome) + ' subindo do celular'; comRemover(a, b); continue; }
     if (a.tipo === 'imagem' && d) {
       const img = document.createElement('img'); img.src = d; img.title = a.nome + (a.pendente ? ' (ainda subindo)' : ''); img.onclick = () => verDaLista(lista, a);
-      if (opc && opc.remover) {
-        const w = document.createElement('span'); w.className = 'foto-rm';
-        const x = document.createElement('button'); x.type = 'button'; x.textContent = '✕'; x.title = 'Remover foto';
-        x.onclick = ev => { ev.stopPropagation(); opc.remover(a); };
-        w.append(img, x); el.appendChild(w);
-      } else el.appendChild(img);
+      comRemover(a, img);
     } else {
-      const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '📄 ' + a.nome; b.onclick = () => SN.abrirAnexo(a.id); el.appendChild(b);
+      const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '📄 ' + a.nome; b.onclick = () => SN.abrirAnexo(a.id); comRemover(a, b);
     }
   }
 };
@@ -365,12 +368,25 @@ SN.pdfFotos = async (doc, lista, titulo) => {
 };
 // Abre o PDF numa aba. A aba é aberta ANTES de montar o PDF (que busca as fotos):
 // aberta depois de esperar, o navegador bloqueia como pop-up.
-SN.abrirPdfDepois = async montar => {
+// nome: nome do arquivo (sem .pdf), texto ou função; sem ele vale o título do PDF.
+// O PDF já baixa com esse nome (aberto direto como blob: o navegador salvava com um código
+// no lugar do nome) e a aba mostra o PDF para conferir (no celular, que não mostra PDF, a aba fecha).
+SN.nomeArquivo = t => String(t || '').replace(/[\\/:*?"<>|]+/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120) || 'SigoNet';
+SN.baixarPdf = (doc, nome, w) => {
+  const url = doc.output('bloburl'), arq = SN.nomeArquivo(typeof nome === 'function' ? nome() : nome || doc._titulo) + '.pdf';
+  const a = document.createElement('a'); a.href = url; a.download = arq; document.body.appendChild(a); a.click(); a.remove();
+  if (navigator.pdfViewerEnabled === false) { if (w) w.close(); return; }
+  if (!w) w = window.open('', '_blank'); if (!w) return;
+  w.document.open();
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>${SN.esc(arq)}</title><style>html,body{margin:0;height:100%}</style><iframe src="${url}" title="${SN.esc(arq)}" style="border:0;width:100%;height:100%"></iframe>`);
+  w.document.close();
+};
+SN.abrirPdfDepois = async (montar, nome) => {
   const w = window.open('', '_blank');
   if (w) w.document.write('<p style="font-family:sans-serif;padding:20px">Montando o PDF com as fotos…</p>');
   try {
     const doc = await montar(); if (!doc) { if (w) w.close(); return; }
-    const url = doc.output('bloburl'); if (w) w.location.href = url; else window.open(url);
+    SN.baixarPdf(doc, nome, w);
   } catch (e) { if (w) w.close(); SN.toast('Não foi possível gerar o PDF: ' + (e.message || e), 'erro'); }
 };
 
@@ -822,7 +838,8 @@ SN.exportar = (nome, linhas) => {
 };
 SN.novoPdf = titulo => {
   if (!window.jspdf) { SN.toast('Biblioteca de PDF indisponível (sem internet?).', 'erro'); return null; }
-  const doc = new jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+  const doc = new jspdf.jsPDF({ unit: 'mm', format: 'a4' }); doc._titulo = String(titulo).replace(/ · /g, ' - ');
+  doc.setProperties({ title: String(titulo) });
   doc.setFillColor(61, 79, 17); doc.rect(0, 0, 210, 20, 'F');
   doc.setTextColor(255);
   try { doc.addImage(MARCA.LETRAS, 'PNG', 10, 3.5, 36, 11.2); } catch (e) { doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text('SIGONET', 12, 12.5); }

@@ -247,7 +247,7 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 .lpu-foto-bt .n{position:absolute;top:-6px;right:-6px;background:var(--verde);color:#fff;border-radius:999px;font-size:.66rem;min-width:18px;height:18px;line-height:18px;padding:0 4px}
 .fotos.mini img{width:64px;height:64px}
 .foto-rm{position:relative;display:inline-block}
-.foto-rm button{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:999px;border:0;background:#b3261e;color:#fff;font-size:.7rem;cursor:pointer;line-height:22px;padding:0}
+.foto-rm .rm{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:999px;border:0;background:#b3261e;color:#fff;font-size:.7rem;cursor:pointer;line-height:22px;padding:0}
 .item-lpu .d{font-size:.84rem} .item-lpu .c{font-size:.72rem;color:var(--texto-3)}
 .item-lpu .t,.lpu-tec{font-size:.74rem;color:var(--texto-2);line-height:1.35;margin-top:2px;overflow-wrap:anywhere}
 .item-lpu.tem{background:var(--verde-bg);margin:0 -8px;padding:8px}
@@ -657,3 +657,11 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 .cp-rt-it input{margin-top:3px}
 .cp-num{width:26px;height:26px;border-radius:50%;background:#2563eb;color:#fff;font:700 12px/26px Arial;text-align:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .cp-num.erro{background:#dc2626}
+/* "Ver como o técnico" (só leitura): faixa no topo e tela na largura de um celular */
+.vercomo-faixa{position:fixed;top:0;left:0;right:0;z-index:200;background:#7c2d12;color:#fff;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:6px 12px;font-size:.85rem}
+.vercomo-faixa span{min-width:0;overflow-wrap:anywhere}
+body.vercomo{padding-top:44px;background:#e9ece6}
+body.vercomo .app-tec{max-width:420px;box-shadow:0 0 0 1px var(--borda),0 10px 30px rgba(0,0,0,.12)}
+body.vercomo .app-tec .topbar{top:44px}
+body.vercomo .tabbar{max-width:420px}
+body.vercomo .app-tec input,body.vercomo .app-tec textarea,body.vercomo .app-tec select{pointer-events:none}

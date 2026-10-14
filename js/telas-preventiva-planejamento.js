@@ -118,8 +118,8 @@
     SN.$$('[data-vivo]').forEach(b => b.onclick = e => { e.preventDefault(); SN.vst.abrirAoVivo(b.dataset.vivo).then(() => SN.vst.carregar().then(nd => { d = nd; if (location.hash === '#/vst/planejamento' && aba === 'ROTAS') pintarRotas(); }).catch(() => { })); });
     // PDF da rota: o gestor decide se a conversa da atividade entra (completa / resumo / não).
     SN.$$('[data-pdf]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.pdf); if (!r) return;
-      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoRota(r, d, cfg(), cv));
-      else SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg())); });
+      if (SN.conversa && r.id_chamado) SN.conversa.pdfComConversa(r.id_chamado, cv => SN.vst.pdfResumoRota(r, d, cfg(), cv), SN.vst.nomeObra(r));
+      else SN.abrirPdfDepois(() => SN.vst.pdfResumoRota(r, d, cfg()), SN.vst.nomeObra(r)); });
     SN.$$('[data-zip]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.zip); if (r) baixarTudo(r, b); });
     SN.$$('[data-edcs]').forEach(b => b.onclick = () => { const r = d.rotas.find(x => x.id_rota === b.dataset.edcs); if (!r) return;
       form = Object.assign(JSON.parse(JSON.stringify(r)), { segmento: 'SUBTERRANEA', modo_cs: true, cs_originais: (r.cs_planejadas || []).slice(), forcar: false, forcar_motivo: '', motivo_cs: '' }); aba = 'NOVA'; pintar(); });

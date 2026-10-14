@@ -374,6 +374,7 @@ SN.rota('/chamado/:id', id => {
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev ? '<button class="btn perigo" id="bCanc">Cancelar</button>' : ''}
         ${aberto && c.status !== 'CONCLUIDO_TECNICO' && !prev && c.tipo === 'Preventiva' && SN.vst && SN.vst.transformarChamado && SN.remoto ? '<button class="btn ok" id="bVstRota">🧭 Transformar em rota de Preventiva</button>' : ''}
         ${SN.conversa ? SN.conversa.botao(c.id) : ''}
+        ${c.tecnico && SN.podeVerComo && SN.podeVerComo() ? `<button class="btn" id="bVerComo" title="Abre a tela do celular do técnico, só para ver (sem a senha dele e sem alterar nada)">👁 Ver como o técnico</button>` : ''}
         <button class="btn" id="bPdf">PDF do atendimento</button></div></div>
     ${prev && SN.vst.progDe(prev) ? `<div class="aviso info" style="margin-bottom:12px">🧭 Chamado gerado pela atividade de <b>${SN.esc(SN.vst.nomePrev(prev))} ${SN.esc(prev.id_rota)}</b> (conta ${SN.esc(SN.contaTxt(c.conta))}). Despacho, chegada e conclusão técnica vêm da atividade (conclui quando a revisão aprovar o apontamento finalizado). Para cancelar: retire o despacho ou use <b>Cancelar</b> em ${SN.esc(SN.vst.nomePrev(prev))} · Planejamento.${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}</div>`
     : prev ? `<div class="aviso info" style="margin-bottom:12px">🧭 Chamado ligado à rota de <b>Preventiva ${SN.esc(prev.id_rota)}</b>. ${c.origem === 'Preventiva' ? '' : 'Aberto pelo NOC. '}Despacho, chegada e conclusão técnica vêm da rota (conclui quando tudo for aprovado na revisão). Para cancelar: retire o despacho da rota (se só despachada) ou, gestor com acesso total, use <b>Cancelar</b> em Preventiva → Planejamento (vale também em campo).${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}</div>` : ''}
@@ -436,11 +437,16 @@ SN.rota('/chamado/:id', id => {
     <div class="card" style="margin-top:14px"><h3>Histórico</h3><div class="tabela-wrap"><table class="tab"><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Detalhe</th></tr></thead><tbody>
       ${(c.historico || []).slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe)}</td></tr>`).join('')}
     </tbody></table></div></div>`);
-  SN.pintarFotos(SN.$('#fotosCh'), c.fotos || []);
+  // Foto/anexo errado: quem acompanha o chamado tira enquanto ele não foi fechado/cancelado (fica no histórico).
+  const pintarFotosCh = () => SN.pintarFotos(SN.$('#fotosCh'), c.fotos || [], !['FECHADO', 'CANCELADO'].includes(c.status) ? { remover: async a => {
+    if (!await SN.confirmar('Remover ' + (a.tipo === 'imagem' ? 'foto' : 'anexo'), 'Tirar "' + (a.nome || 'arquivo') + '" deste atendimento? Ele deixa de aparecer aqui e no PDF.', 'Remover', 'perigo')) return;
+    c.fotos = (c.fotos || []).filter(x => x !== a); SN.hist(c, 'Foto removida', a.nome || ''); SN.log('REMOVER_FOTO', c.id, a.nome || ''); SN.salvar(); pintarFotosCh(); } } : null);
+  pintarFotosCh();
   SN.ligarValidacao();
   const b = id => SN.$('#' + id);
   b('bClass') && (b('bClass').onclick = () => SN.classificar(c));
   b('bVstRota') && (b('bVstRota').onclick = () => SN.vst.transformarChamado(c));
+  b('bVerComo') && (b('bVerComo').onclick = () => SN.iniciarVerComo(c.tecnico, c.empresa, '#/tec/os/' + c.id));
   b('bAtr') && (b('bAtr').onclick = () => SN.atribuir(c));
   b('bFechar') && (b('bFechar').onclick = async () => {
     if (!await SN.confirmar('Fechar chamado', 'Confirmar o fechamento operacional? O MTTR já foi medido na conclusão técnica. LPU, materiais e fibra continuam seus fluxos normalmente.', 'Fechar')) return;
@@ -458,9 +464,11 @@ SN.rota('/chamado/:id', id => {
     c.status = 'CANCELADO'; c.tempos.fechamento = SN.agora(); SN.hist(c, 'Cancelado', mot); SN.log('CANCELAR_CHAMADO', c.id, mot);
     SN.int.ellevenStatus(c, 'Cancelada'); SN.salvar(); SN.render();
   });
-  b('bPdf').onclick = () => SN.conversa ? SN.conversa.pdfComConversa(c.id, cv => SN.pdfChamado(c, false, cv)) : SN.abrirPdfDepois(() => SN.pdfChamado(c, false));
+  b('bPdf').onclick = () => SN.conversa ? SN.conversa.pdfComConversa(c.id, cv => SN.pdfChamado(c, false, cv), SN.nomePdfChamado(c)) : SN.abrirPdfDepois(() => SN.pdfChamado(c, false), SN.nomePdfChamado(c));
 });
 
+// Nome do arquivo: como o chamado aparece na lista (ex.: CH-00050 - Preventiva aérea - LOUVEIRA - NOTIFICAÇÃO IRREGULARIDADE).
+SN.nomePdfChamado = c => [c.id, c.preventiva && c.preventiva.id_rota, c.tipo, c.cidade, c.motivo || c.cliente].filter(Boolean).join(' - ');
 // PDF do atendimento (história operacional). Também é gerado ao concluir.
 // conversa: { modo, msgs } quando o gestor escolheu incluir a conversa da atividade.
 SN.pdfChamado = async (c, abrir, conversa) => {
@@ -481,6 +489,6 @@ SN.pdfChamado = async (c, abrir, conversa) => {
   if (c.rfo.obs) doc.linha('Observações', c.rfo.obs);
   await SN.pdfFotos(doc, c.fotos || [], 'Fotos do atendimento'); // na ordem em que foram adicionadas
   if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
-  if (abrir) window.open(doc.output('bloburl'));
+  if (abrir) SN.baixarPdf(doc, SN.nomePdfChamado(c));
   return doc;
 };

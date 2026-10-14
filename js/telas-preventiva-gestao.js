@@ -162,6 +162,9 @@
     const p = VR.producaoRota(r, doRota), fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
     return secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação / Protocolo', r.notificacao] : null,
         ['Prestador / técnico', `${r.prestador} · ${a.tecnico || ''}`], ['Previsto', SN.num(r.metros_previstos) + ' m'], ['KMZ', r.kmz_url || '—']], [])
+      + (() => { // metragem do Finalizado longe da prevista (±20%): alerta para o revisor conferir/corrigir
+        const cm = VR.conferirMetros(r.metros_previstos, VR.metrosDaRota(r, doRota, a), a.tipo); if (!cm.fora) return '';
+        return `<div class="aviso erro small" style="margin:8px 0">⚠ <b>Metragem fora do previsto.</b> ${esc(cm.texto)}${a.justificativa_metros ? `<br>Justificativa do técnico: <i>${esc(a.justificativa_metros)}</i>` : '<br>Sem justificativa do técnico.'}<br>Se foi erro de digitação, use <b>✏️ Corrigir preenchimento</b> (ou <b>↺ Reabrir</b>, se já aprovado) antes de aprovar.</div>`; })()
       + secao(`Apontamento ${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'} · ${SN.vst.dia(a.data)}`, [
         ...L.producao_aerea.map(c => [c.rot, SN.num(Number(a[c.k]) || 0)]), a.observacao ? ['Observação', a.observacao] : null], [])
       // Fotos de cada item, ao lado do número (a quantidade exigida segue VR.fotosExigidasAerea).
@@ -320,7 +323,7 @@
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const blobUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
       return { output: () => blobUrl }; // formato que SN.abrirPdfDepois espera
-    });
+    }, () => [SN.vst.nomeObra(r), x.seg === 'AEREA' ? (a.tipo === 'final' ? 'Apontamento final' : 'Apontamento parcial') + ' ' + String(a.data || '').slice(0, 10) : (a.cs_nova ? 'CS fora do cadastro' : 'CS ' + (a.id_cs || ''))].join(' - '));
     let rejeitando = false; const motivos = new Set();
     const decidir = async (decisao, f) => {
       const dados = { decisao, motivos: [...motivos], motivo_texto: (SN.$('#rTexto', f) || {}).value || '', [x.seg === 'AEREA' ? 'id_apontamento' : 'id_vistoria']: x.id };
@@ -374,7 +377,7 @@
     SN.$$('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; SN.render(); });
     SN.$('#dRelatorio').onclick = () => { // usa a configuração mais recente (dias trabalhados podem ter sido editados na tela)
       const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      SN.abrirPdfDepois(() => SN.vst.pdfDiretoria(d, d.config, mesSel || mesAtual(), hojeIso));
+      SN.abrirPdfDepois(() => SN.vst.pdfDiretoria(d, d.config, mesSel || mesAtual(), hojeIso), 'Preventiva - Relatório da diretoria - ' + SN.mesNome(mesSel || mesAtual()));
     };
     if (aba === 'AEREA') pintarAerea(d, cfg); else pintarSub(d, cfg);
   }, { tela: 'vst_dashboard' });

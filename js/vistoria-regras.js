@@ -904,6 +904,22 @@ var VR = (function () {
     return { metros: q('metros') > 0 ? 5 : 0, postes: Math.ceil(q('postes')), cordoalha: q('cordoalha') > 0 ? 1 : 0,
       plaquetas: Math.ceil(q('plaquetas') / 2), caixas: Math.ceil(q('caixas')), sobra: Math.ceil(q('sobra')) };
   };
+  // Metragem do FINALIZADO × prevista na rota (pedido do usuário, 14/10/2026: rota de 2213 m
+  // finalizada com "2 m" por erro de digitação). Fora de ±20% o técnico confirma e justifica,
+  // e a revisão vê o alerta. total = soma dos metros da rota (sem rejeitados) com este envio.
+  R.TOLERANCIA_METROS = 0.2;
+  R.conferirMetros = function (previsto, total, tipo) {
+    var p = n0(previsto), t = Math.round(n0(total) * 100) / 100;
+    if (tipo !== 'final' || !(p > 0)) return { fora: false, previsto: p, total: t, pct: null };
+    var pct = Math.round(1000 * t / p) / 10, fora = Math.abs(t / p - 1) > R.TOLERANCIA_METROS;
+    var txt = 'A rota previa ' + p + ' m e o total apontado ficou em ' + t + ' m (' + pct + '% do previsto' + (t < p ? ', abaixo' : ', acima') + ').';
+    return { fora: fora, abaixo: t < p, previsto: p, total: t, pct: pct, texto: txt };
+  };
+  R.metrosDaRota = function (rota, apontamentos, a) {
+    var s = 0;
+    (apontamentos || []).forEach(function (x) { if (x.id_rota === rota.id_rota && x.status_revisao !== 'REJEITADA' && x.id_apontamento !== a.id_apontamento) s += n0(x.metros); });
+    return s + n0(a.metros);
+  };
   R.validarFotosApontamento = function (a) {
     var ex = R.fotosExigidasAerea(a), erros = [], itens = [];
     L.producao_aerea.forEach(function (c) {
@@ -911,6 +927,10 @@ var VR = (function () {
       itens.push({ k: c.k, rot: c.rot, foto: c.foto, exigidas: ex[c.k], tem: tem });
       if (tem < ex[c.k]) erros.push(c.rot.replace(/ \(m\)$/, '') + ': faltam ' + (ex[c.k] - tem) + ' foto(s) (' + tem + ' de ' + ex[c.k] + ').');
     });
+    // Sem nenhuma quantidade (ex.: só notificar uma irregularidade) a regra por item não pede foto:
+    // mesmo assim o apontamento precisa de pelo menos 1 foto comprovando (CH-00050, 14/10/2026).
+    var fotosReais = ((a && a.fotos) || []).filter(function (f) { return f.tipo_foto !== 'ficha_pdf'; }).length;
+    if (!fotosReais) erros.push('Envie pelo menos 1 foto comprovando o serviço (em qualquer item acima). Foto enviada na conversa não conta.');
     return { ok: !erros.length, erros: erros, itens: itens };
   };
   // Soma da produção da rota. opcoes.soAprovados: só o que a revisão aprovou.

@@ -307,7 +307,7 @@ SN.rota('/portal', () => {
       doc.secao('LPU por prestador (contabilizada)'); Object.entries(porEmp).forEach(([e, v]) => doc.linha(e, `${SN.brl(v)} · CNPJ ${SN.empresa(e).cnpj || '—'}`));
       doc.linha('TOTAL', SN.brl(total));
       doc.secao('Assinatura'); doc.linha('Responsável', SN.txtAssinatura(a));
-      window.open(doc.output('bloburl'));
+      SN.baixarPdf(doc, 'Extrato de atividades - ' + SN.mesNome(f.mes) + (f.natureza ? ' - ' + f.natureza : ''));
     }
     SN.render();
   };

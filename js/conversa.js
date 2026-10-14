@@ -358,10 +358,10 @@ SN.conversa = (() => {
   // ─────────── PDF: o gestor decide se a conversa entra ───────────
   // montar(conversa|null) devolve o doc. A escolha abre o PDF a partir do clique no
   // botão da janela (o navegador só deixa abrir aba nova a partir de um clique).
-  C.pdfComConversa = async (ref, montar) => {
-    if (!ref || !souGestao() || !C.disponivel()) return SN.abrirPdfDepois(() => montar(null));
+  C.pdfComConversa = async (ref, montar, nome) => {
+    if (!ref || !souGestao() || !C.disponivel()) return SN.abrirPdfDepois(() => montar(null), nome);
     const st = estado(ref);
-    if (st.carregada && !st.msgs.length) return SN.abrirPdfDepois(() => montar(null));
+    if (st.carregada && !st.msgs.length) return SN.abrirPdfDepois(() => montar(null), nome);
     let res = null;
     await SN.modal({ titulo: 'Conversa no PDF',
       corpo: `<div id="pcCorpo">${SN.carregando('Conferindo a conversa da atividade…')}</div>`,
@@ -370,7 +370,7 @@ SN.conversa = (() => {
         try { await C.ler(ref); } catch (e) { }
         const n = st.msgs.filter(m => !m.sistema).length, rod = SN.$('.modal-rod', f), corpo = SN.$('#pcCorpo', f);
         const gerar = async modo => {
-          SN.abrirPdfDepois(() => montar(modo === 'nao' || !n ? null : { modo, msgs: st.msgs.slice(), conversa: st.conversa }));
+          SN.abrirPdfDepois(() => montar(modo === 'nao' || !n ? null : { modo, msgs: st.msgs.slice(), conversa: st.conversa }), nome);
           SN.$('[data-x]', f).click();
           if (n) { try { await api('CONV_REGISTRAR', { ref, modo }); } catch (e) { } }
         };
