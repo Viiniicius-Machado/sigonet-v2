@@ -352,7 +352,7 @@
   };
 
   // ═══════════════════════════ DASHBOARD ═══════════════════════════
-  let aba = 'AEREA', mesSel = null;
+  let aba = 'AEREA', mesSel = null, expA = null, expS = null; // aba: AEREA | SUB | TODOS
   const mesAtual = () => new Date().toISOString().slice(0, 7);
   const nomeMes = m => SN.mesNome(m);
   // Barras horizontais de UMA série (cor da marca); valor e dica por barra.
@@ -371,18 +371,26 @@
     const cfg = VR.normalizarConfig(d.config);
     SN.casca('vst_dashboard', `
       <div class="cab-pagina"><div><h1>Preventiva · Dashboard</h1><p>Indicadores da preventiva aérea (meta de metros percorridos) e da diligência subterrânea.</p></div>
-        <div class="acoes"><button class="btn" id="dRelatorio" title="Aérea do mês escolhido + diligência subterrânea (só aprovadas)">Relatório PDF (diretoria)</button><button class="btn" id="dExportar">⬇ Exportar Excel</button></div></div>
-      <div class="abas"><button class="aba ${aba === 'AEREA' ? 'ativa' : ''}" data-aba="AEREA">🗼 Aérea</button><button class="aba ${aba === 'SUB' ? 'ativa' : ''}" data-aba="SUB">🕳️ Subterrânea</button></div>
+        <div class="acoes"><button class="btn" id="dRelatorio" title="Sai só o que está na aba: Aérea (mês escolhido), Subterrânea (só aprovadas) ou Todos (as duas)">Relatório PDF (diretoria)</button><button class="btn" id="dExportar">⬇ Exportar Excel</button></div></div>
+      <div class="abas"><button class="aba ${aba === 'AEREA' ? 'ativa' : ''}" data-aba="AEREA">🗼 Aérea</button><button class="aba ${aba === 'SUB' ? 'ativa' : ''}" data-aba="SUB">🕳️ Subterrânea</button><button class="aba ${aba === 'TODOS' ? 'ativa' : ''}" data-aba="TODOS">Todos</button></div>
       <div id="dCorpo"></div>`);
     SN.$$('[data-aba]').forEach(b => b.onclick = () => { aba = b.dataset.aba; SN.render(); });
     SN.$('#dRelatorio').onclick = () => { // usa a configuração mais recente (dias trabalhados podem ter sido editados na tela)
       const hojeIso = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-      SN.abrirPdfDepois(() => SN.vst.pdfDiretoria(d, d.config, mesSel || mesAtual(), hojeIso), 'Preventiva - Relatório da diretoria - ' + SN.mesNome(mesSel || mesAtual()));
+      const seg = aba, mes = mesSel || mesAtual();
+      SN.abrirPdfDepois(() => SN.vst.pdfDiretoria(d, d.config, mes, hojeIso, seg),
+        'Preventiva - Relatório da diretoria - ' + (seg === 'SUB' ? 'Subterrânea' : (seg === 'AEREA' ? 'Aérea - ' : '') + SN.mesNome(mes)));
     };
-    if (aba === 'AEREA') pintarAerea(d, cfg); else pintarSub(d, cfg);
+    SN.$('#dExportar').onclick = () => { if (aba !== 'SUB' && expA) expA(); if (aba !== 'AEREA' && expS) expS(); };
+    if (aba === 'AEREA') pintarAerea(d, cfg);
+    else if (aba === 'SUB') pintarSub(d, cfg);
+    else {
+      SN.$('#dCorpo').innerHTML = '<h2 style="margin:4px 0 10px">🗼 Aérea</h2><div id="dCorpoA"></div><h2 style="margin:22px 0 10px">🕳️ Subterrânea</h2><div id="dCorpoS"></div>';
+      pintarAerea(d, cfg, '#dCorpoA'); pintarSub(d, cfg, '#dCorpoS');
+    }
   }, { tela: 'vst_dashboard' });
 
-  const pintarAerea = (d, cfg) => {
+  const pintarAerea = (d, cfg, alvo = '#dCorpo') => {
     const rotas = d.rotas.filter(r => r.segmento === 'AEREA'), aps = d.producao || [];
     const meses = [...new Set(aps.map(a => String(a.data).slice(0, 7)).filter(Boolean).concat([mesAtual()]))].sort().reverse();
     mesSel = mesSel && meses.includes(mesSel) ? mesSel : meses[0];
@@ -394,7 +402,7 @@
     const serie = VR.serieAerea(aps, mesSel, 12, cfg);
     const t = k.total, noRitmo = k.projecao_m >= k.meta_m;
     const maxSerie = Math.max(k.meta_m, ...serie.map(s => s.metros), 1);
-    SN.$('#dCorpo').innerHTML = `
+    SN.$(alvo).innerHTML = `
       <div class="acoes" style="margin-bottom:12px">
         <label class="small">Mês <select class="inp" id="dMes" style="width:auto">${meses.map(m => `<option value="${m}" ${m === mesSel ? 'selected' : ''}>${esc(nomeMes(m))}</option>`).join('')}</select></label>
         <label class="small">Dias trabalhados <input class="inp" id="dDias" type="number" min="0" max="31" step="1" style="width:90px" placeholder="${dm.automatico}" value="${dm.salvo != null ? dm.salvo : ''}" ${podeEditarDias ? '' : 'disabled'}></label>
@@ -430,7 +438,7 @@
         <div class="card"><h3>Por solicitante</h3>${barras(ordenar(k.por.solicitante, 'metros').map(([n, v, o]) => [n, v, o.rotas + ' rotas']), SN.num, ' m')}</div>
         <div class="card"><h3>Por cidade</h3>${barras(ordenar(k.por.cidade, 'metros').slice(0, 12), SN.num, ' m')}</div>
       </div>`;
-    SN.$('#dMes').onchange = e => { mesSel = e.target.value; pintarAerea(d, cfg); };
+    SN.$('#dMes').onchange = e => { mesSel = e.target.value; pintarAerea(d, cfg, alvo); };
     SN.$('#dDias').onchange = async e => {
       const txt = e.target.value.trim(), n = txt === '' ? null : Number(txt);
       if (n != null && !(Number.isInteger(n) && n >= 0 && n <= 31)) { SN.toast('Informe um número inteiro de 0 a 31.', 'erro'); e.target.value = dm.salvo != null ? dm.salvo : ''; return; }
@@ -442,9 +450,9 @@
         d.config = r.config; cfg = VR.normalizarConfig(r.config);
         SN.toast(n == null ? `Dias trabalhados de ${nomeMes(mesSel)} voltaram ao automático.` : `Dias trabalhados de ${nomeMes(mesSel)} salvos: ${n}.`, 'ok');
       } catch (err) { SN.toast('Não foi possível salvar os dias: ' + err.message, 'erro'); }
-      pintarAerea(d, cfg);
+      pintarAerea(d, cfg, alvo);
     };
-    SN.$('#dExportar').onclick = () => {
+    expA = () => {
       const rm = {}; rotas.forEach(r => { rm[r.id_rota] = r; });
       SN.exportar('Preventiva aérea ' + mesSel, aps.filter(a => String(a.data).slice(0, 7) === mesSel && a.status_revisao !== 'REJEITADA').map(a => {
         const r = rm[a.id_rota] || {};
@@ -455,7 +463,7 @@
     };
   };
 
-  const pintarSub = (d, cfg) => {
+  const pintarSub = (d, cfg, alvo = '#dCorpo') => {
     const rotas = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias;
     const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs), mtr = VR.metragemRotas(rotas, vs);
     // Data do relatório: dia(s) em que o técnico fez as CS em campo (início da vistoria; sem ele, o envio).
@@ -466,7 +474,7 @@
     const difTxt = x => { if (x.diferenca_m == null || !x.previsto_m) return '—'; if (x.cs_enviadas < x.cs_planejadas) return '<span class="muted">parcial</span>'; const p = Math.round(100 * x.diferenca_m / x.previsto_m);
       return `<span class="${Math.abs(p) >= 20 ? 'badge alerta' : ''}">${x.diferenca_m > 0 ? '+' : ''}${SN.num(x.diferenca_m)} m (${p > 0 ? '+' : ''}${p}%)</span>`; };
     const pend = VR.pendenciasConfig(cfg);
-    SN.$('#dCorpo').innerHTML = `
+    SN.$(alvo).innerHTML = `
       ${pend.length ? `<div class="aviso alerta small" style="margin-bottom:12px"><b>Configurações a definir:</b> ${pend.map(esc).join(' · ')}</div>` : ''}
       <div class="grid g4" style="margin-bottom:14px">
         ${kpi('CS aprovadas', SN.num(c.total.total), `${vs.filter(v => v.status_revisao === 'AGUARDANDO_REVISAO').length} aguardando revisão`, true)}
@@ -503,7 +511,7 @@
               <div class="small">${x.trechos.map(t => `${esc(t.de)} → ${esc(t.para)}: <b>${SN.num(t.metros)} m</b>${t.conferir ? ' <span class="badge alerta" title="Bem maior que os outros trechos: confira o GPS desta CS na revisão">conferir GPS</span>' : ''}`).join(' · ')}<div class="muted" style="margin-top:4px">Sequência: caminho contínuo entre os GPS de campo, a partir da 1ª CS da rota (não a ordem das abas do técnico).</div></div></details></td></tr>` : ''}`).join('')}
           <tr><td colspan="5"><b>Total</b></td><td class="num muted">${SN.num(mtr.reduce((s, x) => s + x.previsto_m, 0))}</td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros, 0))} m</b></td><td></td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros_aprovados, 0))} m</b></td></tr></tbody></table></div>`
           : '<p class="muted small">Nenhuma CS enviada ainda.</p>'}</div>`;
-    SN.$('#dExportar').onclick = () => SN.exportar('Preventiva subterrânea', vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
+    expS = () => SN.exportar('Preventiva subterrânea', vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
       Prestador: v.prestador, Técnico: v.tecnico, Status: v.status_revisao, Conclusão: rot('conclusao', v.conclusao), Prioridade: rot('prioridade', v.prioridade), Abriu: sn(v.abriu),
       'Tampa': rot('tampa_estado', v.tampa_estado), 'Água': rot('agua', v.agua), 'Profundidade (cm)': v.profundidade_cm, 'Fora do critério': (v.flags || {}).fora_criterio ? 'SIM' : '',
       'Situação cadastro': rot('situacao_cadastro', v.situacao_cadastro), 'Enviada em': SN.dt(v.enviado_em), 'Revisor': v.revisor || '' })));

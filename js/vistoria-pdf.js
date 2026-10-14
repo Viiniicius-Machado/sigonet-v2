@@ -335,11 +335,14 @@ SN.vst = SN.vst || {};
     return SN.pdfDataUrl(doc);
   };
 
-  // Relatório da diretoria: aérea do mês escolhido + diligência subterrânea (acumulado, só aprovadas).
-  SN.vst.pdfDiretoria = async (d, config, mes, hojeIso) => {
-    const doc = SN.novoPdf(`Preventiva · Relatório da diretoria · ${SN.mesNome(mes)}`); if (!doc) return null;
+  // Relatório da diretoria. seg = AEREA (só a aérea do mês escolhido), SUB (só a diligência
+  // subterrânea, acumulado, só aprovadas) ou TODOS (as duas).
+  SN.vst.pdfDiretoria = async (d, config, mes, hojeIso, seg = 'TODOS') => {
+    const tit = seg === 'SUB' ? 'Preventiva subterrânea · Relatório da diretoria'
+      : `Preventiva${seg === 'AEREA' ? ' aérea' : ''} · Relatório da diretoria · ${SN.mesNome(mes)}`;
+    const doc = SN.novoPdf(tit); if (!doc) return null;
     const cfg = VR.normalizarConfig(config);
-    // Aérea
+    if (seg !== 'SUB') { // Aérea
     const rotasA = d.rotas.filter(r => r.segmento === 'AEREA'), aps = d.producao || [], dm = VR.diasAereaMes(mes, cfg, hojeIso);
     const k = VR.kpiAereo(rotasA, aps, mes, cfg, { diasTrabalhados: dm.dias }), t = k.total;
     doc.secao(`Preventiva aérea · ${SN.mesNome(mes)}`);
@@ -355,7 +358,8 @@ SN.vst = SN.vst || {};
       ord(k.por.equipe).map(([n, o]) => [n, o.rotas, SN.num(o.metros), (t.metros ? Math.round(1000 * o.metros / t.metros) / 10 : 0) + '%', SN.num(o.postes), SN.num(o.plaquetas)]), [60, 20, 30, 26, 24, 26]);
     doc.secao('Aérea · por região');
     tabela(doc, ['Região', 'Rotas', 'Metros'], ord(k.por.regiao).map(([n, o]) => [n, o.rotas, SN.num(o.metros)]), [100, 30, 40]);
-    // Subterrânea
+    }
+    if (seg !== 'AEREA') { // Subterrânea
     const rotasS = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias || [];
     const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotasS), km = VR.kmPorCluster(rotasS, vs, cfg);
     doc.secao('Diligência subterrânea · acumulado (só CS aprovadas)');
@@ -376,6 +380,7 @@ SN.vst = SN.vst || {};
       [34, 14, 22, 20, 20, 28, 24, 20]);
     doc.secao('Medição por prestador (só aprovadas)');
     tabela(doc, ['Prestador', 'CS aprovadas', 'Previsto (m)', 'Campo (m)'], med.linhas.map(x => [x.prestador, x.cs_aprovadas, SN.num(x.previsto_m), SN.num(x.metros)]).concat([['Total', med.total_cs, SN.num(med.total_previsto_m), SN.num(med.total_metros)]]), [80, 34, 34, 34]);
+    }
     SN.vst.pdfRodape(doc, `Relatório gerado em ${SN.dt(SN.agora())} · SigoNet · Preventiva`);
     return doc;
   };
