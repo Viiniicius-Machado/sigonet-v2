@@ -80,7 +80,7 @@ var VR_LISTAS = (function () {
     { tipo: 'aerea_postes',   n: 0,  rot: 'Postes equipados', multipla: true },
     { tipo: 'aerea_cordoalha', n: 0, rot: 'Cordoalha', multipla: true },
     { tipo: 'aerea_plaquetas', n: 0, rot: 'Plaquetas', multipla: true },
-    { tipo: 'aerea_caixas',   n: 0,  rot: 'Caixas/CEO regularizadas', multipla: true },
+    { tipo: 'aerea_caixas',   n: 0,  rot: 'Caixas/CEO regularizadas (antigo: conta como sobra técnica)', multipla: true },
     { tipo: 'aerea_sobra',    n: 0,  rot: 'Sobra técnica', multipla: true },
     // Melhoria de rede e Retirada de cabo (atividades programadas, telas próprias).
     { tipo: 'ret_antes',      n: 0,  rot: 'Antes da retirada', multipla: true },
@@ -104,8 +104,9 @@ var VR_LISTAS = (function () {
     { k: 'postes', rot: 'Postes equipados', un: '', foto: 'aerea_postes', regra: '1 foto por poste' },
     { k: 'cordoalha', rot: 'Cordoalha (m)', un: 'm', foto: 'aerea_cordoalha', regra: '1 foto' },
     { k: 'plaquetas', rot: 'Plaquetas', un: '', foto: 'aerea_plaquetas', regra: 'fotos de metade das plaquetas' },
-    { k: 'caixas', rot: 'Caixas/CEO regularizadas', un: '', foto: 'aerea_caixas', regra: '1 foto por caixa/CEO' },
-    { k: 'sobra', rot: 'Sobra técnica', un: '', foto: 'aerea_sobra', regra: '1 foto por sobra' }
+    // "Caixas/CEO regularizadas" saiu em 15/10/2026 (pedido do usuário: a Sobra técnica contempla a mesma
+    // atividade). Apontamentos antigos: as caixas somam na sobra e as fotos de caixa contam como de sobra.
+    { k: 'sobra', rot: 'Sobra técnica', un: '', foto: 'aerea_sobra', regra: '1 foto por sobra', antigas: ['aerea_caixas'] }
   ];
 
   // ─────────── Atividades programadas (fora da Preventiva) ───────────
@@ -117,10 +118,13 @@ var VR_LISTAS = (function () {
     RETIRADA: { rot: 'Retirada de cabo', curto: 'Retirada', tela: 'ret_planejamento', href: '#/ret/planejamento', pref: 'RET', conta: '3.1.1.2.05.0102' },
     // Novos projetos (2026-10-12): a obra nasce de um projeto aprovado (telas-projetos.js), não do
     // formulário "Nova atividade". A conta é a que o gestor escolheu no projeto (rota.conta).
-    PROJETO: { rot: 'Novos projetos', curto: 'Projeto', tela: 'prj_planejamento', href: '#/prj/planejamento', pref: 'OBR', conta: '', contaLivre: true, soDeProjeto: true }
+    // Unificado à Melhoria em 15/10/2026 (pedido do usuário: todo novo projeto é uma melhoria de rede):
+    // Projetos → Planejamento → Revisão → Dashboard da Melhoria, mesma permissão (mel_planejamento) e conta 0103.
+    // O segmento PROJETO continua só para a obra que nasce do projeto aprovado (ID OBR-, pacote com KMZ e materiais).
+    PROJETO: { rot: 'Melhoria de rede (obra de projeto)', curto: 'Projeto', tela: 'mel_planejamento', href: '#/prj/planejamento', pref: 'OBR', conta: '3.1.1.2.05.0103', soDeProjeto: true, dentroDe: 'MELHORIA' }
   };
   // Conta contábil da atividade: a do programa, ou a escolhida no projeto (PROJETO).
-  L.contaProg = function (r) { var p = r && L.programas[r.segmento]; return p ? (p.contaLivre ? String(r.conta || '') : p.conta) : ''; };
+  L.contaProg = function (r) { var p = r && L.programas[r.segmento]; return p ? String((p.soDeProjeto && r.conta) || p.conta || '') : ''; }; // obras antigas guardam a conta escolhida
   // Retirada: o que o técnico aponta e o item de LPU de cada quantidade.
   L.producao_retirada = [
     { k: 'metros', rot: 'Cabo retirado (m)', un: 'm', lpu: 'SEV0018' },

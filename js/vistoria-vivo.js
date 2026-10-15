@@ -127,23 +127,37 @@
       return `<div class="vst-abas av-abas">${abas}</div><div class="av-cs">${conteudo}</div>`;
     };
 
+    // Aérea (pedido de 2026-10-15): um cartão por apontamento; cada item pedido na atividade (Rota percorrida,
+    // Postes equipados, Cordoalha…) com o número e, logo embaixo, as fotos daquele item e quantas faltam.
+    const miniatura = f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`;
     const pintarAerea = () => {
       const srv = A.producao.slice().sort((a, b) => String(a.data).localeCompare(String(b.data)));
       const vivos = [];
       A.vivo.forEach(t => (t.rascunhos || []).filter(r => !r.ordem && r.dados && !srv.some(a => a.id_apontamento === r.id && a.status_revisao !== 'REJEITADA'))
-        .forEach(r => vivos.push({ ...r.dados, _vivo: r.status_local, _tec: t.tecnico, _at: r.atualizado, _fotosAparelho: (r.fotos_aparelho || []).length })));
-      const linha = (a, st) => {
-        const fotos = (a.fotos || []).map(f => A.fotos[f.id_foto] || f).filter(f => f.drive_id);
-        return `<tr><td>${SN.vst.dia(a.data)}${a._tec ? `<div class="small muted">${esc(a._tec)} · ${haQuanto(a._at)}</div>` : ''}</td><td>${a.tipo === 'final' ? 'Final' : 'Parcial'}</td>
-          ${L.producao_aerea.map(c => `<td class="right">${a[c.k] === '' || a[c.k] == null ? '—' : SN.num(a[c.k], c.k === 'cordoalha' ? 1 : 0)}</td>`).join('')}
-          <td>${st}</td><td class="small">${esc(a.observacao || '')}<div class="vst-thumbs">${fotos.map(f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`).join('')}
-          ${a._fotosAparelho ? `<span class="small muted">⏳ ${a._fotosAparelho} foto(s) subindo</span>` : ''}</div></td></tr>`;
+        .forEach(r => vivos.push({ ...r.dados, _vivo: r.status_local, _tec: t.tecnico, _at: r.atualizado })));
+      const cartao = (a, st) => {
+        const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf').map(f => ({ ...f, ...(A.fotos[f.id_foto] || {}) }));
+        const cr = VR.criteriosApontamento(a, A.rota), itens = cr.fotos.itens.filter(x => x.k === 'metros' || Number(a[x.k]) > 0 || x.tem);
+        const item = x => {
+          const doItem = fotos.filter(f => VR.fotoDoItem(f, x)), subiu = doItem.filter(f => f.drive_id), subindo = doItem.length - subiu.length;
+          return `<div class="av-item"><div class="av-item-cab"><span>${esc(x.rot)}</span><b>${a[x.k] === '' || a[x.k] == null ? '—' : SN.num(Number(a[x.k]) || 0, x.k === 'cordoalha' ? 1 : 0)}</b>
+              <span class="small ${x.tem < x.exigidas ? 'av-falta' : 'muted'}">fotos ${x.tem} de ${x.exigidas} exigida(s)${x.tem < x.exigidas ? ' · faltam ' + (x.exigidas - x.tem) : ''}</span></div>
+            ${subiu.length || subindo ? `<div class="vst-thumbs">${subiu.map(miniatura).join('')}${subindo ? `<span class="small muted">⏳ ${subindo} foto(s) subindo</span>` : ''}</div>` : '<div class="small muted">Sem fotos neste item.</div>'}</div>`;
+        };
+        const soltas = fotos.filter(f => !L.producao_aerea.some(c => VR.fotoDoItem(f, c)) && f.drive_id);
+        return `<div class="av-ap">
+          <div class="av-ap-cab"><div><b>${a.data ? SN.vst.dia(a.data) : '—'}</b> · ${a.tipo === 'final' ? 'Finalizado' : a.tipo === 'parcial' ? 'Parcial' : '—'}${a._tec ? ` · <span class="small muted">${esc(a._tec)} · ${haQuanto(a._at)}</span>` : a.tecnico ? ` · <span class="small muted">${esc(a.tecnico)}</span>` : ''}</div><div>${st}</div></div>
+          ${cr.ok ? (a._vivo ? '<div class="aviso ok small">✓ Critérios cumpridos: pronto para enviar.</div>' : '')
+            : `<div class="aviso ${a._vivo ? 'alerta' : 'erro'} small">${a._vivo ? 'Falta para enviar' : 'Não cumpre os critérios (não pode ser aprovado)'}: ${cr.erros.map(esc).join(' · ')}</div>`}
+          ${itens.map(item).join('')}
+          ${soltas.length ? `<div class="av-item"><div class="av-item-cab"><span>Fotos sem item</span></div><div class="vst-thumbs">${soltas.map(miniatura).join('')}</div></div>` : ''}
+          ${a.justificativa_metros ? `<div class="small" style="margin-top:6px"><b>Justificativa da metragem:</b> ${esc(a.justificativa_metros)}</div>` : ''}
+          ${a.observacao ? `<div class="small" style="margin-top:6px"><b>Obs.:</b> ${esc(a.observacao)}</div>` : ''}</div>`;
       };
       const p = VR.producaoRota(A.rota, A.producao);
       return `<div class="small" style="margin-bottom:8px">${SN.num(p.totais.metros)} de ${SN.num(A.rota.metros_previstos)} m apontados${p.pct != null ? ' (' + p.pct + '%)' : ''}</div>
-        <div class="tabela-wrap"><table class="tab"><thead><tr><th>Data</th><th>Tipo</th>${L.producao_aerea.map(c => `<th>${esc(c.rot)}</th>`).join('')}<th>Situação</th><th>Obs. e fotos</th></tr></thead><tbody>
-        ${vivos.map(a => linha(a, SN.badge(STATUS_VIVO, a._vivo))).join('')}${srv.map(a => linha(a, SN.vst.badgeVistoria(a.status_revisao))).join('')
-          || (vivos.length ? '' : '<tr><td colspan="12" class="muted">Nenhum apontamento ainda.</td></tr>')}</tbody></table></div>`;
+        ${vivos.map(a => cartao(a, SN.badge(STATUS_VIVO, a._vivo))).join('')}${srv.map(a => cartao(a, SN.vst.badgeVistoria(a.status_revisao))).join('')
+          || (vivos.length ? '' : '<p class="muted">Nenhum apontamento ainda.</p>')}`;
     };
 
     // Melhoria / Retirada: apontamentos (rascunho do aparelho + enviados) com o que foi feito e as fotos.
@@ -225,7 +239,10 @@
       corpo: `<div class="av-grade"><div class="av-esq" id="avCorpo">${SN.carregando('Buscando o que o técnico já preencheu…')}</div>
         <div class="av-dir" id="avConversa">${SN.conversa && SN.conversa.disponivel() ? '' : '<p class="muted small">Conversa indisponível.</p>'}</div></div>
         <p class="small muted" style="margin:8px 0 0">Mostra o rascunho do aparelho do técnico (atualizado alguns segundos depois de cada alteração, quando há sinal) e as fotos que já subiram. O registro oficial continua sendo ${ehProg ? 'o apontamento enviado e revisado' : 'a CS enviada e revisada'}.</p>`,
-      botoes: [{ rot: 'Fechar', valor: null }],
+      botoes: [{ rot: 'Fechar', valor: null },
+        // PDF completo: resumo da rota + cada item de cada apontamento com as fotos (o que já foi enviado).
+        { rot: 'PDF', acao: () => { if (!A.rota) { SN.toast('Aguarde carregar a rota.', 'erro'); return false; }
+          SN.vst.pdfCompleto(A.rota, { ...(SN.vst.dados || {}), producao: A.producao, vistorias: A.vistorias.length ? A.vistorias : ((SN.vst.dados || {}).vistorias || []) }, VR.normalizarConfig((SN.vst.dados || {}).config || {})); return false; } }],
       aoAbrir: f => { SN.$('.modal', f).classList.add('av-modal'); buscar(); } });
     aberta = false; clearTimeout(timer);
     if (A.conversa) A.conversa.parar();

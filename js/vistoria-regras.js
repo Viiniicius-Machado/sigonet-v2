@@ -555,7 +555,7 @@ var VR = (function () {
   R.CAMPOS_CORRECAO_AEREA = [
     { k: 'metros', rot: 'Rota percorrida (m)', tipo: 'num' }, { k: 'postes', rot: 'Postes equipados', tipo: 'int' },
     { k: 'cordoalha', rot: 'Cordoalha (m)', tipo: 'num' }, { k: 'plaquetas', rot: 'Plaquetas', tipo: 'int' },
-    { k: 'caixas', rot: 'Caixas/CEO regularizadas', tipo: 'int' }, { k: 'sobra', rot: 'Sobra técnica', tipo: 'int' },
+    { k: 'sobra', rot: 'Sobra técnica', tipo: 'int' },
     { k: 'observacao', rot: 'Observação', tipo: 'txt' }
   ];
   // Aplica as correções (só campos da lista) numa cópia. Devolve { doc, mudancas }.
@@ -820,7 +820,7 @@ var VR = (function () {
   // Classificação do chamado pela linha da matriz oficial (todas SLA 8 h).
   R.classificacaoRota = function (rota) {
     var base = R.CHAMADO_PREVENTIVA;
-    if (R.ehProg(rota)) { var cp = R.CHAMADO_PROG[rota.segmento]; return L.programas[rota.segmento].contaLivre ? Object.assign({}, cp, { conta: L.contaProg(rota) }) : cp; }
+    if (R.ehProg(rota)) return Object.assign({}, R.CHAMADO_PROG[rota.segmento], { conta: L.contaProg(rota) });
     if (!rota || rota.segmento !== 'AEREA') return base;
     var m = R.normCidade(rota.motivo);
     var cat = { tipo: 'Preventiva', cat1: 'Preventiva de Rede', cat2: 'Preventiva Rede (Externa)', slaHoras: 8, conta: base.conta };
@@ -874,6 +874,7 @@ var VR = (function () {
       if (!r) { out.ignorados.push(linha); return; }
       var v = R.numeroRelato(n, !!r[2]);
       if (v == null) { out.ignorados.push(linha); return; }
+      if (r[0] === 'caixas' || r[0] === 'sobra') { out.sobra = (out.sobra || 0) + Math.round(v); out.reconhecidos.push(linha); return; } // caixa/CEO = sobra técnica (15/10/2026)
       out[r[0]] = r[0] === 'metros' || r[0] === 'cordoalha' ? v : Math.round(v);
       out.reconhecidos.push(linha);
     });
@@ -889,7 +890,14 @@ var VR = (function () {
     else s = s.replace(',', '.');
     return /^\d*\.?\d+$|^\d+\.$/.test(s) ? Number(s) : NaN;
   };
-  R.CAMPOS_PRODUCAO = ['metros', 'postes', 'cordoalha', 'plaquetas', 'caixas', 'sobra'];
+  R.CAMPOS_PRODUCAO = ['metros', 'postes', 'cordoalha', 'plaquetas', 'sobra'];
+  // "Caixas/CEO regularizadas" virou parte da Sobra técnica (15/10/2026): apontamento antigo com caixas
+  // passa a ter sobra = sobra + caixas (o número original fica em caixas_antes). Muda o próprio objeto.
+  R.fundirCaixas = function (a) {
+    if (a && numero(a.caixas) && Number(a.caixas) > 0) { a.sobra = (numero(a.sobra) ? Number(a.sobra) : 0) + Number(a.caixas); a.caixas_antes = Number(a.caixas); a.caixas = 0; }
+    return a;
+  };
+  R.fotoDoItem = function (f, c) { return !!f && (f.tipo_foto === c.foto || (c.antigas || []).indexOf(f.tipo_foto) >= 0); };
   R.validarApontamento = function (a) {
     a = a || {}; var erros = [];
     if (vazio(a.id_apontamento)) erros.push('Apontamento sem identificação.');
@@ -899,7 +907,7 @@ var VR = (function () {
     if (!numero(a.metros) || Number(a.metros) < 0) erros.push('Informe os metros percorridos (0 se não percorreu).');
     // Metros quebrados = quase sempre "2.213" lido como 2,213 por app antigo (14/10/2026).
     else if (Number(a.metros) % 1 !== 0) erros.push('Rota percorrida: informe os metros inteiros (ex.: 2213). Recebido ' + a.metros + ' — se digitou 2.213, o certo é 2213.');
-    ['postes', 'plaquetas', 'caixas', 'sobra'].forEach(function (k) { if (!inteiroNaoNeg(a[k] === '' || a[k] == null ? 0 : a[k])) erros.push('Número inválido em ' + k + '.'); });
+    ['postes', 'plaquetas', 'sobra'].forEach(function (k) { if (!inteiroNaoNeg(a[k] === '' || a[k] == null ? 0 : a[k])) erros.push('Número inválido em ' + k + '.'); });
     if (a.cordoalha !== '' && a.cordoalha != null && (!numero(a.cordoalha) || Number(a.cordoalha) < 0)) erros.push('Número inválido em cordoalha.');
     if (a.tipo === 'parcial' && !(Number(a.metros) > 0) && !R.CAMPOS_PRODUCAO.some(function (k) { return Number(a[k]) > 0; }))
       erros.push('Apontamento parcial sem produção.');
@@ -907,12 +915,12 @@ var VR = (function () {
   };
   var n0 = function (v) { return numero(v) ? Number(v) : 0; };
   // Fotos obrigatórias do apontamento aéreo, por item (regra do usuário, 06/10/2026):
-  // rota percorrida ≥ 5; postes, caixas/CEO e sobra = a quantidade informada;
+  // rota percorrida ≥ 5; postes e sobra técnica = a quantidade informada (caixas antigas somam na sobra);
   // cordoalha = 1 se houver; plaquetas = metade da quantidade (arredonda para cima).
   R.fotosExigidasAerea = function (a) {
     a = a || {}; var q = function (k) { var x = n0(a[k]); return x > 0 ? x : 0; };
     return { metros: q('metros') > 0 ? 5 : 0, postes: Math.ceil(q('postes')), cordoalha: q('cordoalha') > 0 ? 1 : 0,
-      plaquetas: Math.ceil(q('plaquetas') / 2), caixas: Math.ceil(q('caixas')), sobra: Math.ceil(q('sobra')) };
+      plaquetas: Math.ceil(q('plaquetas') / 2), sobra: Math.ceil(q('sobra') + q('caixas')) };
   };
   // Metragem do FINALIZADO × prevista na rota (pedido do usuário, 14/10/2026: rota de 2213 m
   // finalizada com "2 m" por erro de digitação). Fora de ±20% o técnico confirma e justifica,
@@ -933,8 +941,8 @@ var VR = (function () {
   R.validarFotosApontamento = function (a) {
     var ex = R.fotosExigidasAerea(a), erros = [], itens = [];
     L.producao_aerea.forEach(function (c) {
-      var tem = ((a && a.fotos) || []).filter(function (f) { return f.tipo_foto === c.foto; }).length;
-      itens.push({ k: c.k, rot: c.rot, foto: c.foto, exigidas: ex[c.k], tem: tem });
+      var tem = ((a && a.fotos) || []).filter(function (f) { return R.fotoDoItem(f, c); }).length;
+      itens.push({ k: c.k, rot: c.rot, foto: c.foto, antigas: c.antigas || [], exigidas: ex[c.k], tem: tem });
       if (tem < ex[c.k]) erros.push(c.rot.replace(/ \(m\)$/, '') + ': faltam ' + (ex[c.k] - tem) + ' foto(s) (' + tem + ' de ' + ex[c.k] + ').');
     });
     // Sem nenhuma quantidade (ex.: só notificar uma irregularidade) a regra por item não pede foto:
@@ -947,8 +955,8 @@ var VR = (function () {
   R.producaoRota = function (rota, apontamentos, opcoes) {
     var so = opcoes && opcoes.soAprovados;
     var lista = (apontamentos || []).filter(function (a) { return a.id_rota === rota.id_rota && a.status_revisao !== 'REJEITADA' && (!so || a.status_revisao === 'APROVADA'); });
-    var t = { metros: 0, postes: 0, cordoalha: 0, plaquetas: 0, caixas: 0, sobra: 0 };
-    lista.forEach(function (a) { R.CAMPOS_PRODUCAO.forEach(function (k) { t[k] += n0(a[k]); }); });
+    var t = { metros: 0, postes: 0, cordoalha: 0, plaquetas: 0, sobra: 0 };
+    lista.forEach(function (a) { R.CAMPOS_PRODUCAO.forEach(function (k) { t[k] += n0(a[k]); }); t.sobra += n0(a.caixas); }); // caixas antigas = sobra
     t.metros = Math.round(t.metros); t.cordoalha = Math.round(t.cordoalha * 100) / 100;
     var final = lista.filter(function (a) { return a.tipo === 'final'; })[0] || null;
     var prev = n0(rota.metros_previstos);
@@ -960,10 +968,10 @@ var VR = (function () {
     var validos = daRota.filter(function (a) { return a.status_revisao !== 'REJEITADA'; });
     var pendentes = validos.filter(function (a) { return a.status_revisao !== 'APROVADA'; }).length;
     var p = R.producaoRota(rota, daRota, { soAprovados: true });
-    var lpu = {}; lpu.SEV0083 = p.totais.metros; lpu.SEV0005 = p.totais.plaquetas; lpu.SEV0009 = p.totais.cordoalha; lpu.SEV0084 = p.totais.caixas;
+    var lpu = {}; lpu.SEV0083 = p.totais.metros; lpu.SEV0005 = p.totais.plaquetas; lpu.SEV0009 = p.totais.cordoalha; lpu.SEV0084 = p.totais.sobra; // SEV0084 sai da Sobra técnica desde 15/10/2026
     return { pronto: rota.status === 'CONCLUIDA' && p.finalizada && pendentes === 0, pendentes: pendentes, totais: p.totais, lpu_sugerida: lpu };
   };
-  R.LPU_AEREA = { metros: 'SEV0083', plaquetas: 'SEV0005', cordoalha: 'SEV0009', caixas: 'SEV0084' };
+  R.LPU_AEREA = { metros: 'SEV0083', plaquetas: 'SEV0005', cordoalha: 'SEV0009', sobra: 'SEV0084' };
 
   // ═══════════════════════ Atividades programadas: Melhoria / Retirada ═══════════════════════
   // Pedido do usuário (2026-10-09): assuntos separados da Preventiva, cada um com a sua
@@ -975,8 +983,8 @@ var VR = (function () {
   R.CHAMADO_PROG = {
     MELHORIA: { tipo: 'Melhoria', cat1: 'Melhoria de Rede', cat2: 'Melhoria Planejada', slaHoras: 24, conta: L.programas.MELHORIA.conta },
     RETIRADA: { tipo: 'Retirada', cat1: 'Retirada de Cabo', cat2: 'Retirada Planejada', slaHoras: 24, conta: L.programas.RETIRADA.conta },
-    // Obra de projeto novo: a conta vem do projeto (rota.conta), escolhida pelo gestor.
-    PROJETO: { tipo: 'Implantação', cat1: 'Construção de Rede', cat2: 'Projeto Novo', slaHoras: 24, conta: '' }
+    // Obra de projeto: é melhoria de rede (unificado em 15/10/2026), conta 0103.
+    PROJETO: { tipo: 'Melhoria', cat1: 'Melhoria de Rede', cat2: 'Melhoria Planejada', slaHoras: 24, conta: L.programas.PROJETO.conta }
   };
   R.validarRotaProg = function (r) {
     var erros = [];
@@ -984,7 +992,6 @@ var VR = (function () {
     if (vazio(r.cidade)) erros.push('Informe a cidade.');
     if (vazio(r.endereco)) erros.push('Informe o endereço / local.');
     if (r.segmento === 'MELHORIA' && vazio(r.pop)) erros.push('Informe o POP atendido pela melhoria.');
-    if (r.segmento === 'PROJETO' && vazio(r.conta)) erros.push('Escolha a conta contábil do projeto.');
     if (r.segmento === 'PROJETO' && vazio(r.id_projeto)) erros.push('A obra precisa nascer de um projeto aprovado.');
     if (vazio(r.servico)) erros.push(r.segmento === 'RETIRADA' ? 'Descreva o que retirar (cabo, trecho, operadora…).' : 'Descreva o serviço de melhoria.');
     if (!vazio(r.metros_previstos) && (!numero(r.metros_previstos) || Number(r.metros_previstos) < 0)) erros.push('Metros previstos inválidos.');
@@ -1071,6 +1078,28 @@ var VR = (function () {
     return { ok: !erros.length, erros: erros, aguardando: daRota.filter(function (a) { return a.status_revisao === 'AGUARDANDO_REVISAO'; }).length };
   };
 
+  // Critérios do apontamento (aérea, Melhoria, Retirada): os mesmos números e fotos por item exigidos no envio.
+  // Pedido do usuário (2026-10-15): havia atividade aprovada só com foto na conversa — o envio conferia, a
+  // aprovação não. Agora o servidor só aprova o que cumpre (VST_REVISAR) e a Revisão mostra o que falta.
+  R.criteriosApontamento = function (a, rota) {
+    var prog = R.ehProg(rota), seg = rota && rota.segmento;
+    var v = prog ? R.validarApontamentoProg(a, seg) : R.validarApontamento(a);
+    var f = prog ? R.validarFotosProg(a, seg) : R.validarFotosApontamento(a);
+    return { ok: v.ok && f.ok, erros: v.erros.concat(f.erros), fotos: f };
+  };
+  // Aprovados ANTES dessa trava que não cumprem os critérios: a gestão confere e reabre.
+  // As fotos por item valem desde 06/10/2026 (envios anteriores usavam a foto genérica "produção").
+  R.INICIO_FOTOS_POR_ITEM = '2026-10-06';
+  R.aprovadosForaDosCriterios = function (rotas, apontamentos) {
+    var por = {}; (rotas || []).forEach(function (r) { por[r.id_rota] = r; });
+    return (apontamentos || []).filter(function (a) {
+      var r = por[a.id_rota];
+      return r && r.status !== 'CANCELADA' && (r.segmento === 'AEREA' || R.ehProg(r)) && a.status_revisao === 'APROVADA' && !a.importado_planilha
+        && String(a.enviado_em || a.data || '') >= R.INICIO_FOTOS_POR_ITEM;
+    }).map(function (a) { return { a: a, rota: por[a.id_rota], c: R.criteriosApontamento(a, por[a.id_rota]) }; })
+      .filter(function (x) { return !x.c.ok; });
+  };
+
   // ─────────── KPIs da aérea ───────────
   var mesDe = function (v) { var t = R.ms(v); return t == null ? '' : new Date(t).toISOString().slice(0, 7); };
   var diaDe = function (v) { var t = R.ms(v); return t == null ? '' : new Date(t).toISOString().slice(0, 10); };
@@ -1080,12 +1109,12 @@ var VR = (function () {
   // Plano de voo como na planilha: média/dia × 30 = projeção.
   R.kpiAereo = function (rotas, apontamentos, mes, config, opcoes) {
     var rm = {}; (rotas || []).forEach(function (r) { rm[r.id_rota] = r; });
-    var novo = function () { return { metros: 0, postes: 0, cordoalha: 0, plaquetas: 0, caixas: 0, sobra: 0, rotas: {} }; };
+    var novo = function () { return { metros: 0, postes: 0, cordoalha: 0, plaquetas: 0, sobra: 0, rotas: {} }; };
     var tot = novo(), aprovado = novo(), por = { equipe: {}, regiao: {}, motivo: {}, solicitante: {}, cidade: {} }, dias = {};
     (apontamentos || []).forEach(function (a) {
       if (a.status_revisao === 'REJEITADA' || mesDe(a.data) !== mes) return;
       var r = rm[a.id_rota] || {};
-      var soma = function (x) { R.CAMPOS_PRODUCAO.forEach(function (k) { x[k] += n0(a[k]); }); x.rotas[a.id_rota] = true; };
+      var soma = function (x) { R.CAMPOS_PRODUCAO.forEach(function (k) { x[k] += n0(a[k]); }); x.sobra += n0(a.caixas); x.rotas[a.id_rota] = true; };
       soma(tot); if (a.status_revisao === 'APROVADA') soma(aprovado);
       [['equipe', r.prestador], ['regiao', r.regiao], ['motivo', r.motivo], ['solicitante', r.solicitante], ['cidade', r.cidade]].forEach(function (p) {
         var k = p[1] || '(sem ' + p[0] + ')'; soma(por[p[0]][k] = por[p[0]][k] || novo());

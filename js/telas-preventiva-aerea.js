@@ -1,7 +1,7 @@
 // SIGONET V2 — Preventiva AÉREA: tela do técnico.
 //
 // A equipe abre o KMZ da rota, percorre e aponta a produção: metros, postes
-// equipados, cordoalha, plaquetas, caixas/CEO regularizadas e sobra técnica.
+// equipados, cordoalha, plaquetas e sobra técnica (caixas/CEO saiu em 15/10/2026: é a sobra técnica).
 // Pode mandar parciais (dias diferentes) e um "Finalizado", que conclui a rota.
 // Cada apontamento gera a ficha PDF de controle e vai pela fila offline.
 (() => {
@@ -35,7 +35,7 @@
     const locais = await SN.VL.apontamentos.porIndice('rota', A.rota.id_rota);
     A.locais = locais;
     for (const f of await SN.VL.fotos.todos()) if (f.id_rota === A.rota.id_rota) A.fotosLocais[f.id_foto] = f;
-    if (inicial && !A.form) { const rasc = locais.find(l => l.status_local === 'rascunho'); A.form = rasc ? rasc.dados : null; }
+    if (inicial && !A.form) { const rasc = locais.find(l => l.status_local === 'rascunho'); A.form = rasc ? VR.fundirCaixas(rasc.dados) : null; }
   };
   const ligarOuvinte = () => { if (!A.desligar) A.desligar = SN.VL.aoMudar(aoMudar); };
   const sair = () => { if (A && A.desligar) { A.desligar(); A.desligar = null; } if (A) clearInterval(A.timerEu); SN.VF.desligarGps(); };
@@ -159,7 +159,7 @@
       const rej = x.status_local === 'enviada' && srv.status_revisao === 'REJEITADA';
       return `<div class="vst-anomalia" style="background:#fff">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b>${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? 'Finalizado' : 'Parcial'}</b>${statusDe(x)}</div>
-        <div class="small">${SN.num(a.metros)} m · ${SN.num(a.postes)} postes · ${SN.num(a.cordoalha)} m cordoalha · ${SN.num(a.plaquetas)} plaquetas · ${SN.num(a.caixas)} caixas/CEO · sobra ${SN.num(a.sobra)}</div>
+        <div class="small">${SN.num(a.metros)} m · ${SN.num(a.postes)} postes · ${SN.num(a.cordoalha)} m cordoalha · ${SN.num(a.plaquetas)} plaquetas · sobra técnica ${SN.num((Number(a.sobra) || 0) + (Number(a.caixas) || 0))}</div>
         ${x.status_local === 'erro' ? `<div class="aviso erro small" style="margin-top:6px">Não aceito: ${esc(x.erro || '')}<br><button class="btn sm" data-corrigir="${esc(a.id_apontamento)}">Corrigir</button></div>` : ''}
         ${rej ? `<div class="aviso erro small" style="margin-top:6px">Rejeitado por ${esc(srv.revisor || '')}: ${(srv.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ')}${srv.motivo_rejeicao_texto ? ' — ' + esc(srv.motivo_rejeicao_texto) : ''}
           <br><button class="btn sm prim" data-refazer="${esc(a.id_apontamento)}" style="margin-top:6px">✏️ Refazer este apontamento</button></div>` : ''}
@@ -169,14 +169,14 @@
       const idA = b.dataset.refazer || b.dataset.corrigir, x = lista().find(i => i.dados.id_apontamento === idA);
       const base = JSON.parse(JSON.stringify(x.dados));
       ['status_revisao', 'revisor', 'data_revisao', 'motivo_rejeicao', 'motivo_rejeicao_texto', 'enviado_em', 'envios', 'historico', 'tecnico', 'prestador', 'cidade', 'regiao', 'motivo'].forEach(k => delete base[k]);
-      A.form = { ...base, fotos: (base.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), refazendo: true };
+      A.form = VR.fundirCaixas({ ...base, fotos: (base.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf'), refazendo: true });
       pintarForm(); SN.$('#aForm').scrollIntoView({ behavior: 'smooth' });
     });
   };
 
   // ─────────── Formulário de apontamento ───────────
   const novoForm = () => ({ id_apontamento: 'A' + SN.uid() + SN.uid(), id_rota: A.rota.id_rota, tipo: '', data: hoje(),
-    metros: '', postes: '', cordoalha: '', plaquetas: '', caixas: '', sobra: '', observacao: '', fotos: [] });
+    metros: '', postes: '', cordoalha: '', plaquetas: '', sobra: '', observacao: '', fotos: [] });
   let timer = null, fotosProcessando = 0;
   // Rascunho do formulário. Um apontamento já enviado nunca volta a rascunho
   // (a foto ou a digitação que terminar depois do envio não sobrescreve a fila).
@@ -233,7 +233,7 @@
     const tiposItem = L.producao_aerea.map(c => c.foto);
     L.producao_aerea.forEach(c => {
       const el = SN.$(`[data-fotos="${c.k}"]`); if (!el) return;
-      el.innerHTML = (A.form.fotos || []).filter(f => f.tipo_foto === c.foto).map(thumb).join('')
+      el.innerHTML = (A.form.fotos || []).filter(f => VR.fotoDoItem(f, c)).map(thumb).join('')
         + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}" hidden><span>＋<br>Tirar foto</span></label>`
         + `<label class="vst-cap" title="Escolher uma ou várias fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.foto}" data-galeria="1" hidden><span>＋<br>Galeria</span></label>`;
     });
@@ -285,7 +285,7 @@
       f.justificativa_metros = just.trim(); salvarRascunho();
     } else delete f.justificativa_metros;
     if (!await SN.confirmar(final ? 'Finalizar rota' : 'Enviar apontamento parcial',
-      `${SN.num(f.metros)} m · ${SN.num(f.postes || 0)} postes · ${SN.num(f.cordoalha || 0)} m cordoalha · ${SN.num(f.plaquetas || 0)} plaquetas · ${SN.num(f.caixas || 0)} caixas/CEO · sobra ${SN.num(f.sobra || 0)}.<br>`
+      `${SN.num(f.metros)} m · ${SN.num(f.postes || 0)} postes · ${SN.num(f.cordoalha || 0)} m cordoalha · ${SN.num(f.plaquetas || 0)} plaquetas · sobra técnica ${SN.num((Number(f.sobra) || 0) + (Number(f.caixas) || 0))}.<br>`
       + (final ? '<b>Isto conclui a rota.</b> A produção vai para a revisão e, aprovada, libera a LPU.' : 'A rota continua aberta para os próximos dias.'), final ? 'Finalizar' : 'Enviar', 'prim')) return;
     f._enviado = true; clearTimeout(timer);
     const a = { ...f }; delete a.refazendo; delete a._enviado;

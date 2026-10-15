@@ -48,6 +48,7 @@
     ].sort((a, b) => String(b.doc.data_revisao).localeCompare(String(a.doc.data_revisao)))
       .filter(x => !buscaRev || [x.doc.id_rota, x.doc.id_cs, x.doc.tecnico, x.doc.prestador, x.rota.cluster].some(t => semEsp(t).includes(semEsp(buscaRev))))
       .slice(0, buscaRev ? 100 : 15);
+    const foraCrit = VR.aprovadosForaDosCriterios(d.rotas, d.producao || []);
     const temAlerta = (x, k) => { const a = x.doc, fl = a.flags || {};
       return k === 'suspeita' ? (a.fotos || []).some(f => f.flag_suspeita) : k === 'criterio' ? !!fl.fora_criterio : k === 'gps' ? !!fl.gps_divergente
         : k === 'refeita' ? refeitas(a) > 0 : k === 'sem' ? !(a.fotos || []).some(f => f.flag_suspeita) && !fl.fora_criterio && !fl.gps_divergente && !refeitas(a) : true; };
@@ -68,7 +69,8 @@
     const linha = x => {
       const a = x.doc, r = x.rota, sus = (a.fotos || []).filter(f => f.flag_suspeita).length, fl = a.flags || {};
       const alertas = [sus ? `<span class="badge alerta">⚠ ${sus} foto(s) suspeita(s)</span>` : '', fl.fora_criterio ? '<span class="badge erro">Fora do critério</span>' : '',
-        fl.gps_divergente ? '<span class="badge alerta">GPS divergente</span>' : '', refeitas(a) ? `<span class="badge info" title="Foi rejeitada e o técnico mandou de novo">Refeita após rejeição${refeitas(a) > 1 ? ' (' + refeitas(a) + 'ª vez)' : ''}</span>` : ''].join(' ');
+        fl.gps_divergente ? '<span class="badge alerta">GPS divergente</span>' : '',
+        x.seg === 'AEREA' && !VR.criteriosApontamento(a, r).ok ? '<span class="badge erro" title="Faltam números ou fotos exigidas: não pode ser aprovado">Faltam fotos/critérios</span>' : '', refeitas(a) ? `<span class="badge info" title="Foi rejeitada e o técnico mandou de novo">Refeita após rejeição${refeitas(a) > 1 ? ' (' + refeitas(a) + 'ª vez)' : ''}</span>` : ''].join(' ');
       const oque = x.seg === 'AEREA'
         ? `${a.tipo === 'final' ? '<b>Finalizado</b>' : 'Parcial'} · ${SN.num(a.metros)} m · ${SN.num(a.postes)} postes · ${SN.num(a.plaquetas)} plaquetas`
         : `CS <b>${esc(a.cs_nova ? 'fora do cadastro' : a.id_cs)}</b> · ${rot('conclusao', a.conclusao)}${a.abriu === 'nao' ? ' · não abriu' : ''}`;
@@ -95,6 +97,12 @@
           ${filtrando ? '<button class="btn sm" id="frLimpar">Limpar filtros</button>' : ''}</div>` : ''}
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Segmento</th><th>Rota</th><th>O que revisar</th><th>Prestador / técnico</th><th>Enviado</th></tr></thead>
           <tbody>${vis.map(linha).join('')}</tbody></table></div>` : doSeg.length ? '<p class="muted">Nenhum item com esses filtros.</p>' : '<p class="muted">Nada aguardando revisão. 🎉</p>'}</div>
+      ${foraCrit.length ? `<div class="card" style="border-color:var(--erro)"><div class="card-tit"><h3>Aprovados sem cumprir os critérios (${foraCrit.length})</h3></div>
+        <p class="small muted" style="margin:-4px 0 8px">Aprovados antes da trava de 15/10/2026 sem as fotos exigidas por item (ou sem os números). Abra, confira e use <b>↺ Reabrir</b> para rejeitar e o técnico refazer.</p>
+        <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Rota</th><th>Apontamento</th><th>O que falta</th><th>Revisor</th></tr></thead><tbody>
+          ${foraCrit.map(x => `<tr class="clic" data-foracrit="${esc(x.a.id_apontamento)}"><td class="mono">${esc(x.a.id_rota)}<div class="small muted">${esc(x.rota.cidade || '')}</div></td>
+            <td>${x.a.tipo === 'final' ? 'Finalizado' : 'Parcial'} · ${SN.vst.dia(x.a.data)}<div class="small muted">${esc(x.a.tecnico || '')}</div></td>
+            <td>${x.c.erros.slice(0, 3).map(esc).join('<br>')}${x.c.erros.length > 3 ? '<br>…' : ''}</td><td>${esc(x.a.revisor || '')}<div class="small muted">${SN.dt(x.a.data_revisao)}</div></td></tr>`).join('')}</tbody></table></div></div>` : ''}
       <div class="card"><div class="card-tit"><h3>Revisadas ${buscaRev ? '' : 'recentemente'}</h3>
           <input class="inp" id="rBusca" style="max-width:260px" placeholder="Buscar rota, CS, técnico…" value="${esc(buscaRev)}"></div>
         <p class="small muted" style="margin:-4px 0 8px">Toque numa linha para ver ou <b>reabrir</b> (volta para "aguardando revisão" e libera a correção).</p>
@@ -112,6 +120,7 @@
     const frQ = SN.$('#frQ'); if (frQ) frQ.oninput = SN.debounce(() => { fr.q = frQ.value.trim(); SN.render(); }, 300); // SN.render mantém texto e cursor
     if (SN.$('#frLimpar')) SN.$('#frLimpar').onclick = () => { Object.assign(fr, { q: '', prest: '', rota: '', alerta: '' }); SN.render(); };
     SN.$$('[data-rev]').forEach(tr => tr.onclick = () => { const x = itens.find(i => i.id === tr.dataset.rev); if (x) abrirRevisao(x, d); });
+    SN.$$('[data-foracrit]').forEach(tr => tr.onclick = () => { const x = foraCrit.find(i => i.a.id_apontamento === tr.dataset.foracrit); if (x) abrirRevisao({ seg: 'AEREA', id: x.a.id_apontamento, doc: x.a, rota: x.rota }, d); });
     SN.$$('[data-revisada]').forEach(tr => tr.onclick = () => { const x = recentes.find(i => (i.doc.id_vistoria || i.doc.id_apontamento) === tr.dataset.revisada); if (x) abrirRevisao({ ...x, id: tr.dataset.revisada }, d); });
     const busca = SN.$('#rBusca'); let tBusca;
     busca.oninput = () => { clearTimeout(tBusca); tBusca = setTimeout(() => { buscaRev = busca.value.trim(); SN.render(); }, 300); }; // SN.render mantém texto e cursor
@@ -160,7 +169,9 @@
   const htmlApontamento = (a, r, d) => {
     const doRota = (d.producao || []).filter(x => x.id_rota === a.id_rota && x.status_revisao !== 'REJEITADA');
     const p = VR.producaoRota(r, doRota), fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    return secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação / Protocolo', r.notificacao] : null,
+    const cr = VR.criteriosApontamento(a, r);
+    return (cr.ok ? '' : `<div class="aviso erro small" style="margin-bottom:8px">✖ <b>Não cumpre os critérios — não pode ser aprovado.</b><br>${cr.erros.map(esc).join('<br>')}<br>Foto enviada na conversa não conta. Rejeite para o técnico refazer, ou corrija o preenchimento se o número estiver errado.</div>`)
+      + secao('Rota aérea', [['Rota', `${r.id_rota} · ${r.cidade} · ${r.regiao || ''}`], ['Motivo', r.motivo], ['Solicitante', r.solicitante], r.notificacao ? ['Notificação / Protocolo', r.notificacao] : null,
         ['Prestador / técnico', `${r.prestador} · ${a.tecnico || ''}`], ['Previsto', SN.num(r.metros_previstos) + ' m'], ['KMZ', r.kmz_url || '—']], [])
       + (() => { // metragem do Finalizado longe da prevista (±20%): alerta para o revisor conferir/corrigir
         const cm = VR.conferirMetros(r.metros_previstos, VR.metrosDaRota(r, doRota, a), a.tipo); if (!cm.fora) return '';
@@ -169,8 +180,8 @@
         ...L.producao_aerea.map(c => [c.rot, SN.num(Number(a[c.k]) || 0)]), a.observacao ? ['Observação', a.observacao] : null], [])
       // Fotos de cada item, ao lado do número (a quantidade exigida segue VR.fotosExigidasAerea).
       + VR.validarFotosApontamento(a).itens.filter(x => x.exigidas || x.tem).map(x => secao(x.rot.replace(/ \(m\)$/, ''),
-        [[x.rot, SN.num(Number(a[x.k]) || 0)], ['Fotos', `${x.tem} de ${x.exigidas} exigida(s)`, x.tem < x.exigidas]], fotos.filter(f => f.tipo_foto === x.foto))).join('')
-      + (fotos.some(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto)) ? secao('Fotos sem item (envio anterior à regra)', [], fotos.filter(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto))) : '')
+        [[x.rot, SN.num(Number(a[x.k]) || 0)], ['Fotos', `${x.tem} de ${x.exigidas} exigida(s)`, x.tem < x.exigidas]], fotos.filter(f => VR.fotoDoItem(f, x)))).join('')
+      + (fotos.some(f => !L.producao_aerea.some(c => VR.fotoDoItem(f, c))) ? secao('Fotos sem item (envio anterior à regra)', [], fotos.filter(f => !L.producao_aerea.some(c => VR.fotoDoItem(f, c)))) : '')
       + secao('Acumulado da rota (não rejeitados)', [...L.producao_aerea.map(c => [c.rot, SN.num(p.totais[c.k])]),
         ['% do previsto', p.pct != null ? p.pct + '%' : '—', p.pct != null && (p.pct < 80 || p.pct > 120)], ['Apontamentos', p.apontamentos]], []);
   };
@@ -329,6 +340,7 @@
       const dados = { decisao, motivos: [...motivos], motivo_texto: (SN.$('#rTexto', f) || {}).value || '', [x.seg === 'AEREA' ? 'id_apontamento' : 'id_vistoria']: x.id };
       const val = VR.validarRevisao(dados);
       if (!val.ok) { SN.toast(val.erros[0], 'erro'); return false; }
+      if (decisao === 'APROVADA' && x.seg === 'AEREA') { const cr = VR.criteriosApontamento(a, r); if (!cr.ok) { SN.toast('Não dá para aprovar: ' + cr.erros[0], 'erro'); return false; } }
       try { await SN.vst.exec('VST_REVISAR', dados); } catch (e) { SN.toast(e.message, 'erro'); return false; }
       SN.toast(decisao === 'APROVADA' ? 'Aprovado.' : 'Rejeitado: o prestador vai ver o motivo e refazer.', 'ok');
       setTimeout(() => SN.render(), 50); return true;
@@ -417,7 +429,7 @@
       </div>
       <div class="card"><div class="card-tit"><h3>Meta do mês · ${esc(nomeMes(mesSel))}</h3><span class="small muted">${SN.num(t.metros)} de ${SN.num(k.meta_m)} m</span></div>
         <div class="gauge ${k.pct_meta >= 100 ? '' : noRitmo ? '' : 'alerta'}" title="${k.pct_meta}% da meta"><div style="width:${Math.min(100, k.pct_meta || 0)}%"></div></div>
-        <div class="grid g6" style="margin-top:12px">${[['Rotas', t.rotas, ''], ['Postes equipados', t.postes, ''], ['Cordoalha', t.cordoalha, ' m'], ['Plaquetas', t.plaquetas, ''], ['Caixas/CEO regularizadas', t.caixas, ''], ['Sobra técnica', t.sobra, '']]
+        <div class="kpis-fin" style="margin-top:12px">${[['Rotas', t.rotas, ''], ['Postes equipados', t.postes, ''], ['Cordoalha', t.cordoalha, ' m'], ['Plaquetas', t.plaquetas, ''], ['Sobra técnica', t.sobra, '']]
           .map(([r, v, u]) => `<div><div class="small muted">${r}</div><b style="font-size:1.2rem">${SN.num(v)}${u}</b></div>`).join('')}</div></div>
       <div class="card"><div class="card-tit"><h3>Metros percorridos por mês</h3><span class="small muted">linha tracejada = meta</span></div>
         <div class="vst-colunas">${serie.map(s => `<div class="vst-col-wrap" title="${esc(nomeMes(s.mes))}: ${SN.num(s.metros)} m · meta ${SN.num(s.meta_m)} m">
@@ -428,10 +440,10 @@
           <tbody>${serie.map(s => `<tr><td>${esc(nomeMes(s.mes))}</td><td class="num">${SN.num(s.metros)}</td><td class="num">${SN.num(s.meta_m)}</td><td class="num">${s.meta_m ? Math.round(100 * s.metros / s.meta_m) : '—'}%</td></tr>`).join('')}</tbody></table></details></div>
       <div class="card"><div class="card-tit"><h3>Por equipe</h3></div>
         ${barras(ordenar(k.por.equipe, 'metros').map(([n, v, o]) => [n, v, o.rotas + ' rotas']), SN.num, ' m')}
-        <div class="tabela-wrap" style="margin-top:10px"><table class="tab small"><thead><tr><th>Equipe</th><th class="num">Rotas</th><th class="num">Metros</th><th class="num">% do mês</th><th class="num">Postes</th><th class="num">Cordoalha (m)</th><th class="num">Plaquetas</th><th class="num">Caixas/CEO</th><th class="num">Sobra técnica</th></tr></thead>
+        <div class="tabela-wrap" style="margin-top:10px"><table class="tab small"><thead><tr><th>Equipe</th><th class="num">Rotas</th><th class="num">Metros</th><th class="num">% do mês</th><th class="num">Postes</th><th class="num">Cordoalha (m)</th><th class="num">Plaquetas</th><th class="num">Sobra técnica</th></tr></thead>
           <tbody>${ordenar(k.por.equipe, 'metros').map(([n, v, o]) => `<tr><td>${esc(n)}</td><td class="num">${o.rotas}</td><td class="num">${SN.num(v)}</td><td class="num">${t.metros ? Math.round(1000 * v / t.metros) / 10 : 0}%</td>
-            <td class="num">${SN.num(o.postes)}</td><td class="num">${SN.num(o.cordoalha)}</td><td class="num">${SN.num(o.plaquetas)}</td><td class="num">${SN.num(o.caixas)}</td><td class="num">${SN.num(o.sobra)}</td></tr>`).join('')}
-          <tr><td><b>Total</b></td><td class="num"><b>${t.rotas}</b></td><td class="num"><b>${SN.num(t.metros)}</b></td><td class="num">100%</td><td class="num"><b>${SN.num(t.postes)}</b></td><td class="num"><b>${SN.num(t.cordoalha)}</b></td><td class="num"><b>${SN.num(t.plaquetas)}</b></td><td class="num"><b>${SN.num(t.caixas)}</b></td><td class="num"><b>${SN.num(t.sobra)}</b></td></tr></tbody></table></div></div>
+            <td class="num">${SN.num(o.postes)}</td><td class="num">${SN.num(o.cordoalha)}</td><td class="num">${SN.num(o.plaquetas)}</td><td class="num">${SN.num(o.sobra)}</td></tr>`).join('')}
+          <tr><td><b>Total</b></td><td class="num"><b>${t.rotas}</b></td><td class="num"><b>${SN.num(t.metros)}</b></td><td class="num">100%</td><td class="num"><b>${SN.num(t.postes)}</b></td><td class="num"><b>${SN.num(t.cordoalha)}</b></td><td class="num"><b>${SN.num(t.plaquetas)}</b></td><td class="num"><b>${SN.num(t.sobra)}</b></td></tr></tbody></table></div></div>
       <div class="grid g2">
         <div class="card"><h3>Por região</h3>${barras(ordenar(k.por.regiao, 'metros'), SN.num, ' m')}</div>
         <div class="card"><h3>Por motivo</h3>${barras(ordenar(k.por.motivo, 'metros').map(([n, v, o]) => [n, v, o.rotas + ' rotas']), SN.num, ' m')}</div>
@@ -458,7 +470,7 @@
         const r = rm[a.id_rota] || {};
         return { Data: SN.vst.dia(a.data), Rota: a.id_rota, Tipo: a.tipo === 'final' ? 'Finalizado' : 'Parcial', Equipe: r.prestador, Cidade: r.cidade, Região: r.regiao, Motivo: r.motivo,
           Solicitante: r.solicitante, Protocolo: r.protocolo || r.id_chamado || '', 'Metros': a.metros, 'Postes equipados': a.postes, 'Cordoalha (m)': a.cordoalha, Plaquetas: a.plaquetas,
-          'Caixas/CEO regularizadas': a.caixas, 'Sobra técnica': a.sobra, 'Status revisão': a.status_revisao, 'Da planilha': a.importado_planilha ? 'SIM' : '' };
+          'Sobra técnica': (Number(a.sobra) || 0) + (Number(a.caixas) || 0), 'Status revisão': a.status_revisao, 'Da planilha': a.importado_planilha ? 'SIM' : '' };
       }));
     };
   };

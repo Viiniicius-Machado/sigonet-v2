@@ -32,16 +32,18 @@
   const tecnicosDe = emp => SN.db.tecnicos.filter(t => t.ativo !== false && t.empresa === emp).map(t => t.nome).sort();
   const opcoes = (lista, sel, vazio) => (vazio != null ? `<option value="">${esc(vazio)}</option>` : '') + lista.map(v => `<option ${v === sel ? 'selected' : ''}>${esc(v)}</option>`).join('');
   const cfg = () => VR.normalizarConfig(d.config);
-  const rotas = () => (d.prog_rotas || []).filter(r => r.segmento === seg);
+  // A Melhoria mostra também as obras que nasceram de projeto (segmento PROJETO, unificado em 15/10/2026).
+  const doSeg = r => r.segmento === seg || (L.programas[r.segmento] || {}).dentroDe === seg;
+  const rotas = () => (d.prog_rotas || []).filter(doSeg);
   const aps = () => { const ids = {}; rotas().forEach(r => { ids[r.id_rota] = true; }); return (d.prog_producao || []).filter(a => ids[a.id_rota]); };
   const retirada = () => seg === 'RETIRADA';
-  const deProjeto = () => !!P().soDeProjeto; // Novos projetos: a obra nasce do projeto aprovado (telas-projetos.js)
   const contaDe = r => L.contaProg(r) || '';
   const popTxt = p => (/^POP\b/i.test(p) ? '' : 'POP ') + p; // o cadastro às vezes já traz "POP" no nome
   const diaLocal = v => { const s = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + 'T12:00:00') : (v ? new Date(v) : null); };
   const noIv = (iv, v) => { if (!iv) return true; const t = diaLocal(v); return !!t && t >= iv[0] && t < iv[1]; };
 
   const abrir = async (s, v) => {
+    if (L.programas[s].dentroDe) return SN.navegar(L.programas[L.programas[s].dentroDe].href.replace('planejamento', VISTAS[v][0])); // #/prj/… antigo
     seg = s; vista = v;
     const tela = idMenu(v);
     if (!SN.vst.disponivel()) return SN.casca(tela, SN.vst.semServidorHtml.replace('A Preventiva precisa', 'Esta tela precisa'));
@@ -58,13 +60,11 @@
 
   const pintar = () => {
     const e = E(), pend = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO').length;
-    const abas = deProjeto() ? [['LISTA', 'Obras']] : [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade']];
-    if (deProjeto()) e.aba = 'LISTA';
-    const sub = deProjeto() ? { PLAN: 'Obras dos projetos aprovados. Ao despachar, o chamado é criado na conta escolhida no projeto e entra na fila da equipe — com o KMZ, o desenho, os materiais e a LPU estimada (sem valores).',
-      REV: `Apontamentos da equipe${pend ? ` (<b>${pend}</b> aguardando)` : ''}. Aprovado o "Finalizado", o chamado conclui e a LPU nasce preenchida.`,
-      DASH: 'Produção aprovada e valor lançado nas obras dos projetos.' }[vista] : { PLAN: `Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico.`,
+    const abas = [['LISTA', 'Atividades'], ['NOVA', e.form && e.form.id_rota ? 'Editar atividade' : 'Nova atividade']];
+    const sub = { PLAN: `Planeje e despache as atividades de ${esc(P().rot.toLowerCase())}. Ao despachar, o chamado é criado na conta <b>${esc(SN.contaTxt(P().conta))}</b> e entra na fila do técnico.`,
       REV: `Apontamentos do técnico${pend ? ` (<b>${pend}</b> aguardando)` : ''}. Aprovado o "Finalizado", o chamado conclui e a LPU nasce preenchida.`,
-      DASH: `Produção aprovada e valor atingido na conta <b>${esc(SN.contaTxt(P().conta))}</b>.` }[vista];
+      DASH: `Produção aprovada e valor atingido na conta <b>${esc(SN.contaTxt(P().conta))}</b>.` }[vista]
+      + (vista === 'PLAN' && seg === 'MELHORIA' ? ' Obras com traçado começam em <a href="#/prj/projetos">Projetos</a> (KMZ, materiais e orçamento): aprovado pelo Gestor/Gerente, o projeto entra aqui como obra (OBR-) para despachar.' : '');
     SN.casca(idMenu(vista), `
       <div class="cab-pagina"><div><h1>${esc(P().rot)} · ${VISTAS[vista][1]}</h1><p>${sub}</p></div>
         <button class="btn" id="pAtualizar">⟳ Atualizar</button></div>
@@ -89,7 +89,7 @@
   };
   const pintarLista = () => {
     const e = E(), f = e.filtro, gestorTotal = ((SN.usuario() || {}).telas || []).includes('*');
-    const todas = f.status === 'CANCELADA' ? (d.prog_canceladas || []).filter(r => r.segmento === seg) : rotas();
+    const todas = f.status === 'CANCELADA' ? (d.prog_canceladas || []).filter(doSeg) : rotas();
     const iv = SN.intervaloMat(e.periodo.per, e.periodo.ref || hoje());
     const andamentoFora = f.status === 'CANCELADA' ? [] : todas.filter(r => ['DESPACHADA', 'EM_CAMPO'].includes(r.status) && !noIv(iv, r.data_planejada));
     const q = SN.normal(f.q);
@@ -100,7 +100,7 @@
       <div class="card card-filtros">${SN.htmlPeriodo(e.periodo)}<div class="filtros" style="margin-top:8px">
         <select class="inp" id="fSt"><option value="">Todos os status</option>${Object.entries(L.status_rota).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select>
         <input class="inp busca" id="fQ" placeholder="Buscar (cidade, ${retirada() ? 'endereço' : 'POP'}, prestador, chamado…)" value="${esc(f.q)}">
-        ${deProjeto() ? '<a class="btn prim" href="#/prj/projetos">📐 Projetos</a>' : '<button class="btn prim" id="bNova">➕ Nova atividade</button>'}</div></div>
+        ${seg === 'MELHORIA' ? '<a class="btn" href="#/prj/projetos">Projetos</a>' : ''}<button class="btn prim" id="bNova">➕ Nova atividade</button></div></div>
       ${andamentoFora.length ? `<div class="aviso info small" style="margin-bottom:10px">${andamentoFora.length} atividade(s) <b>em andamento</b> com data fora deste período (${andamentoFora.slice(0, 5).map(r => esc(r.id_rota)).join(', ')}). <button class="btn sm" id="bVerAnd">Ver em andamento</button></div>` : ''}
       <div class="card"><div class="card-tit"><h3>Atividades (${vis.length})</h3></div>
         ${vis.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr><th>Atividade</th><th>Onde</th><th>Serviço</th><th>Prestador · técnico</th><th>Data</th><th>Status</th><th>Produção</th><th></th></tr></thead><tbody>
@@ -111,9 +111,9 @@
           <td class="nowrap">${SN.vst.dia(r.data_planejada)}${r.data_limite && r.data_limite !== String(r.data_planejada).slice(0, 10) ? `<div class="small muted">até ${SN.vst.dia(r.data_limite)}</div>` : ''}</td>
           <td>${SN.vst.badgeRota(r.status)}</td>
           <td class="small">${r.status === 'CANCELADA' ? `${esc(r.motivo_cancelamento || '')}<div class="muted">por ${esc(r.cancelada_por || '')} · ${SN.dt(r.cancelada_em)}</div>` : producaoTxt(r)}</td>
-          <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button>${deProjeto() ? '' : ` <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`}`
+          <td><div class="acoes" style="gap:6px;min-width:250px">${['DESPACHADA', 'EM_CAMPO', 'CONCLUIDA'].includes(r.status) && SN.vst.abrirAoVivo ? `<button class="btn sm ${r.status === 'EM_CAMPO' ? 'prim' : ''}" data-vivo="${esc(r.id_rota)}" title="Ver ao vivo o que o técnico está apontando e conversar com ele">${SN.conversa ? SN.conversa.ico('olho') : ''}Acompanhar${r.id_chamado && SN.conversa ? `<span class="conv-selo ${SN.conversa.naoLida(r.id_chamado) ? '' : 'oculto'}" data-conv-selo="${esc(r.id_chamado)}">●</span>` : ''}</button> ` : ''}${r.status === 'PLANEJADA' ? `<button class="btn sm prim" data-desp="${esc(r.id_rota)}">Despachar</button>${r.id_projeto ? '' : ` <button class="btn sm" data-ed="${esc(r.id_rota)}">Editar</button> <button class="btn sm perigo" data-ex="${esc(r.id_rota)}">Excluir</button>`}`
             : r.status === 'DESPACHADA' ? `<button class="btn sm" data-ret="${esc(r.id_rota)}">Retirar despacho</button>` : ''}${r.status === 'EM_CAMPO' ? ` <button class="btn sm ok" data-concl="${esc(r.id_rota)}" title="A equipe mandou os apontamentos mas não o &quot;Finalizado&quot;">Concluir pela gestão</button>` : ''}${gestorTotal && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) ? ` <button class="btn sm perigo" data-canc="${esc(r.id_rota)}">Cancelar</button>` : ''}${aps().some(a => a.id_rota === r.id_rota) ? ` <button class="btn sm" data-verrev="${esc(r.id_rota)}">Apontamentos</button>` : ''}${!['PLANEJADA', 'CANCELADA'].includes(r.status) ? ` <button class="btn sm" data-pdf="${esc(r.id_rota)}" title="Resumo da atividade com as fotos de cada apontamento (PDF)">PDF</button> <button class="btn sm" data-zip="${esc(r.id_rota)}" title="Arquivo .zip com o resumo e a ficha de cada apontamento (com fotos)">Baixar tudo</button>` : ''}</div></td></tr>`).join('')}
-        </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : deProjeto() ? 'Nenhuma obra ainda: aprove um projeto em "Projetos".' : 'Nenhuma atividade ainda. Use "Nova atividade".'}</p>`}</div>`;
+        </tbody></table></div>` : `<p class="muted">${todas.length ? 'Nenhuma atividade neste período/filtro.' : 'Nenhuma atividade ainda. Use "Nova atividade"' + (seg === 'MELHORIA' ? ' ou aprove um projeto em "Projetos".' : '.')}</p>`}</div>`;
     SN.ligarPeriodo(pintarLista, e.periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
     SN.$('#fSt').onchange = ev => { f.status = ev.target.value; pintarLista(); };
@@ -329,7 +329,7 @@
     ? `<b>${SN.num(a.metros)} m</b> de cabo retirados · <b>${SN.num(a.ceo || 0)}</b> CEO/CTO`
     : (VR.itensProg(a).length ? `<table class="tab small" style="margin-top:4px"><tbody>${VR.itensProg(a).map(i => { const it = SN.itemLpu(i.cod) || {};
       return `<tr><td class="mono">${esc(i.cod)}</td><td>${esc(it.desc || '')}</td><td class="num nowrap">${SN.num(i.qtd)} ${esc(it.medida || '')}</td></tr>`; }).join('')}</tbody></table>` : '<span class="muted">sem serviço (fechamento)</span>');
-  const cartao = (a, revisada) => { const r = rotas().find(x => x.id_rota === a.id_rota) || {};
+  const cartao = (a, revisada) => { const r = rotas().find(x => x.id_rota === a.id_rota) || { segmento: seg };
     return `<div class="card" style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b class="mono">${esc(a.id_rota)}</b> · ${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? '<span class="badge verde">Finalizado</span>' : '<span class="badge">Parcial</span>'}
         ${a.refeitas ? '<span class="badge alerta">Refeito após rejeição</span>' : ''}
@@ -339,15 +339,18 @@
       <div style="margin-top:6px">${htmlProducao(a)}</div>
       ${a.observacao ? `<div class="small" style="margin-top:4px">Obs.: ${esc(a.observacao)}</div>` : ''}
       ${htmlFotos(a)}
+      ${(() => { const cr = VR.criteriosApontamento(a, r); return cr.ok || a.status_revisao === 'REJEITADA' ? '' : `<div class="aviso erro small" style="margin-top:6px">✖ <b>Não cumpre os critérios${revisada ? ' (aprovado antes da trava de 15/10/2026: reabra e rejeite)' : ' — não pode ser aprovado'}.</b><br>${cr.erros.map(esc).join('<br>')}<br>Foto enviada na conversa não conta.</div>`; })()}
       ${a.status_revisao === 'REJEITADA' ? `<div class="aviso erro small" style="margin-top:6px">Rejeitado por ${esc(a.revisor || '')}: ${(a.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ')}${a.motivo_rejeicao_texto ? ' — ' + esc(a.motivo_rejeicao_texto) : ''}</div>` : ''}
       <div class="acoes" style="margin-top:8px">${revisada ? `<span class="small muted">${esc(a.revisor || '')} · ${SN.dt(a.data_revisao)}</span> <button class="btn sm" data-reabrir="${esc(a.id_apontamento)}">↺ Reabrir</button>`
-        : `<button class="btn ok" data-aprovar="${esc(a.id_apontamento)}">✔ Aprovar</button><button class="btn perigo" data-rejeitar="${esc(a.id_apontamento)}">✖ Rejeitar</button>`}</div></div>`; };
+        : `<button class="btn ok" data-aprovar="${esc(a.id_apontamento)}"${VR.criteriosApontamento(a, r).ok ? '' : ' disabled title="Faltam fotos ou números exigidos"'}>✔ Aprovar</button><button class="btn perigo" data-rejeitar="${esc(a.id_apontamento)}">✖ Rejeitar</button>`}</div></div>`; };
   const pintarRevisao = () => {
     const e = E(), q = SN.normal(e.revQ), todos = aps();
     const filtra = a => { const r = rotas().find(x => x.id_rota === a.id_rota) || {}; return !q || SN.normal([a.id_rota, a.tecnico, a.prestador, r.cidade, r.pop, r.endereco, r.id_chamado].join(' ')).includes(q); };
     const fila = todos.filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && filtra(a)).sort((a, b) => String(a.enviado_em).localeCompare(String(b.enviado_em)));
+    const foraCrit = VR.aprovadosForaDosCriterios(rotas(), todos).filter(x => filtra(x.a));
     const revis = todos.filter(a => ['APROVADA', 'REJEITADA'].includes(a.status_revisao) && filtra(a)).sort((a, b) => String(b.data_revisao).localeCompare(String(a.data_revisao))).slice(0, 30);
     SN.$('#pCorpo').innerHTML = `<div class="card card-filtros"><div class="filtros"><input class="inp busca" id="rQ" placeholder="Buscar (atividade, técnico, cidade…)" value="${esc(e.revQ)}"></div></div>
+      ${foraCrit.length ? `<h3 style="margin:12px 0 8px;color:var(--erro)">Aprovados sem cumprir os critérios (${foraCrit.length})</h3>${foraCrit.map(x => cartao(x.a, true)).join('')}` : ''}
       <h3 style="margin:12px 0 8px">Aguardando revisão (${fila.length})</h3>
       ${fila.length ? fila.map(a => cartao(a, false)).join('') : '<p class="muted">Nada aguardando revisão.</p>'}
       <details style="margin-top:12px"><summary><b>Revisados (últimos ${revis.length})</b></summary><div style="margin-top:8px">${revis.map(a => cartao(a, true)).join('') || '<p class="muted">Nenhum.</p>'}</div></details>`;
@@ -383,7 +386,7 @@
   const dataLpu = l => { const c = SN.db.chamados.find(x => x.id === l.chamadoId); return (c && c.tempos && c.tempos.conclusaoTecnica) || l.enviadoEm || l.criadoEm; };
   const tabela = (cab, linhas) => linhas.length ? `<div class="tabela-wrap"><table class="tab"><thead><tr>${cab.map(([t, num]) => `<th class="${num ? 'num' : ''}">${t}</th>`).join('')}</tr></thead><tbody>${linhas.join('')}</tbody></table></div>` : '<p class="muted small">Sem dados no período.</p>';
   const pintarDash = () => {
-    const e = E(), iv = SN.intervaloMat(e.dash.per, e.dash.ref || hoje()), livre = !!P().contaLivre, conta = livre ? { codigo: '', nome: 'Contas dos projetos', budget: 0 } : SN.conta(P().conta) || { codigo: P().conta, nome: '', budget: 0 };
+    const e = E(), iv = SN.intervaloMat(e.dash.per, e.dash.ref || hoje()), livre = false, conta = SN.conta(P().conta) || { codigo: P().conta, nome: '', budget: 0 };
     const rm = {}; rotas().forEach(r => { rm[r.id_rota] = r; });
     const aprov = aps().filter(a => a.status_revisao === 'APROVADA' && rm[a.id_rota] && noIv(iv, a.data));
     const emRev = aps().filter(a => a.status_revisao === 'AGUARDANDO_REVISAO' && rm[a.id_rota] && noIv(iv, a.data)).length;
@@ -442,10 +445,11 @@
   };
 
   // Menu lateral: um grupo por programa, com Planejamento, Revisão e Dashboard (como a Preventiva).
-  Object.keys(L.programas).forEach(s => { const p = L.programas[s];
+  // Melhoria de rede: Projetos → Planejamento → Revisão → Dashboard (Novos projetos unificado em 15/10/2026).
+  Object.keys(L.programas).filter(s => !L.programas[s].dentroDe).forEach(s => { const p = L.programas[s];
     SN.MENU.push({ grupo: p.rot });
-    if (p.soDeProjeto) SN.MENU.push({ id: 'prj_projetos', tela: p.tela, rot: 'Projetos', ico: '📐', href: '#/prj/projetos' });
-    SN.MENU.push({ tela: p.tela, rot: p.soDeProjeto ? 'Obras' : 'Planejamento', ico: '🗺️', href: p.href },
+    if (s === 'MELHORIA') SN.MENU.push({ id: 'prj_projetos', tela: p.tela, rot: 'Projetos', ico: '📐', href: '#/prj/projetos' });
+    SN.MENU.push({ tela: p.tela, rot: 'Planejamento', ico: '🗺️', href: p.href },
       { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela.replace('planejamento', 'revisao'), rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
       { id: p.tela.replace('planejamento', 'dashboard'), tela: p.tela, rot: 'Dashboard', ico: '📈', href: p.href.replace('planejamento', 'dashboard') }); });
 })();

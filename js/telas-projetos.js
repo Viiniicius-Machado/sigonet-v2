@@ -1,4 +1,6 @@
-// SIGONET V2 — Novos projetos (tela prj_planejamento): projetar, orçar, aprovar e gerar a obra.
+// SIGONET V2 — Melhoria de rede · Projetos (tela mel_planejamento): projetar, orçar, aprovar e gerar a obra.
+// Era "Novos projetos"; unificado à Melhoria em 15/10/2026 (todo novo projeto é melhoria de rede, conta 0103):
+// aprovado, o projeto vira obra (OBR-) no Planejamento da Melhoria, depois Revisão e Dashboard.
 //
 // Pedido do usuário (2026-10-12). Fluxo:
 //   1. Informações e traçado — dados iniciais, origem (CEO da Base KML, coordenada ou clique) e
@@ -15,7 +17,8 @@
 // A equipe vê o pacote na OS (SN.prj.htmlPacoteTecnico) e aponta como na Melhoria.
 (() => {
   const esc = SN.esc, PR = window.PRJ;
-  const TELA = 'prj_planejamento';
+  const TELA = 'mel_planejamento';
+  const CONTA = VR_LISTAS.programas.PROJETO.conta; // 0103 Melhoria de rede (fixa)
   const estado = {}; // por projeto: aba, modo do mapa, passos da rota (nomes de rua), seleção
   let lista = { status: '', q: '' };
   const gestor = () => SN.ehGestor();
@@ -60,7 +63,7 @@
     const soma = arr => arr.reduce((s, p) => s + ((p.orcamento && p.orcamento.total) || 0), 0);
     const kpi = (rot, val, sub) => `<div class="kpi"><div class="rot">${rot}</div><div class="val">${val}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     SN.casca('prj_projetos', `
-      <div class="cab-pagina"><div><h1>Novos projetos</h1><p>Desenhe o traçado no padrão construtivo, orce material e LPU e mande para aprovação. Aprovado, vira obra para o prestador ou a NTT — com KMZ, desenho, materiais e LPU estimada, sem valores.</p></div>
+      <div class="cab-pagina"><div><h1>Melhoria de rede · Projetos</h1><p>Desenhe o traçado no padrão construtivo, orce material e LPU (conta ${esc(SN.contaTxt(CONTA))}) e mande para aprovação do Gestor/Gerente. Aprovado, entra no <a href="#/mel/planejamento">Planejamento</a> como obra para o prestador ou a NTT — com KMZ, desenho, materiais e LPU estimada, sem valores.</p></div>
         <button class="btn prim" id="bNovoPrj">➕ Novo projeto</button></div>
       <div class="kpis-fin" style="margin-bottom:12px">
         ${kpi('Em rascunho', SN.num(cont('RASCUNHO').length + cont('REPROVADO').length), cont('REPROVADO').length ? cont('REPROVADO').length + ' reprovado(s) para ajustar' : 'em desenho / orçamento')}
@@ -86,7 +89,7 @@
     SN.$('#bNovoPrj').onclick = async () => {
       try {
         const id = await SN.novoId('PRJ'), u = SN.usuario() || {};
-        const p = { id, nome: '', cliente: '', cidade: '', pop: '', conta: '', solicitante: '', obs: '', status: 'RASCUNHO', params: { ...PR.PARAMS_PADRAO, ancoragem: 'BAP_EXIST', origemTipo: 'CEO_EXIST', destinoTipo: 'CTO_NOVA' },
+        const p = { id, nome: '', cliente: '', cidade: '', pop: '', conta: CONTA, solicitante: '', obs: '', status: 'RASCUNHO', params: { ...PR.PARAMS_PADRAO, ancoragem: 'BAP_EXIST', origemTipo: 'CEO_EXIST', destinoTipo: 'CTO_NOVA' },
           origem: null, destino: null, vias: [], postes: '', elementos: [], ruas: [], ajustes: { mat: {}, lpu: {} }, criadoEm: SN.agora(), criadoPor: u.nome || '', historico: [] };
         hist(p, 'CRIADO'); projetos().push(p); SN.log('PROJETO_CRIADO', id, ''); SN.salvar(); SN.navegar('#/prj/projeto/' + encodeURIComponent(id));
       } catch (e) { SN.toast(e.message, 'erro'); }
@@ -102,6 +105,7 @@
   const E = id => estado[id] || (estado[id] = { aba: 'DESENHO', modo: '', sel: null });
   const abrirProjeto = id => {
     const p = achar(id);
+    if (p && !p.conta) p.conta = CONTA; // projetos de antes da unificação
     if (!p) { SN.toast('Projeto não encontrado.', 'erro'); return SN.navegar('#/prj/projetos'); }
     const e = E(id), abas = [['DESENHO', '1 · Informações e traçado'], ['ORCAMENTO', '2 · Orçamento'], ['APROVACAO', p.status === 'APROVADO' ? '3 · Aprovado · obra' : '3 · Aprovação']];
     SN.casca('prj_projetos', `
@@ -126,7 +130,6 @@
   const pintarDesenho = p => {
     const e = E(p.id), o = params(p), ed = editavel(p), dis = ed ? '' : 'disabled';
     const ps = postesDe(p), obra = obraAtual(p), existente = o.base !== 'NOVA';
-    const contas = SN.db.contas.map(c => [c.codigo, SN.contaTxt(c.codigo)]);
     const cidades = [...new Set(projetos().map(x => x.cidade).concat(SN.db.chamados.map(c => c.cidade)).filter(Boolean))].sort();
     SN.$('#prjCorpo').innerHTML = `<div class="prj-grade">
       <div class="prj-lado">
@@ -136,7 +139,7 @@
           <div class="linha-form">
             <div class="campo"><label>Cidade *</label><input class="inp" data-pf="cidade" list="prjCid" value="${esc(p.cidade)}" ${dis}><datalist id="prjCid">${cidades.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
             <div class="campo"><label>POP</label><input class="inp" data-pf="pop" value="${esc(p.pop)}" ${dis}></div></div>
-          <div class="campo"><label>Conta contábil *</label><select class="inp" data-pf="conta" ${dis}><option value="">Escolha…</option>${opt(contas, p.conta)}</select></div>
+          <div class="campo"><label>Conta contábil</label><div class="inp" style="background:var(--bg-2)">${esc(SN.contaTxt(p.conta || CONTA))}</div></div>
           <div class="campo"><label>Solicitante</label><input class="inp" data-pf="solicitante" value="${esc(p.solicitante)}" ${dis}></div>
           <div class="campo"><label>Observação para a equipe</label><textarea class="inp" data-pf="obs" ${dis}>${esc(p.obs || '')}</textarea></div>
         </div>
@@ -754,7 +757,7 @@
     const a = p.aprovacao || {};
     el.innerHTML = resumo + `<div class="card"><h3>✔ Aprovado</h3>
       <p>Por <b>${esc(a.por || '')}</b> em ${SN.dt(a.ts)} · executa <b>${esc(a.prestador === 'NETTURBO' ? 'NETTURBO (NTT)' : a.prestador || '')}</b>${a.tecnico ? ' · ' + esc(a.tecnico) : ''} · data ${SN.vst.dia(a.data)}${a.data_limite ? ' até ' + SN.vst.dia(a.data_limite) : ''}.</p>
-      <p>Obra: ${p.id_rota ? `<a href="#/prj/planejamento"><b>${esc(p.id_rota)}</b></a> — acompanhe em Novos projetos › Obras (despacho, apontamentos, revisão e LPU).` : '<span class="muted">não gerada</span>'}</p>
+      <p>Obra: ${p.id_rota ? `<a href="#/mel/planejamento"><b>${esc(p.id_rota)}</b></a> — acompanhe em Melhoria de rede › Planejamento (despacho), Revisão (apontamentos) e Dashboard.` : '<span class="muted">não gerada</span>'}</p>
       ${a.kmz_url ? `<p class="small"><a href="${esc(a.kmz_url)}" target="_blank" rel="noopener">KMZ no Drive</a></p>` : ''}</div>${histHtml(p)}`;
   };
   const histHtml = p => `<details class="card" style="margin-top:12px"><summary><b>Histórico</b></summary><ul class="small" style="margin-top:6px">${(p.historico || []).slice().reverse().map(h => `<li>${SN.dt(h.ts)} · <b>${esc(h.usuario)}</b> · ${esc(h.acao)}${h.detalhe ? ' — ' + esc(h.detalhe) : ''}</li>`).join('')}</ul></details>`;

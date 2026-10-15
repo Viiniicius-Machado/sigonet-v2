@@ -774,6 +774,7 @@ SN.usuario = () => {
   return t ? { ...t, tipo: 'tecnico', cargo: 'Técnico' } : null;
 };
 SN.temTela = tela => { const u = SN.usuario(); return !!u && u.tipo === 'lideranca' && (u.telas.includes('*') || u.telas.includes(tela)
+  || (/^mel_(planejamento|revisao)$/.test(tela) && u.telas.includes('prj_planejamento')) // Novos projetos virou parte da Melhoria (15/10/2026)
   || (u.cargo === 'Encarregado' && SN.TELAS_ENCARREGADO.includes(tela)) // encarregado revisa as obras pelo cargo
   || (/^(mel|ret|prj)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento')))); }; // quem planeja o programa também revisa
 // Revisão das obras (Preventiva, Melhoria, Retirada): todo Encarregado tem, sem marcar no Portal.

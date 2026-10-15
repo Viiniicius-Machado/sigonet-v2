@@ -111,23 +111,32 @@ SN.vst = SN.vst || {};
       L.producao_aerea.forEach(c => doc.linha(c.rot, SN.num(Number(acumulado[c.k]) || 0, c.k === 'cordoalha' ? 1 : 0)));
       if (Number(rota.metros_previstos)) doc.linha('% da rota', Math.round(1000 * (Number(acumulado.metros) || 0) / Number(rota.metros_previstos)) / 10 + '%');
     }
-    // Fotos separadas por item da produção; as genéricas antigas ("producao") vão por último.
-    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
-    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
-    for (const x of VR.validarFotosApontamento(a).itens) {
-      const doItem = fotos.filter(f => f.tipo_foto === x.foto);
-      if (!doItem.length && !x.exigidas) continue;
-      doc.secao(`Fotos · ${x.rot.replace(/ \(m\)$/, '')} (${doItem.length} de ${x.exigidas} exigida(s))`);
-      if (doItem.length) await gradeFotos(doc, doItem.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
-    }
-    const semItem = fotos.filter(f => !L.producao_aerea.some(c => c.foto === f.tipo_foto));
-    if (semItem.length) {
-      doc.secao(`Fotos sem item (${semItem.length})`);
-      await gradeFotos(doc, semItem.map(f => ({ ...f, src: (fotosLocais[f.id_foto] || {}).thumb })), legenda);
-    }
+    await fotosAerea(doc, a, fotosLocais);
     rodape(doc, `Ficha gerada no aparelho em ${SN.dt(SN.agora())} · apontamento ${a.id_apontamento}`);
     return SN.pdfDataUrl(doc);
   };
+
+  // Fotos do apontamento aéreo separadas por item da produção (o número do item e, embaixo, as fotos dele);
+  // as genéricas antigas ("producao") vão por último. comNumero: repete "Item: quantidade" no título.
+  const fotosAerea = async (doc, a, fotosLocais, comNumero) => {
+    const fotos = (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf');
+    const legenda = f => f.origem === 'galeria' ? `Da galeria${f.data_hora_arquivo ? ' · arquivo de ' + SN.dt(f.data_hora_arquivo) : ''}` : `${SN.dt(f.data_hora_captura)}${f.endereco ? ' · ' + f.endereco : ''}`;
+    for (const x of VR.validarFotosApontamento(a).itens) {
+      const doItem = fotos.filter(f => VR.fotoDoItem(f, x));
+      if (!doItem.length && !x.exigidas && !comNumero) continue;
+      const nome = x.rot.replace(/ \(m\)$/, '');
+      doc.secao(comNumero ? `${x.rot}: ${SN.num(Number(a[x.k]) || 0, x.k === 'cordoalha' ? 1 : 0)} · fotos ${doItem.length} de ${x.exigidas} exigida(s)${doItem.length < x.exigidas ? ' — FALTAM' : ''}`
+        : `Fotos · ${nome} (${doItem.length} de ${x.exigidas} exigida(s))`);
+      if (doItem.length) await gradeFotos(doc, doItem.map(f => ({ ...f, src: ((fotosLocais || {})[f.id_foto] || {}).thumb })), legenda);
+      else if (comNumero) { doc.setFontSize(8.5); doc.setTextColor(120); doc.text('Sem fotos neste item.', 12, doc._y); doc._y += 6; doc.setFontSize(9.5); doc.setTextColor(29, 38, 20); }
+    }
+    const semItem = fotos.filter(f => !L.producao_aerea.some(c => VR.fotoDoItem(f, c)));
+    if (semItem.length) {
+      doc.secao(`Fotos sem item (${semItem.length})`);
+      await gradeFotos(doc, semItem.map(f => ({ ...f, src: ((fotosLocais || {})[f.id_foto] || {}).thumb })), legenda);
+    }
+  };
+  SN.vst.pdfFotosAerea = fotosAerea;
 
   const rodape = (doc, txt) => {
     const n = doc.getNumberOfPages();
@@ -167,7 +176,9 @@ SN.vst = SN.vst || {};
     .map(([cod, q]) => `${cod} × ${SN.num(q, cod === 'SEV0009' ? 1 : 0)}${(SN.itemLpu && SN.itemLpu(cod)) ? ' (' + SN.itemLpu(cod).desc + ')' : ''}`).join('; ') || '—';
 
   // Resumo de UMA rota: dados, andamento, o que foi aprovado e a LPU que a rota gera.
-  SN.vst.pdfResumoRota = async (rota, d, config, conversa) => {
+  // fotosLocais (opcional, id_foto → { thumb }): na aérea, cada apontamento ganha uma página com cada item
+  // (Rota percorrida, Postes equipados, Cordoalha…) e as fotos dele logo embaixo (pedido de 2026-10-15).
+  SN.vst.pdfResumoRota = async (rota, d, config, conversa, fotosLocais) => {
     const aerea = rota.segmento === 'AEREA';
     const doc = SN.novoPdf(`Preventiva ${aerea ? 'aérea' : 'subterrânea'} · Resumo da rota ${rota.id_rota}`); if (!doc) return null;
     doc.secao('Rota');
@@ -194,9 +205,19 @@ SN.vst = SN.vst || {};
       L.producao_aerea.forEach(c => doc.linha(c.rot, SN.num(Number(r.totais[c.k]) || 0, c.k === 'cordoalha' ? 1 : 0)));
       doc.linha('LPU gerada', lpuTxt(r.lpu_sugerida));
       doc.secao('Apontamentos');
-      tabela(doc, ['Data', 'Tipo', 'Metros', 'Postes', 'Cordoalha', 'Plaquetas', 'Caixas', 'Revisão'],
-        aps.map(a => [SN.vst.dia(a.data), a.tipo === 'final' ? 'Final' : 'Parcial', SN.num(a.metros), SN.num(a.postes), SN.num(a.cordoalha, 1), SN.num(a.plaquetas), SN.num(a.caixas), stRev(a.status_revisao)]),
+      tabela(doc, ['Data', 'Tipo', 'Metros', 'Postes', 'Cordoalha', 'Plaquetas', 'Sobra', 'Revisão'],
+        aps.map(a => [SN.vst.dia(a.data), a.tipo === 'final' ? 'Final' : 'Parcial', SN.num(a.metros), SN.num(a.postes), SN.num(a.cordoalha, 1), SN.num(a.plaquetas), SN.num((Number(a.sobra) || 0) + (Number(a.caixas) || 0)), stRev(a.status_revisao)]),
         [22, 18, 20, 18, 22, 22, 18, 50]);
+      if (fotosLocais) for (const a of aps.filter(x => x.status_revisao && x.status_revisao !== 'RASCUNHO')) {
+        doc.addPage(); doc._y = 18;
+        doc.secao(`Apontamento ${a.tipo === 'final' ? 'FINALIZADO' : 'parcial'} · ${SN.vst.dia(a.data)} · ${a.tecnico || ''} · ${stRev(a.status_revisao)}`);
+        const cr = VR.criteriosApontamento(a, rota);
+        if (!cr.ok) doc.linha('Critérios', 'NÃO CUMPRE: ' + cr.erros.join(' '));
+        if (a.status_revisao === 'REJEITADA') doc.linha('Motivo da rejeição', `${(a.motivo_rejeicao || []).map(m => rot('motivos_rejeicao', m)).join(', ')}${a.motivo_rejeicao_texto ? ' — ' + a.motivo_rejeicao_texto : ''}`);
+        if (a.justificativa_metros) doc.linha('Justificativa da metragem', a.justificativa_metros);
+        if (a.observacao) doc.linha('Observação', a.observacao);
+        await SN.vst.pdfFotosAerea(doc, a, fotosLocais, true);
+      }
     } else {
       const vs = (d.vistorias || []).filter(v => v.id_rota === rota.id_rota && v.status_revisao && v.status_revisao !== 'RASCUNHO');
       const r = VR.resumoChamado(rota, d.vistorias || []), c = VR.conformidade(vs).total, p = VR.passivos(vs, config), dv = VR.divergencias(vs).total;
@@ -233,6 +254,25 @@ SN.vst = SN.vst || {};
     if (conversa && SN.conversa) await SN.conversa.pdfSecao(doc, conversa);
     SN.vst.pdfRodape(doc, `Resumo gerado em ${SN.dt(SN.agora())} · rota ${rota.id_rota}`);
     return doc;
+  };
+
+  // Miniaturas (do Drive, pelo servidor) das fotos dos apontamentos enviados: id_foto → { thumb }.
+  SN.vst.fotosDosApontamentos = async aps => {
+    const ids = (aps || []).filter(a => a.status_revisao && a.status_revisao !== 'RASCUNHO')
+      .flatMap(a => (a.fotos || []).filter(f => f.tipo_foto !== 'ficha_pdf').map(f => f.id_foto)), out = {}, lotes = [];
+    for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
+    await Promise.all(lotes.map(async l => { try { (await SN.vst.exec('VST_FOTOS_B64', { ids: l })).fotos.forEach(f => { if (f.dataUrl) out[f.id_foto] = { thumb: f.dataUrl }; }); } catch (e) { } }));
+    return out;
+  };
+  // PDF completo da rota/atividade (resumo + fotos de cada apontamento), perguntando se a conversa entra.
+  SN.vst.pdfCompleto = (rota, d, config) => {
+    const prog = VR.ehProg(rota), aps = (d.producao || []).filter(a => a.id_rota === rota.id_rota);
+    const montar = async cv => {
+      const fotos = rota.segmento === 'AEREA' || prog ? await SN.vst.fotosDosApontamentos(aps) : null;
+      return prog ? SN.vst.pdfResumoProg(rota, aps, cv, fotos) : SN.vst.pdfResumoRota(rota, d, config, cv, fotos);
+    };
+    if (SN.conversa && rota.id_chamado) SN.conversa.pdfComConversa(rota.id_chamado, montar, SN.vst.nomeObra(rota));
+    else SN.abrirPdfDepois(() => montar(null), SN.vst.nomeObra(rota));
   };
 
   // ─────────── Melhoria de rede / Retirada de cabo ───────────
@@ -351,7 +391,7 @@ SN.vst = SN.vst || {};
     doc.linha('Dias trabalhados', `${k.dias_trabalhados}${dm.salvo != null ? ' (informado)' : ' (dias corridos do calendário)'}`);
     doc.linha('Média por dia / projeção', `${SN.num(k.media_dia_m)} m/dia · projeção ${SN.num(k.projecao_m)} m (${k.projecao_m >= k.meta_m ? 'no ritmo da meta' : 'abaixo da meta'})`);
     doc.linha('Falta para a meta', SN.num(k.falta_m) + ' m');
-    doc.linha('Produção', `${t.rotas} rotas · ${SN.num(t.postes)} postes · ${SN.num(t.cordoalha)} m de cordoalha · ${SN.num(t.plaquetas)} plaquetas · ${SN.num(t.caixas)} caixas/CEO · sobra ${SN.num(t.sobra)}`);
+    doc.linha('Produção', `${t.rotas} rotas · ${SN.num(t.postes)} postes · ${SN.num(t.cordoalha)} m de cordoalha · ${SN.num(t.plaquetas)} plaquetas · sobra técnica ${SN.num(t.sobra)}`);
     const ord = o => Object.keys(o).map(n => [n, o[n]]).sort((a, b) => b[1].metros - a[1].metros);
     doc.secao('Aérea · por equipe');
     tabela(doc, ['Equipe', 'Rotas', 'Metros', '% do mês', 'Postes', 'Plaquetas'],

@@ -12,8 +12,7 @@ SN.vst = {};
 // Telas liberáveis em Cadastros e Acessos (quem tem "Todas" já vê).
 Object.assign(SN.TELAS || (SN.TELAS = {}), {
   vst_planejamento: 'Preventiva · Planejamento', vst_revisao: 'Preventiva · Revisão', vst_dashboard: 'Preventiva · Dashboard',
-  mel_planejamento: 'Melhoria de rede · Planejamento', ret_planejamento: 'Retirada de cabo · Planejamento',
-  prj_planejamento: 'Novos projetos (projetar, orçar e acompanhar a obra)'
+  mel_planejamento: 'Melhoria de rede · Projetos e Planejamento', ret_planejamento: 'Retirada de cabo · Planejamento'
 });
 SN.vst.MENU = [
   { grupo: 'Preventiva' },
@@ -143,7 +142,7 @@ SN.vst.resumoAprovado = (prev, comItens) => {
   if (prev.segmento === 'AEREA') {
     const t = prev.producao || {};
     return `${SN.num(t.metros)} m percorridos${it('SEV0083')} · ${SN.num(t.postes)} postes equipados · ${SN.num(t.cordoalha)} m de cordoalha${it('SEV0009')} · `
-      + `${SN.num(t.plaquetas)} plaquetas${it('SEV0005')} · ${SN.num(t.caixas)} caixas/CEO regularizadas${it('SEV0084')} · sobra técnica ${SN.num(t.sobra)}`;
+      + `${SN.num(t.plaquetas)} plaquetas${it('SEV0005')} · sobra técnica ${SN.num(t.sobra)}${it('SEV0084')}`;
   }
   return `${prev.cs_abertas} CS abertas${it('SEV0022b')} · ${prev.cs_nao_abertas} não abertas${it('SEV0076')} · ${SN.num(prev.metros)} m${it('SEV0083')}`;
 };
