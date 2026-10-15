@@ -195,7 +195,8 @@
       if (!forcar && assin === A.assin) { pintarCab(); return; } // nada mudou: não redesenha (não perde a rolagem)
       A.assin = assin;
       const rolagem = SN.$('.av-cs', el) ? SN.$('.av-cs', el).scrollTop : 0;
-      el.innerHTML = `<div id="avCab"></div>${prog ? pintarProg() : aerea ? pintarAerea() : pintarSub(ctx)}`;
+      // aérea e Melhoria/Retirada também dentro de .av-cs: .av-esq corta o que passa (overflow:hidden), sem isso não rolava
+      el.innerHTML = `<div id="avCab"></div>${prog ? `<div class="av-cs">${pintarProg()}</div>` : aerea ? `<div class="av-cs">${pintarAerea()}</div>` : pintarSub(ctx)}`;
       pintarCab();
       if (SN.$('.av-cs', el)) SN.$('.av-cs', el).scrollTop = rolagem;
       SN.$$('[data-av-aba]', el).forEach(b => b.onclick = () => { A.aba = Number(b.dataset.avAba); pintar(true); });
