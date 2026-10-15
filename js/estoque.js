@@ -87,7 +87,7 @@
         <td class="nowrap small">${dataRel(x.e)}</td><td class="num">${Object.keys(x.e.itens || {}).length}</td><td class="num">${x.usados || ''}</td>
         <td class="num">${x.neg ? `<b style="color:var(--erro)">${x.neg}</b>` : ''}</td><td class="num">${SN.brl(x.valor)}</td><td class="num">${(x.e.ativos || []).length || ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">Nenhum estoque.</td></tr>'}</tbody></table></div>`;
     if (SN.$('#eIrVinc')) SN.$('#eIrVinc').onclick = ev => { ev.preventDefault(); aba = 'VINC'; SN.render(); };
-    SN.$('#eQ').oninput = SN.debounce(e => { filtro.q = e.target.value; pintarSaldos(lista); SN.$('#eQ').focus(); }, 250);
+    SN.$('#eQ').oninput = SN.debounce(e => { filtro.q = e.target.value; SN.redesenharDigitando(() => pintarSaldos(lista)); }, 250);
     SN.$('#eEmp').onchange = e => { filtro.emp = e.target.value; pintarSaldos(lista); };
     SN.$$('[data-est]').forEach(tr => tr.onclick = () => abrirEstoque(lista.find(e => e.id === tr.dataset.est)));
   };

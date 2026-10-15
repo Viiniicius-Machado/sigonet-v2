@@ -80,7 +80,7 @@
     SN.$('#fSt').onchange = e => { st.status = e.target.value; repintar(); };
     SN.$('#fAb').onchange = e => { st.soAbertas = e.target.checked; repintar(); };
     SN.$('#fRedeF').onchange = e => { st.fRede = e.target.value; repintar(); };
-    SN.$('#fQ').oninput = SN.debounce(e => { st.q = e.target.value; repintar(); SN.$('#fQ').focus(); }, 300);
+    SN.$('#fQ').oninput = SN.debounce(e => { st.q = e.target.value; SN.redesenharDigitando(repintar); }, 300);
   };
   const redeTxt = r => r.rede ? (r.rede.fora ? ' <span class="badge">fora da área</span>' : r.rede.tem ? ` <span class="badge ok" title="${esc((r.rede.cabos || []).join(', '))}">rede nossa · ${SN.num(r.rede.metros)} m</span>` : ' <span class="badge">sem rede nossa</span>') : '';
   // Resultado que o técnico informou na OS e ainda não foi confirmado pela gestão.

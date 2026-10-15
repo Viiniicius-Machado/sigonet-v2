@@ -60,7 +60,7 @@ SN.filtrosBase = (base) => { const f = SN.fBase, segs = [...new Set(base.map(r =
     </div></div>`; };
 SN.ligarFiltrosBase = redesenhar => { const f = SN.fBase;
   SN.ligarPeriodo(redesenhar);
-  const q = SN.$('#bQ'); if (q) q.oninput = SN.debounce(e => { f.q = e.target.value; const pos = e.target.selectionStart; redesenhar(); const el = SN.$('#bQ'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }, 350);
+  const q = SN.$('#bQ'); if (q) q.oninput = SN.debounce(e => { f.q = e.target.value; SN.redesenharDigitando(redesenhar); }, 350);
   SN.$('#bSeg') && (SN.$('#bSeg').onchange = e => { f.seg = e.target.value; redesenhar(); });
   SN.$('#bEmp') && (SN.$('#bEmp').onchange = e => { f.emp = e.target.value; redesenhar(); });
   SN.$('#bReinc') && (SN.$('#bReinc').onchange = e => { f.soReinc = e.target.checked; redesenhar(); });

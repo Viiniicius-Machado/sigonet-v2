@@ -108,7 +108,7 @@
         const lp = Object.entries(pops).sort((a, b) => b[1].km - a[1].km); if (!lp.length) return '';
         return `<div class="card" style="margin-top:12px"><h3>Por POP (prefixo do cabo)</h3><div class="tabela-wrap"><table class="tab small"><thead><tr><th>POP</th><th class="num">Cabo (km)</th><th class="num">Cabos</th><th>Cidades</th></tr></thead><tbody>
           ${lp.map(([p, o]) => `<tr><td class="mono"><b>${esc(p)}</b></td><td class="num">${SN.num(o.km, 1)}</td><td class="num">${SN.num(o.cabos)}</td><td>${[...o.cidades].map(esc).join(', ')}</td></tr>`).join('')}</tbody></table></div></div>`; })()}`;
-    SN.$('#rQ').oninput = SN.debounce(e => { st.q = e.target.value; pintarCidades(); SN.$('#rQ').focus(); }, 250);
+    SN.$('#rQ').oninput = SN.debounce(e => { st.q = e.target.value; SN.redesenharDigitando(pintarCidades); }, 250);
     SN.$('#bExpCid').onclick = () => SN.exportar('rede-geogrid-cidades', l.map(c => ({ Cidade: c.cidade, 'Cabo (km)': c.km, Cabos: c.cabos, Caixas: c.caixas, 'Não lançados': c.naoLancados, 'Não lançados (km)': c.naoLancadosKm,
       'Mini FOSC': (c.tiposCaixa || {}).MINI_FOSC || 0, 'FOSC antiga': (c.tiposCaixa || {}).FOSC || 0, 'Com splitter': (c.tiposCaixa || {}).SPLITTER || 0, 'Pontas sem caixa': c.pontasSoltas, 'Caixas sem cabo': c.caixasSemCabo, 'Cabo em outra pasta': c.caixasOutraCidade || 0, 'Nomes repetidos': c.nomesRepetidos })));
     SN.$$('[data-vercid]').forEach(b => b.onclick = () => { st.cidade = b.dataset.vercid; st.aba = 'MAPA'; pintar(); });

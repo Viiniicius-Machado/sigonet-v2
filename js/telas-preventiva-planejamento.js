@@ -81,7 +81,7 @@
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { periodo.per = 'tudo'; filtro.status = andamentoFora.every(r => r.status === 'EM_CAMPO') ? 'EM_CAMPO' : ''; pintarRotas(); };
     SN.$('#fSeg').onchange = e => { filtro.seg = e.target.value; pintarRotas(); };
     SN.$('#fSt').onchange = e => { filtro.status = e.target.value; pintarRotas(); };
-    SN.$('#fQ').oninput = SN.debounce(e => { filtro.q = e.target.value; pintarRotas(); SN.$('#fQ').focus(); }, 300);
+    SN.$('#fQ').oninput = SN.debounce(e => { filtro.q = e.target.value; SN.redesenharDigitando(pintarRotas); }, 300);
     SN.$('#bNova').onclick = () => { form = novaRota('AEREA'); aba = 'NOVA'; pintar(); };
     const acao = async (sel, fn) => SN.$$(sel).forEach(b => b.onclick = async () => { b.disabled = true; try { await fn(b); } catch (e) { SN.toast(e.message, 'erro'); b.disabled = false; } });
     acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' }); SN.toast('Rota despachada: o chamado Preventiva foi criado e está na fila do técnico.', 'ok'); await recarregar(); });

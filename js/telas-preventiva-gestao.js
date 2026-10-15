@@ -109,12 +109,12 @@
     };
     SN.$$('[data-f]').forEach(b => b.onclick = () => { filtroSeg = b.dataset.f; SN.render(); });
     [['#frPrest', 'prest'], ['#frRota', 'rota'], ['#frAlerta', 'alerta'], ['#frOrdem', 'ordem']].forEach(([id, k]) => { const el = SN.$(id); if (el) el.onchange = () => { fr[k] = el.value; SN.render(); }; });
-    const frQ = SN.$('#frQ'); if (frQ) frQ.oninput = SN.debounce(() => { fr.q = frQ.value.trim(); SN.render(); setTimeout(() => { const b = SN.$('#frQ'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }); }, 300);
+    const frQ = SN.$('#frQ'); if (frQ) frQ.oninput = SN.debounce(() => { fr.q = frQ.value.trim(); SN.render(); }, 300); // SN.render mantém texto e cursor
     if (SN.$('#frLimpar')) SN.$('#frLimpar').onclick = () => { Object.assign(fr, { q: '', prest: '', rota: '', alerta: '' }); SN.render(); };
     SN.$$('[data-rev]').forEach(tr => tr.onclick = () => { const x = itens.find(i => i.id === tr.dataset.rev); if (x) abrirRevisao(x, d); });
     SN.$$('[data-revisada]').forEach(tr => tr.onclick = () => { const x = recentes.find(i => (i.doc.id_vistoria || i.doc.id_apontamento) === tr.dataset.revisada); if (x) abrirRevisao({ ...x, id: tr.dataset.revisada }, d); });
     const busca = SN.$('#rBusca'); let tBusca;
-    busca.oninput = () => { clearTimeout(tBusca); tBusca = setTimeout(() => { buscaRev = busca.value.trim(); SN.render(); setTimeout(() => { const b = SN.$('#rBusca'); if (b) { b.focus(); b.setSelectionRange(b.value.length, b.value.length); } }); }, 300); };
+    busca.oninput = () => { clearTimeout(tBusca); tBusca = setTimeout(() => { buscaRev = busca.value.trim(); SN.render(); }, 300); }; // SN.render mantém texto e cursor
   }, { tela: 'vst_revisao' });
 
   // Seção da revisão: campos à esquerda, as fotos daquela parte à direita.

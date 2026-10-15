@@ -95,6 +95,24 @@ SN.mesChave = iso => (iso || '').slice(0, 7);
 SN.mesNome = chave => { if (!chave) return ''; const [a, m] = chave.split('-'); return new Date(+a, +m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); };
 SN.normal = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 SN.debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+// Redesenha sem atrapalhar quem está digitando (erro relatado em 2026-10-15: parar de digitar na busca embaralhava
+// o texto). O campo em foco é recriado pelo redesenho; focar um campo novo põe o cursor no INÍCIO e a tela pode
+// ter guardado o texto aparado (sem o espaço do fim). Aqui o campo novo (mesmo id) recebe o texto que está no
+// antigo AGORA, o cursor no mesmo lugar e o foco. Aceita redesenho assíncrono (que busca dados antes).
+SN.campoEmFoco = () => { const a = document.activeElement; return a && a.id && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !/^(checkbox|radio|file|button|submit|date|datetime-local|time|month)$/i.test(a.type))) ? a : null; };
+SN.devolverFoco = (a, sel) => {
+  if (!a) return; const n = document.getElementById(a.id); if (!n || n === a || n.tagName !== a.tagName) return;
+  const ini = a.isConnected ? a.selectionStart : sel && sel[0], fim = a.isConnected ? a.selectionEnd : sel && sel[1];
+  if (n.value !== a.value) n.value = a.value;
+  n.focus({ preventScroll: true });
+  try { const t = n.value.length; n.setSelectionRange(ini == null ? t : Math.min(ini, t), fim == null ? t : Math.min(fim, t)); } catch (e) { } // type=number não tem seleção
+};
+SN.redesenharDigitando = redesenhar => {
+  const a = SN.campoEmFoco(); let sel = null; try { sel = a && [a.selectionStart, a.selectionEnd]; } catch (e) { }
+  const r = redesenhar();
+  if (r && typeof r.then === 'function') return r.then(v => { SN.devolverFoco(a, sel); return v; });
+  SN.devolverFoco(a, sel); return r;
+};
 
 SN.sha256 = async txt => {
   try {
@@ -893,9 +911,12 @@ SN.render = () => {
   if (!achou) { location.hash = u && u.tipo === 'tecnico' ? '#/tec' : '#/inicio'; return; }
   if (u && achou.familia && achou.familia !== u.tipo) { location.hash = u.tipo === 'tecnico' ? '#/tec' : '#/inicio'; return; }
   if (u && achou.tela && !SN.temTela(achou.tela)) { SN.toast('Seu acesso não inclui esta tela.', 'erro'); location.hash = '#/inicio'; return; }
+  // Mesma tela redesenhada com alguém digitando (busca): mantém texto, cursor e a rolagem; senão, vai ao topo.
+  const mesma = SN.rotaAtual && SN.rotaAtual.hash === hash, campo = mesma ? SN.campoEmFoco() : null, y = window.scrollY;
   SN.rotaAtual = { hash, fn: achou.fn, params };
-  achou.fn(...params);
-  window.scrollTo(0, 0);
+  if (!campo) { achou.fn(...params); window.scrollTo(0, 0); return; }
+  const r = SN.redesenharDigitando(() => achou.fn(...params)), volta = () => window.scrollTo(0, y);
+  if (r && typeof r.then === 'function') r.then(volta, () => { }); else volta();
 };
 SN.aoMudarBase = () => { // re-render leve quando outra aba altera a base
   const f = SN.$('.fundo-modal'); if (f) return; // não atrapalha quem está digitando num modal

@@ -510,7 +510,7 @@ SN.rota('/auditoria', () => {
       ${ints.map(x => `<tr><td class="nowrap">${SN.dt(x.ts)}</td><td>${SN.esc(x.sistema)}</td><td>${SN.esc(x.operacao)}</td><td class="mono small">${SN.esc(JSON.stringify(x.payload))}</td><td class="mono small">${SN.esc(JSON.stringify(x.resposta))}</td></tr>`).join('') || '<tr><td colspan="5" class="muted center">Nenhuma chamada.</td></tr>'}
     </tbody></table></div></div>`}`);
   SN.$$('[data-a]').forEach(b => b.onclick = () => { f.aba = b.dataset.a; SN.render(); });
-  const aq = SN.$('#aQ'); if (aq) aq.oninput = SN.debounce(e => { f.q = e.target.value; SN.render(); SN.$('#aQ').focus(); SN.$('#aQ').setSelectionRange(99, 99); }, 350);
+  const aq = SN.$('#aQ'); if (aq) aq.oninput = SN.debounce(e => { f.q = e.target.value; SN.render(); }, 350);
   SN.$('#bExpLog').onclick = () => SN.exportar('auditoria', f.aba === 'log' ? log.map(x => ({ Quando: SN.dt(x.ts), Usuario: x.usuario, Perfil: x.perfil, Acao: x.acao, Referencia: x.ref, Detalhe: x.detalhe }))
     : ints.map(x => ({ Quando: SN.dt(x.ts), Sistema: x.sistema, Operacao: x.operacao, Envio: JSON.stringify(x.payload), Resposta: JSON.stringify(x.resposta) })));
 }, { tela: 'auditoria' });

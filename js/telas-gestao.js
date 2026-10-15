@@ -54,7 +54,7 @@ SN.telaLpu = abrirId => {
   SN.$$('[data-st]').forEach(b => b.onclick = () => { f.st = b.dataset.st; SN.telaLpu(); });
   SN.$('#fConta').onchange = e => { f.conta = e.target.value; SN.telaLpu(); };
   SN.$('#fEmp').onchange = e => { f.emp = e.target.value; SN.telaLpu(); };
-  SN.$('#fQ').oninput = SN.debounce(e => { f.q = e.target.value; SN.telaLpu(); SN.$('#fQ').focus(); SN.$('#fQ').setSelectionRange(99, 99); }, 350);
+  SN.$('#fQ').oninput = SN.debounce(e => { f.q = e.target.value; SN.redesenharDigitando(SN.telaLpu); }, 350);
   SN.$$('tr[data-id]').forEach(tr => tr.onclick = () => SN.detalheLpu(tr.dataset.id));
   SN.$('#bExpLpu').onclick = () => SN.exportar('lpu', lista.flatMap(l => (l.itens.length ? l.itens : [{}]).map(it => {
     const cat = SN.itemLpu(it.cod) || {};
@@ -137,7 +137,7 @@ SN.telaLpuBase = abrirId => {
   SN.$('#fBaseL').onchange = e => { f.base = e.target.value; de(); };
   SN.$('#fContaL').onchange = e => { f.conta = e.target.value; de(); };
   SN.$('#fEmpL').onchange = e => { f.emp = e.target.value; de(); };
-  SN.$('#fQL').oninput = SN.debounce(e => { f.q = e.target.value; const pos = e.target.selectionStart; de(); const el = SN.$('#fQL'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }, 350);
+  SN.$('#fQL').oninput = SN.debounce(e => { f.q = e.target.value; SN.redesenharDigitando(de); }, 350);
   SN.$$('tr[data-idl]').forEach(tr => tr.onclick = () => SN.detalheLpu(tr.dataset.idl));
   const nome = 'lpu_' + (anual ? 'acumulado_' + ano : P.per === 'tudo' ? 'tudo' : P.per + '_' + P.ref);
   SN.$('#bExpLpuB').onclick = () => anual ? SN.exportar(nome, SN.linhasAnoExcel('Grupo', anoValor.map(x => ({ ...x, rot: 'Valor R$ · ' + x.rot }))
@@ -512,8 +512,8 @@ SN.telaMateriais = (abrirId, opc) => {
   SN.$('#fEmp').onchange = e => { f.emp = e.target.value; de(); };
   if (SN.$('#bLimpar')) SN.$('#bLimpar').onclick = () => { f.q = ''; f.seg = ''; f.emp = ''; de(); };
   // Busca enquanto digita, sem perder o foco do campo.
-  const redesenhar = sel => SN.debounce(e => { const pos = e.target.selectionStart; de(); const el = SN.$(sel); if (el) { el.focus(); el.setSelectionRange(pos, pos); } }, 350);
-  SN.$('#fQ').oninput = (fn => e => { f.q = e.target.value; fn(e); })(redesenhar('#fQ'));
+  const redesenhar = SN.debounce(() => SN.redesenharDigitando(de), 350);
+  SN.$('#fQ').oninput = e => { f.q = e.target.value; redesenhar(); };
   SN.$$('tr[data-id]').forEach(tr => tr.onclick = () => SN.detalheMaterial(tr.dataset.id));
   const nomeArq = 'materiais_' + (P.per === 'tudo' ? 'tudo' : P.per + '_' + P.ref);
   SN.$('#bExpMat').onclick = () => anual ? SN.exportar('materiais_acumulado_' + ano, SN.linhasAnoExcel('Material', anoMat).concat(SN.linhasAnoExcel('Empresa (custo R$)', anoEmp)))

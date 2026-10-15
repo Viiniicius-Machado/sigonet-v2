@@ -117,7 +117,7 @@
     SN.ligarPeriodo(pintarLista, e.periodo);
     if (SN.$('#bVerAnd')) SN.$('#bVerAnd').onclick = () => { e.periodo.per = 'tudo'; pintarLista(); };
     SN.$('#fSt').onchange = ev => { f.status = ev.target.value; pintarLista(); };
-    SN.$('#fQ').oninput = SN.debounce(ev => { f.q = ev.target.value; pintarLista(); SN.$('#fQ').focus(); }, 300);
+    SN.$('#fQ').oninput = SN.debounce(ev => { f.q = ev.target.value; SN.redesenharDigitando(pintarLista); }, 300);
     if (SN.$('#bNova')) SN.$('#bNova').onclick = () => { e.form = nova(); e.aba = 'NOVA'; pintar(); };
     const acao = (sel, fn) => SN.$$(sel).forEach(b => b.onclick = async () => { b.disabled = true; try { await fn(b); } catch (err) { SN.toast(err.message, 'erro'); b.disabled = false; } });
     acao('[data-desp]', async b => { await SN.vst.exec('VST_ROTA_STATUS', { id_rota: b.dataset.desp, para: 'DESPACHADA' });
@@ -352,7 +352,7 @@
       ${fila.length ? fila.map(a => cartao(a, false)).join('') : '<p class="muted">Nada aguardando revisão.</p>'}
       <details style="margin-top:12px"><summary><b>Revisados (últimos ${revis.length})</b></summary><div style="margin-top:8px">${revis.map(a => cartao(a, true)).join('') || '<p class="muted">Nenhum.</p>'}</div></details>`;
     SN.$$('[data-axrev]').forEach(el => el.onclick = () => { const [id, i] = el.dataset.axrev.split('|'); const r = rotas().find(x => x.id_rota === id); if (r) SN.abrirAnexo(r.anexos[+i].id); });
-    SN.$('#rQ').oninput = SN.debounce(ev => { e.revQ = ev.target.value; pintarRevisao(); SN.$('#rQ').focus(); }, 300);
+    SN.$('#rQ').oninput = SN.debounce(ev => { e.revQ = ev.target.value; SN.redesenharDigitando(pintarRevisao); }, 300);
     SN.$$('[data-aprovar]').forEach(b => b.onclick = async () => { b.disabled = true;
       try { await SN.vst.exec('VST_REVISAR', { id_apontamento: b.dataset.aprovar, decisao: 'APROVADA' }); SN.toast('Apontamento aprovado.', 'ok'); if (SN.sincronizar) SN.sincronizar().catch(() => { }); await recarregar(); }
       catch (err) { b.disabled = false; SN.toast(err.message, 'erro'); } });

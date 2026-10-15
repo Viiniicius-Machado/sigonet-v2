@@ -82,7 +82,7 @@
           <td><div class="acoes" style="gap:6px"><a class="btn sm prim" href="#/prj/projeto/${esc(p.id)}">Abrir</a>${editavel(p) && p.status === 'RASCUNHO' ? ` <button class="btn sm perigo" data-exprj="${esc(p.id)}">Excluir</button>` : ''}</div></td></tr>`; }).join('')}
         </tbody></table></div>` : `<p class="muted">${todos.length ? 'Nenhum projeto neste filtro.' : 'Nenhum projeto ainda. Use "Novo projeto".'}</p>`}</div>`);
     SN.$('#fSt').onchange = e => { lista.status = e.target.value; pintarLista(); };
-    SN.$('#fQ').oninput = SN.debounce(e => { lista.q = e.target.value; pintarLista(); SN.$('#fQ').focus(); }, 300);
+    SN.$('#fQ').oninput = SN.debounce(e => { lista.q = e.target.value; SN.redesenharDigitando(pintarLista); }, 300);
     SN.$('#bNovoPrj').onclick = async () => {
       try {
         const id = await SN.novoId('PRJ'), u = SN.usuario() || {};
