@@ -235,8 +235,9 @@
         <div class="campo"><label>${retirada() ? 'Metros previstos' : 'Metros de cabo previstos'}</label><input class="inp" type="number" min="0" data-f="metros_previstos" data-num="1" value="${esc(f.metros_previstos)}"></div>
         <div class="campo" style="flex:2"><label>Link do local (Google Maps, KMZ no Drive…) — ou anexe o KMZ</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="inp" style="flex:1;min-width:220px" data-f="local_url" placeholder="https://…" value="${esc(f.local_url)}">
-            <label class="btn">📎 Anexar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label></div>
-          ${f.local_url ? `<div class="small"><a href="${esc(f.local_url)}" target="_blank" rel="noopener">abrir ${f.kmz_nome ? esc(f.kmz_nome) : 'link'}</a>${f.kmz_metros ? ` · ${SN.num(f.kmz_metros)} m de linhas no KMZ` : ''}</div>` : ''}</div>
+            <label class="btn">📎 Anexar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label>${SN.rotaAB.botao('#fKmz')}</div>
+          ${f.local_url ? `<div class="small"><a href="${esc(f.local_url)}" target="_blank" rel="noopener">abrir ${f.kmz_nome ? esc(f.kmz_nome) : 'link'}</a>${f.kmz_metros ? ` · ${SN.num(f.kmz_metros)} m de linhas no KMZ` : ''}</div>` : ''}
+          ${f.local_url && f.kmz_ab ? `<div class="small muted">${esc(f.kmz_ab)}</div>` : ''}</div>
       </div>
       <div class="linha-form">
         <div class="campo"><label>Solicitante / área</label><input class="inp" data-f="solicitante" list="lSol" value="${esc(f.solicitante)}"><datalist id="lSol">${c.solicitantes.concat(conhecidos('solicitante')).filter((x, i, a) => a.indexOf(x) === i).map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>
@@ -298,7 +299,8 @@
         const dataUrl = await new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = falha; r.readAsDataURL(file); });
         const r = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: f.cidade, segmento: seg, dataUrl });
         f.local_url = r.url; f.kmz_nome = file.name; f.kmz_metros = r.medicao && r.medicao.metros ? Math.round(r.medicao.metros) : '';
-        if (f.kmz_metros && (f.metros_previstos === '' || f.metros_previstos == null)) f.metros_previstos = f.kmz_metros;
+        const ab = ev.target.rotaAB; ev.target.rotaAB = null; f.kmz_ab = ab ? ab.txt : ''; // gerado pelo ponto A e B: os metros da rota valem
+        if (f.kmz_metros && (ab || f.metros_previstos === '' || f.metros_previstos == null)) f.metros_previstos = f.kmz_metros;
         SN.toast('KMZ anexado' + (f.kmz_metros ? `: ${SN.num(f.kmz_metros)} m de linhas.` : '.'), 'ok'); pintarForm();
       } catch (err) { ev.target.value = ''; SN.toast(err.message, 'erro'); }
     };

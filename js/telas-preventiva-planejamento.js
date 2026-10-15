@@ -189,7 +189,7 @@
       </div>
       <div class="campo"><label>KMZ da rota (link) — ou envie o arquivo</label>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="inp" style="flex:1;min-width:240px" data-f="kmz_url" placeholder="https://… (Google Drive, My Maps…)" value="${esc(f.kmz_url)}">
-          <label class="btn">📎 Enviar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label></div>
+          <label class="btn">📎 Enviar .kmz/.kml<input type="file" id="fKmz" accept=".kmz,.kml" hidden></label>${SN.rotaAB.botao('#fKmz')}</div>
         ${f.kmz_url ? `<div class="small"><a href="${esc(f.kmz_url)}" target="_blank" rel="noopener">abrir KMZ</a>${f.kmz_medicao ? '' : ' · <a href="#" id="fKmzMedir">calcular os metros pelas linhas</a>'}</div>` : ''}
         <div id="fKmzLinhas">${htmlLinhasKmz(f)}</div></div>`
       : `
@@ -754,12 +754,14 @@
         <div class="campo"><label>Data-limite</label><input class="inp" type="date" data-t="data_limite" min="${esc(r.data_planejada)}" value="${esc(r.data_limite || '')}"><div class="small muted">Em branco = ${esc(SN.data(r.data_planejada + 'T12:00:00'))}</div></div></div>
         <div class="campo"><label>Notificação / Protocolo</label><input class="inp" data-t="notificacao" value="${esc(r.notificacao)}"></div>
         <div class="campo"><label>Link do KMZ</label><div style="display:flex;gap:8px"><input class="inp" style="flex:1" data-t="kmz_url" placeholder="https://…" value="${esc(r.kmz_url)}">
-          <label class="btn">📎 Arquivo<input type="file" id="tKmz" accept=".kmz,.kml" hidden></label></div></div>`;
+          <label class="btn">📎 Arquivo<input type="file" id="tKmz" accept=".kmz,.kml" hidden></label>${SN.rotaAB.botao('#tKmz')}</div></div>`;
       SN.$$('[data-t]', f).forEach(i => i.oninput = i.onchange = () => { r[i.dataset.t] = i.type === 'number' ? (i.value === '' ? '' : Number(i.value)) : i.value; });
       SN.$('#tKmz', f).onchange = async ev => {
         const file = ev.target.files && ev.target.files[0]; if (!file) return;
         if (!r.cidade) return SN.toast('Informe a cidade antes.', 'erro');
-        try { const x = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: r.cidade, dataUrl: await lerArquivo(file, true) }); r.kmz_url = x.url; r.kmz_drive_id = x.drive_id; SN.$('[data-t="kmz_url"]', f).value = x.url; SN.toast('KMZ enviado.', 'ok'); }
+        try { const x = await SN.vst.exec('VST_KMZ_UPLOAD', { nome: file.name, cidade: r.cidade, dataUrl: await lerArquivo(file, true) }); r.kmz_url = x.url; r.kmz_drive_id = x.drive_id; SN.$('[data-t="kmz_url"]', f).value = x.url;
+          const ab = ev.target.rotaAB; ev.target.rotaAB = null; if (ab) { r.metros_previstos = ab.metros; SN.$('[data-t="metros_previstos"]', f).value = ab.metros; }
+          SN.toast(ab ? 'KMZ enviado. ' + ab.txt + '.' : 'KMZ enviado.', 'ok'); }
         catch (e) { SN.toast(e.message, 'erro'); }
       };
     };

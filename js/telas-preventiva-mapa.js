@@ -123,7 +123,7 @@
           <p class="small muted">Toque num local para aproximar o mapa.</p>` : '<p class="muted small">—</p>'}
           ${fora.length ? `<div class="aviso alerta small" style="margin-top:8px"><b>${fora.length} rota(s) aérea(s) fora do mapa</b> — sem traçado do KMZ e sem foto com GPS:
             <table class="tab small" style="margin-top:6px"><tbody>${fora.map(p => `<tr><td><b>${esc(p.rota)}</b> ${p.concl ? '(aprovada)' : '(em andamento)'}<div class="muted">${esc(p.local)} · ${esc(porque(p))}</div></td>
-              <td class="nowrap"><label class="btn sm">Anexar KMZ<input type="file" accept=".kmz,.kml" data-kmz-rota="${esc(p.rota)}" hidden></label></td></tr>`).join('')}</tbody></table>
+              <td class="nowrap"><label class="btn sm">Anexar KMZ<input type="file" accept=".kmz,.kml" data-kmz-rota="${esc(p.rota)}" hidden></label> ${SN.rotaAB.botao(`[data-kmz-rota="${p.rota}"]`, p.cidade || '').replace('class="btn"', 'class="btn sm"')}</td></tr>`).join('')}</tbody></table>
             <div class="muted" style="margin-top:4px">Anexe o arquivo .kmz da rota: o traçado entra no mapa na hora (não muda status, metros nem LPU).</div></div>` : ''}
           <p class="small muted">Aérea: o calor segue o traçado do KMZ da rota. Histórico importado da planilha não tem traçado nem GPS e não aparece aqui.</p></div></div>`);
     SN.ligarPeriodo(() => pintar(d), P);
