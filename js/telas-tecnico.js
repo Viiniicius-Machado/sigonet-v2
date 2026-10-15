@@ -441,7 +441,9 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
     ${vinc === 'CONTRATO_FIXO' ? '<div class="aviso alerta small" style="margin-bottom:10px">Contrato fixo: a produção conta para a meta mensal, sem valor por item.</div>' : ''}
     ${rasc ? '<div class="aviso info small" style="margin-bottom:10px">Rascunho recuperado deste aparelho (ainda não enviado).</div>' : ''}
     <div class="card" style="margin-top:12px"><div class="card-tit"><h3>Serviços</h3><span class="badge" id="lpuCont"></span></div>
-      <p class="small muted" style="margin:0 0 6px">📷 ao lado da quantidade: fotos que justificam o serviço (opcional; pode pôr várias por linha).</p>
+      ${prev ? '<p class="small muted" style="margin:0 0 6px">Fotos ao lado da quantidade: opcionais aqui (as da atividade já foram aprovadas na revisão).</p>'
+        : `<p class="small" style="margin:0 0 6px"><b>Obrigatório: ao menos 1 foto</b> em algum serviço (botão Fotos ao lado da quantidade). Não fez nada no local? Marque a Visita Técnica Improdutiva — a única que não pede foto.</p>
+        ${editavel && itens.some(i => SN.LPU_IMPRODUTIVA.includes(i.cod)) ? '<button type="button" class="btn sm" id="bImprod" style="margin-bottom:8px">Não fiz nada: marcar Visita Técnica Improdutiva</button>' : ''}`}
       <input class="inp" id="lpuBusca" placeholder="Buscar serviço (código, nome ou descritivo)">
       <div class="chips" id="lpuClasses" style="margin-top:8px">${['', ...new Set(itens.map(i => i.classe))].map(k =>
         `<button type="button" class="chip ${k === '' ? 'sel' : ''}" data-cl="${SN.esc(k)}" title="${SN.esc(LPU_CLASSES[k] || '')}">${k === '' ? 'Todas' : SN.esc(k)}</button>`).join('')}</div>
@@ -504,12 +506,18 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   if (!editavel) return;
   SN.$('#lpuObs').oninput = SN.debounce(() => guardarRasc(), 400);
   SN.$('#bAss').onclick = () => { assinatura = SN.assinar(vinc === 'CLT' ? 'Técnico' : 'Prestador'); SN.$('#assTxt').textContent = SN.txtAssinatura(assinatura); SN.salvar(); };
+  if (SN.$('#bImprod')) SN.$('#bImprod').onclick = () => {
+    const cod = SN.LPU_IMPRODUTIVA[0];
+    if (Object.keys(qtd).some(k => k !== cod)) return SN.toast('Há outros serviços preenchidos: improdutiva é só quando não houve nenhum serviço.', 'erro');
+    qtd[cod] = 1; guardarRasc(); classe = ''; SN.$('#lpuBusca').value = cod; pintar(); SN.$('#lpuCont').textContent = '1 item(ns)';
+    SN.toast('Visita Técnica Improdutiva marcada (sem foto). Assine e envie.', 'ok');
+  };
   SN.$('#bEnviarLpu').onclick = async ev => {
     const semQtd = Object.keys(fotosIt).filter(cod => (fotosIt[cod] || []).length && !(qtd[cod] > 0));
     if (semQtd.length) return SN.toast('Há foto em serviço sem quantidade (' + semQtd.join(', ') + '). Informe a quantidade ou remova a foto.', 'erro');
     const lista = Object.keys(qtd).map(cod => ({ cod, qtd: qtd[cod], fator: fator[cod] || 'comum', ...((fotosIt[cod] || []).length ? { fotos: fotosIt[cod] } : {}) }));
-    // CLT pode enviar só com a hora-homem (automática); prestador precisa de serviço.
-    if (!lista.length && vinc !== 'CLT') return SN.toast('Informe ao menos um serviço.', 'erro');
+    const falta = SN.conferirFotosLpu(lista, !!prev);
+    if (falta) return SN.toast(falta, 'erro');
     if (!assinatura) return SN.toast('Clique em Assinar antes de enviar.', 'erro');
     const novo = !l;
     ev.target.disabled = true;

@@ -463,6 +463,17 @@ SN.itensDaConta = cod => {
   return LPU_CATALOGO.filter(i => { const n = parseInt(i.cod.replace(/\D/g, ''), 10); return c.faixas.some(([a, b]) => n >= a && n <= b); });
 };
 SN.itemLpu = cod => LPU_CATALOGO.find(i => i.cod === cod);
+// LPU da Esteira (pedido de 2026-10-15): ao menos 1 serviço e ao menos 1 foto nas linhas. Sem nada feito no
+// local, o técnico marca a Visita Técnica Improdutiva — a única que não pede foto. Preventiva, Melhoria e
+// Retirada ficam de fora (as fotos já foram exigidas e aprovadas na Revisão). Mesma regra no servidor (Codigo.gs).
+SN.LPU_IMPRODUTIVA = ['SEV0076'];
+SN.conferirFotosLpu = (itens, preventiva) => {
+  const l = (itens || []).filter(i => Number(i.qtd) > 0);
+  if (preventiva) return '';
+  if (!l.length) return 'Informe ao menos um serviço. Se não fez nada no local, marque a Visita Técnica Improdutiva (SEV0076).';
+  if (l.every(i => SN.LPU_IMPRODUTIVA.includes(i.cod))) return '';
+  return l.some(i => (i.fotos || []).length) ? '' : 'Coloque ao menos 1 foto do serviço (botão Fotos ao lado da quantidade). Só a Visita Técnica Improdutiva não pede foto.';
+};
 // Catálogo = o fixo (catalogos.js) + os códigos que vieram nos relatórios do Elleven (Estoque dos
 // técnicos) e não existem nele: descrição e valor do Elleven; com serial (ativo) ou ATN/SMI = patrimônio.
 // Recalcula quando a lista de estoques muda (carga/sincronização troca o array; importação zera SN._catExtra).
