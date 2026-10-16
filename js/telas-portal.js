@@ -321,10 +321,11 @@ SN.abaCad = 'tecnicos';
 SN.acessoOk = x => SN.remoto ? !!(SN._acessos[x.id] && SN._acessos[x.id].configurado) : !!x.complementoHash;
 SN.ultimoAcesso = x => SN.remoto ? (SN._acessos[x.id] && SN._acessos[x.id].ultimo) : x.ultimoAcesso;
 // Grava PIN / reseta complemento. Local: no próprio registro. Servidor: ação ACESSO (só quem tem Cadastros).
-SN.gravarAcesso = async (tipo, reg, { pin, reset }) => {
-  if (!SN.remoto) { if (pin) reg.pin = pin; if (reset) reg.complementoHash = ''; SN.salvar(); return; }
+SN.gravarAcesso = async (tipo, reg, { pin, reset, revogar }) => {
+  if (!SN.remoto) { if (pin) reg.pin = pin; if (reset || revogar) reg.complementoHash = ''; if (revogar) reg.pin = SN.uid(); SN.salvar(); return; }
   await SN.salvarAgora(); // garante que o registro já existe no servidor
-  await SN.api('ACESSO', { tipo, id: reg.id, pin: pin || undefined, resetComplemento: !!reset });
+  const r = await SN.api('ACESSO', { tipo, id: reg.id, pin: pin || undefined, resetComplemento: !!reset, revogar });
+  if (r && r.ok === false) throw new Error(r.erro);
   await SN.carregarStatusAcessos();
 };
 // Consulta da LPU de uma conta: cada serviço com o descritivo técnico (o que o item cobre) e a legenda das classes.
@@ -347,12 +348,17 @@ SN.rota('/cadastros', () => {
   const d = SN.db, aba = SN.abaCad;
   const abas = [['tecnicos', 'Técnicos'], ['empresas', 'Prestadores / CNPJ'], ['lideranca', 'Liderança e acessos'], ['disp', 'Disponibilidade da M.O.'], ['contas', 'Contas e budget'], ['sistema', 'Sistema']];
   let html = '';
-  if (aba === 'tecnicos') html = `<div class="card"><div class="card-tit"><h3>Técnicos (${d.tecnicos.length})</h3><button class="btn prim" data-novo="tec">+ Técnico</button></div>
-    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Empresa</th><th>Nome</th><th>Equipe</th><th>Titular</th><th>Frente</th><th>Vínculo</th><th>1º acesso</th><th>Ativo</th></tr></thead><tbody>
-    ${d.tecnicos.slice().sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => `<tr class="clic" data-tec="${t.id}"><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.nome)}</td>
+  if (aba === 'tecnicos') { const sem = d.tecnicos.filter(t => !t.ativo).length, ver = SN.cadTecVer === 'sem' && sem ? 'sem' : 'com';
+    html = `<div class="card"><div class="card-tit"><h3>Técnicos (${d.tecnicos.length - sem} com acesso)</h3><button class="btn prim" data-novo="tec">+ Técnico</button></div>
+    ${sem ? `<div class="chips" style="margin-bottom:10px"><button type="button" class="chip ${ver === 'com' ? 'sel' : ''}" data-tecver="com">Com acesso (${d.tecnicos.length - sem})</button><button type="button" class="chip ${ver === 'sem' ? 'sel' : ''}" data-tecver="sem">Acesso retirado (${sem})</button></div>` : ''}
+    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Empresa</th><th>Nome</th><th>Equipe</th><th>Titular</th><th>Frente</th><th>Vínculo</th><th>1º acesso</th><th>Acesso</th></tr></thead><tbody>
+    ${d.tecnicos.filter(t => ver === 'sem' ? !t.ativo : t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => `<tr class="clic" data-tec="${t.id}"><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.nome)}</td>
       <td>${SN.esc(t.equipe || '—')}</td><td>${t.equipe ? (t.titular ? '✔' : '') : '—'}</td><td>${SN.esc(t.frente || '')}</td><td class="small">${SN.empresa(t.empresa).vinculo}</td>
-      <td>${SN.acessoOk(t) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>'}</td><td>${t.ativo ? '✔' : '<span class="badge erro">inativo</span>'}</td></tr>`).join('')}
-    </tbody></table></div></div>`;
+      <td>${t.ativo ? (SN.acessoOk(t) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>') : '—'}</td>
+      <td class="nowrap">${t.ativo ? `<button type="button" class="btn sm perigo" data-tiraracesso="${t.id}">Tirar acesso</button>`
+        : `<span class="badge erro">retirado</span>${t.acessoRetirado ? `<div class="small muted">${SN.dt(t.acessoRetirado.em)} · ${SN.esc(t.acessoRetirado.por)}</div>` : ''}<button type="button" class="btn sm" style="margin-top:4px" data-devolveracesso="${t.id}">Devolver acesso</button>`}</td></tr>`).join('')
+      || `<tr><td colspan="8" class="muted center">Nenhum técnico.</td></tr>`}
+    </tbody></table></div></div>`; }
   if (aba === 'empresas') html = `<div class="card"><div class="card-tit"><h3>Prestadores e empresas</h3><button class="btn prim" data-novo="emp">+ Empresa</button></div>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Empresa</th><th>Razão social</th><th>CNPJ</th><th>Vínculo</th><th>Responsável LPU/NF</th><th class="num">Técnicos</th><th>Ativa</th></tr></thead><tbody>
     ${d.empresas.map((e, i) => `<tr class="clic" data-emp="${i}"><td><b>${SN.esc(e.nome)}</b></td><td>${SN.esc(e.razao || '')}</td><td class="mono">${SN.esc(e.cnpj || '—')}</td>
@@ -391,6 +397,9 @@ SN.rota('/cadastros', () => {
     <div class="abas">${abas.map(([k, r]) => `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}</button>`).join('')}</div>${html}`);
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaCad = b.dataset.aba; SN.render(); });
   SN.$$('[data-tec]').forEach(tr => tr.onclick = () => SN.editarTecnico(SN.db.tecnicos.find(t => t.id === tr.dataset.tec)));
+  SN.$$('[data-tecver]').forEach(b => b.onclick = () => { SN.cadTecVer = b.dataset.tecver; SN.render(); });
+  SN.$$('[data-tiraracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.tirarAcessoTecnico(SN.db.tecnicos.find(t => t.id === b.dataset.tiraracesso)); });
+  SN.$$('[data-devolveracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.devolverAcessoTecnico(SN.db.tecnicos.find(t => t.id === b.dataset.devolveracesso)); });
   SN.$$('[data-emp]').forEach(tr => tr.onclick = () => SN.editarEmpresa(SN.db.empresas[+tr.dataset.emp]));
   SN.$$('[data-lid]').forEach(tr => tr.onclick = () => SN.editarLider(SN.db.lideranca.find(t => t.id === tr.dataset.lid)));
   SN.$$('[data-novo]').forEach(b => b.onclick = () => ({ tec: () => SN.editarTecnico(null), emp: () => SN.editarEmpresa(null), lid: () => SN.editarLider(null), disp: SN.novaDisp })[b.dataset.novo]());
@@ -418,9 +427,9 @@ SN.editarTecnico = t => {
     <div class="linha-form"><div class="campo"><label>Equipe (dupla)</label><input class="inp" id="eEq" value="${SN.esc(t.equipe)}" placeholder="ex.: Equipe 01"></div>
     <div class="campo"><label>Frente</label><input class="inp" id="eFr" value="${SN.esc(t.frente)}" placeholder="Manutenção, GTD…"></div>
     <div class="campo"><label>PIN</label><input class="inp" id="ePin" value="${SN.remoto ? '' : SN.esc(t.pin)}" placeholder="${SN.remoto ? (novo ? PIN_INICIAL + ' (padrão)' : 'em branco = mantém o atual') : ''}"></div></div>
-    <label class="small"><input type="checkbox" id="eTit" ${t.titular ? 'checked' : ''}> Titular da dupla (recebe despacho)</label><br>
-    <label class="small"><input type="checkbox" id="eAt" ${t.ativo ? 'checked' : ''}> Ativo</label>`,
-    botoes: [{ rot: 'Cancelar' }, ...(novo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
+    <label class="small"><input type="checkbox" id="eTit" ${t.titular ? 'checked' : ''}> Titular da dupla (recebe despacho)</label>
+    ${!novo && !t.ativo ? '<div class="aviso alerta small" style="margin-top:8px">Acesso retirado. Use "Devolver acesso" na lista de técnicos para liberar de novo.</div>' : ''}`,
+    botoes: [{ rot: 'Cancelar' }, ...(novo || !t.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcessoTecnico(t), 0); } }]), ...(novo || !t.ativo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
         try { await SN.gravarAcesso('tecnico', t, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
         SN.log('RESET_COMPLEMENTO', t.nome); SN.salvar(); SN.toast('No próximo acesso ele cria um novo complemento.'); SN.render(); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
@@ -428,12 +437,44 @@ SN.editarTecnico = t => {
         const pinNovo = SN.$('#ePin').value.trim();
         const antes = { ...t, pin: 0, complementoHash: 0 };
         Object.assign(t, { empresa: SN.$('#eEmp').value, nome, equipe: SN.$('#eEq').value.trim(), frente: SN.$('#eFr').value.trim(),
-          titular: SN.$('#eTit').checked, ativo: SN.$('#eAt').checked });
+          titular: SN.$('#eTit').checked });
         if (SN.remoto) delete t.pin; else t.pin = pinNovo || t.pin || PIN_INICIAL;
         if (novo) SN.db.tecnicos.push(t);
         SN.log(novo ? 'CRIAR_TECNICO' : 'EDITAR_TECNICO', t.nome, novo ? t.empresa : SN.diff(antes, { ...t, pin: 0, complementoHash: 0 }) + (pinNovo ? '; PIN alterado' : '')); SN.salvar();
         if (SN.remoto && (novo || pinNovo)) { try { await SN.gravarAcesso('tecnico', t, { pin: pinNovo || PIN_INICIAL }); } catch (e) { SN.toast('Cadastro salvo, mas o PIN não: ' + e.message, 'erro'); } }
         SN.render(); } }] });
+};
+// Técnico que não vai mais usar o SigoNet: sai da lista de login e do despacho, o PIN é trocado
+// e a sessão aberta no celular cai (servidor). O cadastro e o histórico ficam.
+SN.tirarAcessoTecnico = async t => {
+  if (!t) return;
+  const abertas = SN.db.chamados.filter(c => SN.STATUS[c.status] && SN.STATUS[c.status].aberto && (c.tecnico === t.nome || (c.apoio && c.apoio.tecnico === t.nome)));
+  const mot = await SN.modal({ titulo: 'Tirar acesso · ' + t.nome, corpo: `<p class="small">${SN.esc(t.empresa)}${t.equipe ? ' · ' + SN.esc(t.equipe) : ''}</p>
+      <p>Ele deixa de entrar no SigoNet: sai da lista de login e do despacho, e se estiver com o app aberto é desconectado.
+      O cadastro, as OS e o histórico continuam guardados. Dá para devolver o acesso depois.</p>
+      ${abertas.length ? `<div class="aviso alerta small" style="margin-bottom:8px">Ele ainda tem <b>${abertas.length}</b> OS em aberto (${abertas.slice(0, 5).map(c => SN.esc(c.id)).join(', ')}${abertas.length > 5 ? '…' : ''}). Reatribua na Esteira para não ficarem paradas.</div>` : ''}
+      <div class="campo"><label>Motivo *</label><input class="inp" id="taMot" placeholder="ex.: desligado da empresa, saiu da prestadora"></div>`,
+    botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Tirar acesso', cls: 'perigo', acao: f => { const v = SN.$('#taMot', f).value.trim(); if (!v) { SN.toast('Informe o motivo.', 'erro'); return false; } return v; } }],
+    aoAbrir: f => SN.$('#taMot', f).focus() });
+  if (!mot) return;
+  t.ativo = false; t.acessoRetirado = { em: SN.agora(), por: (SN.usuario() || {}).nome || '', motivo: mot };
+  SN.log('TIRAR_ACESSO', t.nome, `${t.empresa} · ${mot}`); SN.salvar();
+  try { await SN.gravarAcesso('tecnico', t, { revogar: true }); SN.toast(t.nome + ' não acessa mais o SigoNet.', 'ok'); }
+  catch (e) { SN.toast('Cadastro desativado, mas o servidor não confirmou a troca do PIN: ' + e.message, 'erro'); }
+  SN.render();
+};
+SN.devolverAcessoTecnico = async t => {
+  if (!t) return;
+  const pin = await SN.modal({ titulo: 'Devolver acesso · ' + t.nome, corpo: `${t.acessoRetirado ? `<p class="small muted">Retirado em ${SN.dt(t.acessoRetirado.em)} por ${SN.esc(t.acessoRetirado.por)}: ${SN.esc(t.acessoRetirado.motivo)}</p>` : ''}
+      <div class="campo"><label>PIN novo *</label><input class="inp" id="daPin" value="${SN.esc(PIN_INICIAL)}"></div>
+      <p class="small muted">No primeiro acesso ele cria um complemento novo.</p>`,
+    botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Devolver acesso', cls: 'prim', acao: f => { const v = SN.$('#daPin', f).value.trim(); if (v.length < 4) { SN.toast('PIN com pelo menos 4 caracteres.', 'erro'); return false; } return v; } }] });
+  if (!pin) return;
+  t.ativo = true; delete t.acessoRetirado;
+  SN.log('DEVOLVER_ACESSO', t.nome, t.empresa); SN.salvar();
+  try { await SN.gravarAcesso('tecnico', t, { pin, reset: true, revogar: false }); SN.toast(t.nome + ' pode entrar de novo.', 'ok'); }
+  catch (e) { SN.toast('Cadastro ativado, mas o PIN não foi gravado: ' + e.message, 'erro'); }
+  SN.render();
 };
 SN.editarEmpresa = e => {
   const novo = !e; e = e || { nome: '', razao: '', cnpj: '', vinculo: 'PRESTADOR', responsavelLpu: '', ativo: true };
