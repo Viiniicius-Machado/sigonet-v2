@@ -39,18 +39,32 @@ const CONTA_PADRAO_POR_TIPO = {
   'Medição': '3.1.1.2.05.0102', 'Melhoria': '3.1.1.2.05.0103', 'Retirada': '3.1.1.2.05.0102'
 };
 
-// ── Contratos fixos (referência para o Service Desk) ───────────────────────
+// ── Contratos fixos (Service Desk → CLT e contratos fixos) ─────────────────
+// Ciclo do dia 21 ao dia 20 (pagamento dia 28). Atividade = OS concluída (conclusão técnica)
+// pelo titular de uma equipe do contrato; equipes: null = a empresa inteira.
+// Abaixo da meta: improdutivo = falta × (valorMensal ÷ meta), só informativo (o fixo é pago cheio).
+// Acima da meta: cada atividade a mais paga valorExcedente. inicio = 1º ciclo contado (histórico começa nele). Variáveis: pagas quando marcadas "cumprido".
+// As equipes de um contrato com meta têm LPU só de contagem (vínculo CONTRATO_FIXO, sem valor).
 const CONTRATOS_FIXOS = [
-  { empresa: 'QUALITY', conta: '3.1.1.2.05.0008', valorMensal: 10000, metaAtividades: 18,
+  { id: 'QUALITY', nome: 'QUALITY', empresa: 'QUALITY', equipes: null, conta: '3.1.1.2.05.0008', valorMensal: 10000, metaAtividades: 18, valorExcedente: 555.55, inicio: '2026-10',
     ciclo: 'Dia 21 ao dia 20 · pagamento dia 28', variaveis: [] },
-  { empresa: 'VAL', conta: '3.1.1.2.05.0008', valorMensal: null, metaAtividades: null, observacao: 'Equipes Diurno e Noturno',
-    ciclo: 'Dia 21 ao dia 20 · pagamento dia 28',
+  { id: 'VAL-DIURNO', nome: 'VAL · Diurno', empresa: 'VAL', equipes: ['Equipe 01', 'Equipe 04'], conta: '3.1.1.2.05.0008', valorMensal: 26000, metaAtividades: 80, valorExcedente: 380, inicio: '2026-10',
+    ciclo: 'Dia 21 ao dia 20 · pagamento dia 28', observacao: 'Equipe 02 da VAL fica fora (LPU com valor)',
     variaveis: [
       { desc: 'Cumprir o plantão no fim de semana escalado', valor: 3333.33 },
       { desc: 'Manter o SLA de 4 horas', valor: 1000 },
       { desc: 'Manter os atendimentos sem nenhuma pendência técnica', valor: 1000 }
     ] },
-  { empresa: 'SOUZA TELECOM', conta: '3.1.1.2.05.0005', valorMensal: 26000, metaAtividades: null,
+  { id: 'VAL-NOTURNO', nome: 'VAL · Noturno', empresa: 'VAL', equipes: ['Equipe 03'], conta: '3.1.1.2.05.0008', valorMensal: 15000, metaAtividades: 40, valorExcedente: 380, inicio: '2026-10',
+    ciclo: 'Dia 21 ao dia 20 · pagamento dia 28',
+    variaveis: [
+      { desc: 'Cumprir o plantão no fim de semana escalado', valor: 1000 },
+      { desc: 'Manter o SLA de 4 horas', valor: 500 },
+      { desc: 'Manter os atendimentos sem nenhuma pendência técnica', valor: 500 }
+    ] },
+  // Meta e equipes a definir (projeto paralelo de outro gestor): sem meta, não conta atividade nem muda a LPU.
+  { id: 'SOUZA', nome: 'SOUZA TELECOM', empresa: 'SOUZA TELECOM', equipes: null, conta: '3.1.1.2.05.0005', valorMensal: 26000, metaAtividades: null, valorExcedente: null,
+    pendente: 'Meta, equipes e excedente em definição',
     ciclo: 'Dia 21 ao dia 20 · pagamento dia 28',
     variaveis: [
       { desc: 'Cumprir o plantão no final de semana escalado (as duas equipes)', valor: 2000 },

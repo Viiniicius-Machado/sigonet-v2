@@ -557,6 +557,8 @@ img[data-ver]{cursor:zoom-in}
 /* Fotos da atividade no detalhe do chamado: itens lado a lado */
 .fa-itens{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));column-gap:20px;border-top:1px solid var(--borda)}
 .fa-itens .av-item{border-top:0;min-width:0}
+/* Contratos fixos: os 4 números do ciclo em 2 × 2 dentro do cartão */
+.kpis-fin.cf-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 .av-falta{color:var(--erro);font-weight:700}
 .av-modal .modal-corpo{max-height:calc(100vh - 170px)}
 .av-grade{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;height:calc(100vh - 260px);min-height:420px}

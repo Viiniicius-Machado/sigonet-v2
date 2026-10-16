@@ -136,7 +136,7 @@ SN.baseVazia = () => ({
     id: SN.uid(), empresa, nome, equipe, titular, frente, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   lideranca: SEED_LIDERANCA.map(l => ({ id: SN.uid(), nomeCompleto: '', ...l, pin: PIN_INICIAL, complementoHash: '', ativo: true })),
   contas: SEED_CONTAS.map(c => ({ ...c })),
-  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], estoques: [], projetos: [], notificacoes: [],
+  disponibilidade: [], chamados: [], lpus: [], materiais: [], fibras: [], pagamentos: [], fechamentos: [], estoques: [], projetos: [], notificacoes: [], contratos: [],
   assinaturas: {}, log: [], integracoes: []
 });
 
@@ -147,6 +147,7 @@ SN.carregar = () => {
   if (!SN.db.estoques) SN.db.estoques = []; // coleção nova (06/10/2026): bases locais antigas não tinham
   if (!SN.db.projetos) SN.db.projetos = []; // Novos projetos (12/10/2026)
   if (!SN.db.notificacoes) SN.db.notificacoes = []; // Acompanhamentos CPFL (12/10/2026)
+  if (!SN.db.contratos) SN.db.contratos = []; // ciclos dos contratos fixos (16/10/2026)
   return SN.db;
 };
 SN.salvar = () => {

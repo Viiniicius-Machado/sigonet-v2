@@ -276,16 +276,11 @@ SN.rota('/servicedesk', () => {
     const mes = SN.agora().slice(0, 7);
     const clt = {}; SN.db.lpus.filter(l => l.vinculo === 'CLT' && SN.cicloDe(l) === mes).forEach(l => {
       const k = l.cab.tecnico; clt[k] = clt[k] || { hh: 0, n: 0, serv: 0 }; clt[k].hh += SN.hhDaLpu(l).horas; clt[k].n++; clt[k].serv += l.itens.length; });
-    const fixo = SN.db.chamados.filter(c => SN.empresa(c.empresa).vinculo === 'CONTRATO_FIXO' && (c.tempos.conclusaoTecnica || '').startsWith(mes));
-    html = `<div class="grid g2"><div class="card"><h3>Hora-homem CLT · ${SN.mesNome(mes)}</h3>
+    html = `${SN.htmlContratosFixos()}
+      <div class="card" style="margin-top:14px"><h3>Hora-homem CLT · ${SN.mesNome(mes)}</h3>
       <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico</th><th class="num">LPUs</th><th class="num">Serviços</th><th class="num">h·h</th></tr></thead><tbody>
       ${Object.entries(clt).sort((a, b) => b[1].hh - a[1].hh).map(([t, v]) => `<tr><td>${SN.esc(t)}</td><td class="num">${v.n}</td><td class="num">${v.serv}</td><td class="num">${SN.num(v.hh, 1)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Sem registros no mês.</td></tr>'}
-      </tbody></table></div></div>
-      <div class="card"><h3>Contratos fixos</h3>${CONTRATOS_FIXOS.map(k => {
-        const feitos = fixo.filter(c => c.empresa === k.empresa).length;
-        return `<div style="margin-bottom:14px"><b>${k.empresa}</b> · ${SN.esc(SN.contaTxt(k.conta))}<div class="small muted">${k.ciclo}${k.valorMensal ? ' · fixo ' + SN.brl(k.valorMensal) : ''}${k.observacao ? ' · ' + k.observacao : ''}</div>
-          ${k.metaAtividades ? `<div class="gauge ${feitos < k.metaAtividades ? 'alerta' : ''}"><div style="width:${Math.min(100, feitos / k.metaAtividades * 100)}%"></div></div><div class="small">${feitos} de ${k.metaAtividades} atividades no mês</div>` : ''}
-          ${k.variaveis.length ? `<ul class="small" style="margin:6px 0 0;padding-left:18px">${k.variaveis.map(v => `<li>${SN.esc(v.desc)} — ${SN.brl(v.valor)}</li>`).join('')}</ul>` : ''}</div>`; }).join('')}</div></div>`;
+      </tbody></table></div></div>`;
   }
   SN.casca('servicedesk', `
     <div class="cab-pagina"><div><h1>Service Desk · administrativo</h1><p>Contabilização, conta contábil, tratativa financeira e pagamento — ciclo independente do chamado.</p></div>
@@ -295,6 +290,7 @@ SN.rota('/servicedesk', () => {
       `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>${html}`);
   SN.ligarValidacao();
   SN.$('#bExpSD').onclick = () => SN.exportarObrasLpu();
+  if (aba === 'produtividade') SN.ligarContratosFixos();
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaSD = b.dataset.aba; SN.render(); });
   SN.$$('[data-sd]').forEach(tr => tr.onclick = () => SN.contabilizar(tr.dataset.sd));
   SN.$$('[data-lote]').forEach(b => b.onclick = async () => {

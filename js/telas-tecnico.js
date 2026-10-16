@@ -410,7 +410,8 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const prev = c.preventiva && c.preventiva.id_rota ? c.preventiva : null;
   if (prev && !prev.lpu_sugerida && !l) { SN.toast(SN.vst.progDe(prev) ? 'A LPU libera quando a revisão aprovar a atividade.' : 'A LPU da Preventiva libera quando todas as CS da rota forem aprovadas.', 'erro'); return SN.navegar('#/tec/os/' + id); }
   const h = l ? l.cab : SN.cabecalhoDe(c, papel);
-  const emp = SN.empresa(h.empresa), vinc = emp.vinculo;
+  // LPU já criada mantém o vínculo dela; nova: equipe de contrato fixo = só contagem (SN.vinculoLpu).
+  const vinc = l ? l.vinculo : SN.vinculoLpu(h), contratoFixo = vinc === 'CONTRATO_FIXO' ? SN.contratoDoTecnico(h.empresa, h.tecnico) : null;
   const editavel = !l || ['AGUARDANDO_LIDER', 'REPROVADA'].includes(l.status);
   const itens = SN.itensDaConta(h.conta);
   const qtd = {}; const fator = {}; const fotosIt = {}; // fotosIt: código → fotos que justificam a linha (opcional, várias)
@@ -438,7 +439,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
       ${SN.vst.resumoAprovado(prev)}. Confira, assine e envie.
       ${foraDaConta.length ? `<br><b>Atenção:</b> ${foraDaConta.join(', ')} não está na conta desta OS — avise a gestão.` : ''}</div>` : ''}
     ${vinc === 'CLT' ? SN.htmlHoraHomem(hh) : ''}
-    ${vinc === 'CONTRATO_FIXO' ? '<div class="aviso alerta small" style="margin-bottom:10px">Contrato fixo: a produção conta para a meta mensal, sem valor por item.</div>' : ''}
+    ${vinc === 'CONTRATO_FIXO' ? `<div class="aviso alerta small" style="margin-bottom:10px">Contrato fixo${contratoFixo ? ' ' + SN.esc(contratoFixo.nome) : ''}: esta OS conta para a meta do ciclo (dia 21 ao dia 20), sem valor por item.</div>` : ''}
     ${rasc ? '<div class="aviso info small" style="margin-bottom:10px">Rascunho recuperado deste aparelho (ainda não enviado).</div>' : ''}
     <div class="card" style="margin-top:12px"><div class="card-tit"><h3>Serviços</h3><span class="badge" id="lpuCont"></span></div>
       ${prev ? '<p class="small muted" style="margin:0 0 6px">Fotos ao lado da quantidade: opcionais aqui (as da atividade já foram aprovadas na revisão).</p>'
