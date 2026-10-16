@@ -5,8 +5,11 @@
 SN.PAG_STATUS = {
   AGUARDANDO_NF: { rot: 'Aguardando NF do prestador', cls: 'alerta' },
   NF_ANEXADA:    { rot: 'NF anexada · aguardando pagamento', cls: 'info' },
-  PAGO:          { rot: 'Pago', cls: 'ok' }
+  PAGO:          { rot: 'Pago', cls: 'ok' },
+  DESFEITO:      { rot: 'Desfeito (LPUs voltaram)', cls: '' }
 };
+// Lote ainda valendo (desfeito fica só como registro).
+SN.pagAberto = p => p.status !== 'PAGO' && p.status !== 'DESFEITO';
 SN.opcoesEmpresas = sel => SN.db.empresas.map(e => `<option ${e.nome === sel ? 'selected' : ''}>${SN.esc(e.nome)}</option>`).join('');
 SN.opcoesContas = sel => SN.db.contas.map(c => `<option value="${c.codigo}" ${c.codigo === sel ? 'selected' : ''}>${SN.esc(SN.contaTxt(c.codigo))}</option>`).join('');
 SN.chipsStatus = (mapa, atual, contar) => `<div class="abas">${[['', 'Todos'], ...Object.entries(mapa).map(([k, v]) => [k, v.rot])].map(([k, r]) =>
@@ -265,7 +268,9 @@ SN.rota('/servicedesk', () => {
         <td>${p.nf ? `<button class="btn sm" data-vernf="${p.nf.id}">Ver NF</button>` : p.status === 'AGUARDANDO_NF' ? `<label class="btn sm">Anexar<input type="file" hidden data-nf="${p.id}" accept="application/pdf,image/*"></label>` : '—'}</td>
         <td>${SN.data(SN.previsaoPagamento(p.ciclo))}</td>
         <td class="nowrap">${p.status === 'NF_ANEXADA' ? `<button class="btn sm perigo" data-repnf="${p.id}">Reprovar NF</button> <button class="btn sm ok" data-pagar="${p.id}">Confirmar pagamento</button>` : ''}
-          ${p.status === 'PAGO' ? `<span class="small muted">${SN.esc(SN.txtAssinatura(p.assinaturaPagamento))}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Nenhum lote.</td></tr>'}
+          ${SN.pagAberto(p) ? ` <button class="btn sm" data-desfazer="${p.id}" title="Gerado por engano: as LPUs voltam para Gerar tratativa de pagamento">Desfazer lote</button>` : ''}
+          ${p.status === 'PAGO' ? `<span class="small muted">${SN.esc(SN.txtAssinatura(p.assinaturaPagamento))}</span>` : ''}
+          ${p.status === 'DESFEITO' ? `<span class="small muted">${SN.esc(p.desfeitoPor || '')} · ${SN.dt(p.desfeitoEm)}${p.motivoDesfazer ? ' · ' + SN.esc(p.motivoDesfazer) : ''}</span>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="muted center">Nenhum lote.</td></tr>'}
       </tbody></table></div></div>`;
   if (aba === 'produtividade') {
     const mes = SN.agora().slice(0, 7);
@@ -283,11 +288,13 @@ SN.rota('/servicedesk', () => {
           ${k.variaveis.length ? `<ul class="small" style="margin:6px 0 0;padding-left:18px">${k.variaveis.map(v => `<li>${SN.esc(v.desc)} — ${SN.brl(v.valor)}</li>`).join('')}</ul>` : ''}</div>`; }).join('')}</div></div>`;
   }
   SN.casca('servicedesk', `
-    <div class="cab-pagina"><div><h1>Service Desk · administrativo</h1><p>Contabilização, conta contábil, tratativa financeira e pagamento — ciclo independente do chamado.</p></div></div>
+    <div class="cab-pagina"><div><h1>Service Desk · administrativo</h1><p>Contabilização, conta contábil, tratativa financeira e pagamento — ciclo independente do chamado.</p></div>
+      <div class="acoes"><button class="btn" id="bExpSD" title="Todas as obras com LPU aprovada pelo líder, uma por linha">Exportar Excel</button></div></div>
     ${SN.htmlFilaValidacao('OEM', SN.temTela('chamados'))}
-    <div class="abas">${[['contabil', 'Contabilização', noSD.length], ['pagamento', 'Tratativa de pagamento', pags.filter(p => p.status !== 'PAGO').length], ['produtividade', 'CLT e contratos fixos', '']].map(([k, r, n]) =>
+    <div class="abas">${[['contabil', 'Contabilização', noSD.length], ['pagamento', 'Tratativa de pagamento', pags.filter(SN.pagAberto).length], ['produtividade', 'CLT e contratos fixos', '']].map(([k, r, n]) =>
       `<button class="aba ${k === aba ? 'ativa' : ''}" data-aba="${k}">${r}${n !== '' ? `<span class="n">${n}</span>` : ''}</button>`).join('')}</div>${html}`);
   SN.ligarValidacao();
+  SN.$('#bExpSD').onclick = () => SN.exportarObrasLpu();
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaSD = b.dataset.aba; SN.render(); });
   SN.$$('[data-sd]').forEach(tr => tr.onclick = () => SN.contabilizar(tr.dataset.sd));
   SN.$$('[data-lote]').forEach(b => b.onclick = async () => {
@@ -309,6 +316,15 @@ SN.rota('/servicedesk', () => {
     const mot = await SN.pedirTexto('Reprovar NF', 'Motivo (NF errada, ilegível, valor divergente…)'); if (!mot) return;
     p.nf = null; p.status = 'AGUARDANDO_NF'; p.motivoNf = mot; SN.hist(p, 'NF reprovada', mot); SN.log('REPROVAR_NF', p.id, mot); SN.salvar(); SN.render();
   });
+  // Lote gerado por engano (ou de teste): volta as LPUs para "Gerar tratativa" e o lote fica como DESFEITO (some do prestador).
+  SN.$$('[data-desfazer]').forEach(b => b.onclick = async () => {
+    const p = SN.db.pagamentos.find(x => x.id === b.dataset.desfazer); if (!p || !SN.pagAberto(p)) return;
+    const mot = await SN.pedirTexto('Desfazer lote ' + p.id, `${p.empresa} · ${SN.mesNome(p.ciclo)} · ${SN.brl(p.total)}. As ${p.lpuIds.length} LPU(s) voltam para "Gerar tratativa de pagamento" e o lote sai da tela do prestador.${p.nf ? ' A NF anexada fica descartada (continua registrada no lote).' : ''} Motivo:`);
+    if (!mot) return;
+    p.lpuIds.forEach(id => { const l = SN.db.lpus.find(x => x.id === id); if (l && l.pagamentoId === p.id && l.status === 'EM_PAGAMENTO') { l.status = 'CONTABILIZADA'; delete l.pagamentoId; SN.hist(l, 'Lote desfeito', p.id + ' · ' + mot); } });
+    p.statusAnterior = p.status; p.status = 'DESFEITO'; p.desfeitoEm = SN.agora(); p.desfeitoPor = SN.usuario().nome; p.motivoDesfazer = mot;
+    SN.hist(p, 'Lote desfeito', mot); SN.log('DESFAZER_LOTE', p.id, mot); SN.salvar(); SN.toast('Lote desfeito: as LPUs voltaram para Gerar tratativa.', 'ok'); SN.render();
+  });
   SN.$$('[data-pagar]').forEach(b => b.onclick = async () => {
     const p = SN.db.pagamentos.find(x => x.id === b.dataset.pagar);
     if (!await SN.confirmar('Confirmar pagamento', `Confirmar o pagamento de <b>${SN.brl(p.total)}</b> para ${SN.esc(p.empresa)}? Sua assinatura será registrada.`, 'Assinar e confirmar', 'ok')) return;
@@ -317,6 +333,64 @@ SN.rota('/servicedesk', () => {
     SN.hist(p, 'Pagamento confirmado', SN.txtAssinatura(a)); SN.log('CONFIRMAR_PAGAMENTO', p.id, SN.brl(p.total)); SN.salvar(); SN.render();
   });
 }, { tela: 'servicedesk' });
+
+// Excel das obras (pedido de 2026-10-16): toda LPU aprovada pelo líder (No Service Desk em diante),
+// uma obra por linha com chamado, prestador/CNPJ, conta, valor, quem aprovou/contabilizou e o lote;
+// a 2ª aba traz os serviços (uma linha por item). Filtro por ciclo de pagamento e prestador.
+SN.LPU_APROVADAS = ['NO_SERVICE_DESK', 'CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'];
+SN.exportarObrasLpu = () => {
+  const todas = SN.db.lpus.filter(l => SN.LPU_APROVADAS.includes(l.status));
+  const ciclos = [...new Set(todas.map(SN.cicloDe).filter(Boolean))].sort().reverse();
+  const emps = [...new Set(todas.map(l => l.cab.empresa).filter(Boolean))].sort();
+  SN.modal({ titulo: 'Exportar obras (LPU) para Excel', corpo: `
+    <div class="campo"><label>Ciclo de pagamento (mês da conclusão)</label><select class="inp" id="xCiclo"><option value="">Todos os ciclos</option>${ciclos.map(c => `<option value="${c}">${SN.mesNome(c)}</option>`).join('')}</select></div>
+    <div class="campo"><label>Prestador</label><select class="inp" id="xEmp"><option value="">Todos</option>${emps.map(e => `<option>${SN.esc(e)}</option>`).join('')}</select></div>
+    <div class="campo"><label>Situação</label><select class="inp" id="xSt"><option value="">Todas as aprovadas pelo líder</option>${SN.LPU_APROVADAS.map(k => `<option value="${k}">${SN.esc(SN.LPU_STATUS[k].rot)}</option>`).join('')}</select></div>
+    <p class="small muted">Uma obra por linha (aba "Obras") e o detalhe dos serviços (aba "Serviços").${SN.db.janela ? ` Entra o que está carregado (desde ${SN.mesNome(SN.db.janela.desde)}).` : ''}</p>`,
+    botoes: [{ rot: 'Cancelar' }, { rot: 'Exportar', cls: 'prim', acao: f => {
+      const ciclo = SN.$('#xCiclo', f).value, emp = SN.$('#xEmp', f).value, st = SN.$('#xSt', f).value;
+      const lista = todas.filter(l => (!ciclo || SN.cicloDe(l) === ciclo) && (!emp || l.cab.empresa === emp) && (!st || l.status === st))
+        .sort((a, b) => (a.cab.empresa || '').localeCompare(b.cab.empresa || '') || String(a.id).localeCompare(String(b.id)));
+      if (!lista.length) { SN.toast('Nenhuma obra nesse filtro.', 'erro'); return false; }
+      const d = iso => { if (!iso) return ''; const x = new Date(iso); if (isNaN(x)) return '';
+        const p = n => String(n).padStart(2, '0'); return `${p(x.getDate())}/${p(x.getMonth() + 1)}/${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`; };
+      const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+      const obras = lista.map(l => {
+        const c = SN.db.chamados.find(x => x.id === l.chamadoId) || {}, conta = SN.conta(l.cab.conta) || {};
+        const pag = SN.db.pagamentos.find(p => p.id === l.pagamentoId) || SN.db.pagamentos.find(p => p.status !== 'DESFEITO' && (p.lpuIds || []).includes(l.id)) || null;
+        const ciclo = SN.cicloDe(l), servicos = (l.itens || []).reduce((s, it) => s + SN.valorItem(it), 0);
+        return { 'LPU': l.id, 'Chamado': l.chamadoId, 'Atividade / rota': (c.preventiva && c.preventiva.id_rota) || '', 'Tipo': l.cab.tipo || c.tipo || '', 'Categoria': l.cab.categoria || '',
+          'Cliente': l.cab.cliente || '', 'Etiqueta': l.cab.etiqueta || '', 'Protocolo NOC': l.cab.protocoloNoc || '', 'Protocolo O&M': l.cab.protocoloOem || '',
+          'Endereço': l.cab.endereco || '', 'Cidade': l.cab.cidade || '',
+          'Prestador': l.cab.empresa || '', 'CNPJ': l.cab.cnpj || SN.empresa(l.cab.empresa).cnpj || '', 'Vínculo': l.vinculo, 'Técnico': l.cab.tecnico || '', 'Papel': l.papel === 'apoio' ? 'Apoio' : 'Titular',
+          'Conta contábil': l.cab.conta || '', 'Conta contábil (nome)': conta.nome || '',
+          'Qtd. serviços': (l.itens || []).length, 'Serviços': (l.itens || []).map(it => `${it.cod} × ${SN.num(Number(it.qtd) || 0, 2)}`).join('; '),
+          'Valor serviços (R$)': l.vinculo === 'PRESTADOR' ? r2(servicos) : '', 'Reembolso (R$)': l.vinculo === 'PRESTADOR' ? r2(l.reembolso) : '',
+          'Valor total (R$)': l.vinculo === 'PRESTADOR' ? r2(SN.valorLpu(l)) : '', 'Hora-homem': l.vinculo === 'CLT' ? r2(SN.hhLpu(l)) : '',
+          'Data de preenchimento': d(l.criadoEm), 'Enviada pelo técnico': d(l.enviadoEm), 'Conclusão técnica do chamado': d(c.tempos && c.tempos.conclusaoTecnica),
+          'Aprovado por (líder)': l.assinaturaLider ? l.assinaturaLider.nome : '', 'Aprovado em': d(l.aprovadoEm || (l.assinaturaLider && l.assinaturaLider.ts)),
+          'Contabilizado por (Service Desk)': l.assinaturaSD ? l.assinaturaSD.nome : '', 'Contabilizado em': d(l.contabilizadoEm || (l.assinaturaSD && l.assinaturaSD.ts)),
+          'Situação': SN.LPU_STATUS[l.status].rot, 'Ciclo': ciclo ? SN.mesNome(ciclo) : '', 'Pagamento previsto': ciclo && l.vinculo === 'PRESTADOR' ? SN.data(SN.previsaoPagamento(ciclo)) : '',
+          'Lote de pagamento': pag ? pag.id : '', 'Situação do lote': pag ? SN.PAG_STATUS[pag.status].rot : '', 'NF': pag && pag.nf ? pag.nf.nome || 'anexada' : '',
+          'Pago em': d(pag && (pag.pagoEm || (pag.assinaturaPagamento && pag.assinaturaPagamento.ts))), 'Pago por': pag && pag.assinaturaPagamento ? pag.assinaturaPagamento.nome : '',
+          'Observação': l.obs || '' };
+      });
+      const itens = lista.flatMap(l => (l.itens || []).map(it => { const cat = SN.itemLpu(it.cod) || {};
+        return { 'LPU': l.id, 'Chamado': l.chamadoId, 'Prestador': l.cab.empresa || '', 'CNPJ': l.cab.cnpj || '', 'Conta contábil': l.cab.conta || '',
+          'Código': it.cod, 'Serviço': cat.desc || '', 'Medida': cat.medida || '', 'Quantidade': Number(it.qtd) || 0, 'Crítico': it.fator === 'critico' ? 'Sim' : '',
+          'Valor (R$)': l.vinculo === 'PRESTADOR' ? r2(SN.valorItem(it)) : '', 'Fotos': (it.fotos || []).length, 'Situação': SN.LPU_STATUS[l.status].rot }; }));
+      const nome = 'obras_lpu' + (ciclo ? '_' + ciclo : '') + (emp ? '_' + emp.replace(/[^\w]+/g, '_').slice(0, 30) : '');
+      if (!window.XLSX) { SN.exportar(nome, obras); return; }
+      const aba = linhas => { const ws = XLSX.utils.json_to_sheet(linhas), cab = Object.keys(linhas[0] || {});
+        ws['!cols'] = cab.map(k => ({ wch: Math.min(50, Math.max(k.length, ...linhas.map(x => String(x[k] == null ? '' : x[k]).length)) + 2) }));
+        if (linhas.length) ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: linhas.length, c: cab.length - 1 } }) };
+        return ws; };
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, aba(obras), 'Obras');
+      if (itens.length) XLSX.utils.book_append_sheet(wb, aba(itens), 'Serviços');
+      XLSX.writeFile(wb, nome + '.xlsx');
+    } }]
+  });
+};
 
 SN.contabilizar = id => {
   const l = SN.db.lpus.find(x => x.id === id); let assin = null;

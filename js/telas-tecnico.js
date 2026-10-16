@@ -876,7 +876,7 @@ SN.rota('/tec/financeiro', () => {
   if (emp.vinculo !== 'PRESTADOR' || (emp.responsavelLpu && emp.responsavelLpu !== u.nome)) return SN.navegar('#/tec');
   const lpus = SN.db.lpus.filter(l => l.cab.empresa === u.empresa);
   const soma = st => lpus.filter(l => st.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
-  const pags = SN.db.pagamentos.filter(p => p.empresa === u.empresa).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+  const pags = SN.db.pagamentos.filter(p => p.empresa === u.empresa && p.status !== 'DESFEITO').sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   SN.cascaTec('fin', `
     <p class="muted">${SN.esc(u.empresa)} · CNPJ ${SN.esc(emp.cnpj || '—')}</p>
     <div class="grid g2">

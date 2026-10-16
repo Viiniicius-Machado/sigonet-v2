@@ -87,7 +87,7 @@ SN.rota('/inicio', () => {
   const cont = {
     chamados: d.chamados.filter(c => c.status === 'NAO_ATRIBUIDO').length,
     lpu: d.lpus.filter(l => l.status === 'AGUARDANDO_LIDER').length,
-    servicedesk: d.lpus.filter(l => l.status === 'NO_SERVICE_DESK').length + d.pagamentos.filter(p => p.status !== 'PAGO').length,
+    servicedesk: d.lpus.filter(l => l.status === 'NO_SERVICE_DESK').length + d.pagamentos.filter(p => p.status !== 'PAGO' && p.status !== 'DESFEITO').length,
     materiais: d.materiais.filter(m => ['REGISTRADO', 'CONFERIDO', 'DIVERGENTE'].includes(m.status)).length,
     fibra: d.fibras.filter(f => ['AGUARDANDO_VALIDACAO', 'PENDENTE_CADASTRO'].includes(f.status)).length
   };
