@@ -554,6 +554,9 @@ img[data-ver]{cursor:zoom-in}
 .av-item{border-top:1px solid var(--borda);padding:8px 0}
 .av-item-cab{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px}
 .av-item-cab b{font-size:1.05rem}
+/* Fotos da atividade no detalhe do chamado: itens lado a lado */
+.fa-itens{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));column-gap:20px;border-top:1px solid var(--borda)}
+.fa-itens .av-item{border-top:0;min-width:0}
 .av-falta{color:var(--erro);font-weight:700}
 .av-modal .modal-corpo{max-height:calc(100vh - 170px)}
 .av-grade{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;height:calc(100vh - 260px);min-height:420px}

@@ -434,6 +434,7 @@ SN.rota('/chamado/:id', id => {
         </tbody></table>
         <p class="small muted" style="margin-top:8px">A única correlação obrigatória é o ID do chamado. Cada gestão tem status, fila, validação e fechamento próprios.</p></div>
     </div>
+    ${prev && SN.vst.fotosAtividade && SN.remoto ? `<div class="card" style="margin-top:14px"><h3>Fotos da atividade <span class="muted small">${SN.esc(prev.id_rota)} · enviadas pelo técnico</span></h3><div id="fotosAtiv"></div></div>` : ''}
     <div class="card" style="margin-top:14px"><h3>Histórico</h3><div class="tabela-wrap"><table class="tab"><thead><tr><th>Quando</th><th>Quem</th><th>Ação</th><th>Detalhe</th></tr></thead><tbody>
       ${(c.historico || []).slice().reverse().map(h => `<tr><td class="nowrap">${SN.dt(h.ts)}</td><td>${SN.esc(h.usuario)}</td><td>${SN.esc(h.acao)}</td><td>${SN.esc(h.detalhe)}</td></tr>`).join('')}
     </tbody></table></div></div>`);
@@ -442,6 +443,7 @@ SN.rota('/chamado/:id', id => {
     if (!await SN.confirmar('Remover ' + (a.tipo === 'imagem' ? 'foto' : 'anexo'), 'Tirar "' + (a.nome || 'arquivo') + '" deste atendimento? Ele deixa de aparecer aqui e no PDF.', 'Remover', 'perigo')) return;
     c.fotos = (c.fotos || []).filter(x => x !== a); SN.hist(c, 'Foto removida', a.nome || ''); SN.log('REMOVER_FOTO', c.id, a.nome || ''); SN.salvar(); pintarFotosCh(); } } : null);
   pintarFotosCh();
+  if (SN.$('#fotosAtiv')) SN.vst.fotosAtividade(SN.$('#fotosAtiv'), prev.id_rota);
   SN.ligarValidacao();
   const b = id => SN.$('#' + id);
   b('bClass') && (b('bClass').onclick = () => SN.classificar(c));

@@ -248,4 +248,55 @@
     aberta = false; clearTimeout(timer);
     if (A.conversa) A.conversa.parar();
   };
+
+  // Detalhe do chamado (pedido de 2026-10-16): fotos que subiram na atividade ligada ao chamado
+  // (apontamentos da aérea/Melhoria/Retirada ou CS da subterrânea), com o resumo de cada envio e
+  // as fotos agrupadas por item. Mesmo pedido do Acompanhar (VST_VIVO); só leitura.
+  const cacheAtiv = {}; // id_rota → { t, r }: o detalhe redesenha a cada sincronização
+  SN.vst.fotosAtividade = async (el, id_rota) => {
+    if (!el) return;
+    const c = cacheAtiv[id_rota];
+    let r = c && Date.now() - c.t < 60000 ? c.r : null;
+    if (!r) {
+      el.innerHTML = SN.carregando('Buscando as fotos da atividade…');
+      try { r = await SN.vst.api('VST_VIVO', { id_rota }, 30000); } catch (e) { r = { ok: false, erro: e.rede ? 'Sem conexão para buscar as fotos.' : e.message }; }
+      if (r.ok && r.rota) cacheAtiv[id_rota] = { t: Date.now(), r };
+    }
+    if (!el.isConnected) return;
+    if (!r.ok || !r.rota) { el.innerHTML = `<p class="muted small">${esc(r.erro || 'Não foi possível buscar as fotos.')}</p>`; return; }
+    const rota = r.rota, prog = VR.ehProg(rota), aerea = rota.segmento === 'AEREA';
+    const srv = {}; (r.fotos || []).forEach(f => { srv[f.id_foto] = f; });
+    const miniatura = (f, leg) => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" loading="lazy" data-leg="${esc(leg)}" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`;
+    const rotFoto = t => (L.foto(t) || {}).rot || t || 'Outras';
+    // Fotos do envio, só as que já subiram, agrupadas pelo tipo (= item na aérea, campo na subterrânea).
+    const grupos = (lista, titulo) => {
+      const fotos = (lista || []).filter(f => f.tipo_foto !== 'ficha_pdf').map(f => ({ ...f, ...(srv[f.id_foto] || {}) })).filter(f => f.drive_id);
+      if (!fotos.length) return '<div class="small muted">Nenhuma foto enviada.</div>';
+      const por = {}; fotos.forEach(f => (por[f.tipo_foto] = por[f.tipo_foto] || []).push(f));
+      return `<div class="fa-itens">${Object.keys(por).map(t => `<div class="av-item"><div class="av-item-cab"><span>${esc(rotFoto(t))}</span><span class="small muted">${por[t].length} foto(s)</span></div>
+        <div class="vst-thumbs">${por[t].map(f => miniatura(f, titulo + ' · ' + rotFoto(t))).join('')}</div></div>`).join('')}</div>`;
+    };
+    const enviado = x => x.status_revisao && x.status_revisao !== 'RASCUNHO';
+    let blocos = [];
+    if (aerea || prog) {
+      blocos = (r.producao || []).filter(enviado).sort((a, b) => String(a.data).localeCompare(String(b.data))).map(a => {
+        const tit = `${a.data ? SN.vst.dia(a.data) : '—'} · ${a.tipo === 'final' ? 'Finalizado' : a.tipo === 'parcial' ? 'Parcial' : '—'}`;
+        const feito = aerea ? L.producao_aerea.filter(x => Number(a[x.k]) > 0).map(x => `${x.rot}: ${SN.num(Number(a[x.k]), x.k === 'cordoalha' ? 1 : 0)}`).join(' · ')
+          : rota.segmento === 'RETIRADA' ? `${SN.num(a.metros || 0)} m de cabo · ${SN.num(a.ceo || 0)} CEO/CTO`
+          : VR.itensProg(a).map(i => `${SN.num(i.qtd)} × ${(SN.itemLpu(i.cod) || {}).desc || i.cod}`).join(' · ');
+        return { tit, st: a.status_revisao, quem: a.tecnico, feito, obs: a.observacao, html: grupos(a.fotos, rota.id_rota + ' · ' + tit) };
+      });
+    } else {
+      blocos = (r.vistorias || []).filter(enviado).sort((a, b) => (Number(a.ordem) || 0) - (Number(b.ordem) || 0)).map(v => {
+        const tit = `CS ${v.ordem || '—'} · ${v.cs_nova ? 'CS nova' : v.id_cs || '—'}`;
+        return { tit, st: v.status_revisao, quem: v.tecnico, feito: v.abriu === 'sim' ? 'Abriu a CS' : v.abriu === 'nao' ? 'Não abriu a CS' : '', obs: v.observacao, html: grupos(v.fotos, rota.id_rota + ' · ' + tit) };
+      });
+    }
+    const total = blocos.reduce((s, b) => s + (b.html.match(/<img /g) || []).length, 0);
+    el.innerHTML = !blocos.length ? `<p class="muted">Nenhum ${prog || aerea ? 'apontamento' : 'CS'} enviado ainda nesta atividade.</p>`
+      : `<p class="small muted" style="margin:0 0 8px">${blocos.length} ${prog || aerea ? 'apontamento(s)' : 'CS'} · ${total} foto(s) · toque na foto para ampliar</p>`
+        + blocos.map(b => `<div class="av-ap"><div class="av-ap-cab"><div><b>${esc(b.tit)}</b>${b.quem ? ` · <span class="small muted">${esc(b.quem)}</span>` : ''}</div><div>${SN.vst.badgeVistoria(b.st)}</div></div>
+          ${b.feito ? `<div class="small" style="margin-bottom:6px">${esc(b.feito)}</div>` : ''}${b.html}
+          ${b.obs ? `<div class="small" style="margin-top:6px"><b>Obs.:</b> ${esc(b.obs)}</div>` : ''}</div>`).join('');
+  };
 })();
