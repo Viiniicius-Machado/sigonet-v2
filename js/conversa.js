@@ -49,16 +49,24 @@ SN.conversa = (() => {
   // O navegador só deixa tocar som depois de um toque na página: o áudio é preparado no 1º toque.
   let audio = null;
   document.addEventListener('pointerdown', () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) { } }, { passive: true });
-  C.tocar = () => {
-    try { if (navigator.vibrate) navigator.vibrate([180, 90, 180]); } catch (e) { }
+  // notas: [[frequência, início em s]]; vib: padrão de vibração. Padrão = mensagem nova (2 notas).
+  C.tocar = (notas, vib) => {
+    try { if (navigator.vibrate) navigator.vibrate(vib || [180, 90, 180]); } catch (e) { }
     if (!audio || audio.state !== 'running') return;
-    [[880, 0], [1320, 0.16]].forEach(([f, t]) => { const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + t;
+    (notas || [[880, 0], [1320, 0.16]]).forEach(([f, t]) => { const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + t;
       o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
       o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + 0.25); });
   };
   // Aviso do sistema (aparece na barra do celular/Windows) quando o SigoNet não está na tela.
   C.podeNotificar = () => 'Notification' in window && Notification.permission === 'granted';
   C.pedirNotificacao = async () => { try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { } return C.podeNotificar(); };
+  // Aviso do sistema genérico (também usado pela nova OS do técnico). data: { ref } abre a conversa, { os } abre a OS.
+  C.notificarSistema = async (titulo, corpo, tag, data) => {
+    if (!C.podeNotificar()) return;
+    const op = { body: corpo, tag, renotify: true, icon: 'icones/i192.png', requireInteraction: true, data };
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) return reg.showNotification(titulo, op); } catch (e) { }
+    try { const n = new Notification(titulo, op); n.onclick = () => { window.focus(); if (data && data.os) SN.navegar('#/tec/os/' + data.os); n.close(); }; } catch (e) { }
+  };
   const notificar = async (ref, a) => {
     if (!C.podeNotificar()) return;
     const titulo = 'Mensagem de ' + (a.de || 'SigoNet'), op = { body: (a.titulo ? a.titulo + '\n' : '') + (a.texto || ''), tag: 'conv-' + ref, renotify: true, icon: 'icones/i192.png', data: { hash: location.pathname + '#' + location.hash.slice(1), ref } };

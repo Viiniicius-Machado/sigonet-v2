@@ -105,6 +105,7 @@ SN.carregarRemoto = async () => {
   SN.carregarStatusAcessos();
   if (SN.vst && SN.vst.preaquecer) SN.vst.preaquecer();
   if (SN.conversa) SN.conversa.iniciarAvisos(); // aviso de mensagem nova da conversa, em qualquer tela
+  if (SN.alertaNovaOs) setTimeout(SN.alertaNovaOs, 1500); // técnico: OS despachada e ainda não aceita
   // Técnico: números para criar registro sem sinal. Horário sorteado (1 a 6 min): no começo do
   // turno todos entram juntos e o pedido usa a trava do servidor (teste de carga).
   if (SN.reabastecerIds) setTimeout(SN.reabastecerIds, 60000 + Math.random() * 300000);
@@ -353,6 +354,7 @@ SN.sincronizar = async () => {
       SN.db.assinaturas[n] = Math.max(SN.db.assinaturas[n] || 0, v); SN._assinEnviadas[n] = Math.max(SN._assinEnviadas[n] || 0, v); });
     SN._ultimaSync = r.servidorTs; SN.offline = false;
     if (mudou) SN.aoMudarBase();
+    if (mudou && SN.alertaNovaOs) SN.alertaNovaOs(); // técnico: chegou OS despachada (alerta com som)
     SN.guardarLocal();
   } catch (e) { if (e.rede) SN.offline = true; /* tenta no próximo ciclo */ } finally { sincronizando = false; SN.indicadorSync(); }
 };

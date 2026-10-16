@@ -904,3 +904,57 @@ SN.rota('/tec/financeiro', () => {
   });
   SN.$$('[data-ver]').forEach(b => b.onclick = () => SN.abrirAnexo(b.dataset.ver));
 }, { familia: 'tecnico' });
+
+// ═══════════════════════════ Alerta de nova OS (técnico) ═══════════════════════════
+// Pedido do usuário (16/10/2026): ao despachar, o técnico precisa perceber que tem OS na fila.
+// Faixa fixa no topo (qualquer tela) + som + vibração + "(n) Nova OS" no título; lembra a cada
+// 5 min enquanto a OS não for aceita; com o app em segundo plano, aviso do sistema (se liberado).
+// Cada despacho avisa uma vez por aparelho (id + hora do despacho: reatribuição avisa de novo).
+(() => {
+  const chave = () => 'sigonet_v2_os_avisadas|' + ((SN.usuario() || {}).nome || '');
+  const lidas = () => { try { return JSON.parse(localStorage.getItem(chave()) || '[]'); } catch (e) { return []; } };
+  const guardar = l => { try { localStorage.setItem(chave(), JSON.stringify(l.slice(-200))); } catch (e) { } };
+  const marca = c => c.id + '|' + ((c.tempos || {}).atribuicao || '');
+  const tituloBase = () => document.title.replace(/^\(\d+\) Nova OS · /, '');
+  const pendentes = () => (SN.usuario() || {}).tipo !== 'tecnico' ? [] : SN.db.chamados.filter(c => c.status === 'ATRIBUIDO' && SN.papelNo(c))
+    .sort((a, b) => String((b.tempos || {}).atribuicao || '').localeCompare(String((a.tempos || {}).atribuicao || '')));
+  const SOM_OS = [[660, 0], [880, 0.2], [1100, 0.4], [1320, 0.6]], VIB_OS = [400, 150, 400, 150, 400];
+  let silencio = 0;
+  const tocar = () => SN.conversa && SN.conversa.tocar(SOM_OS, VIB_OS);
+  const tirar = () => { const f = SN.$('#osAlerta'); if (f) f.remove(); };
+  const faixa = l => {
+    tirar(); if (!l.length) return;
+    const d = document.createElement('div'); d.id = 'osAlerta'; d.className = 'os-alerta'; d.setAttribute('role', 'alert');
+    const pede = 'Notification' in window && Notification.permission === 'default';
+    d.innerHTML = `<div class="os-alerta-tit">${l.length === 1 ? 'Nova OS na sua fila' : l.length + ' OS novas na sua fila'}</div>
+      ${l.slice(0, 3).map(c => `<div class="os-alerta-item"><b>${SN.esc(c.id)}</b> · ${SN.esc(c.cliente || '')}<div class="small">${SN.esc([c.endereco, c.cidade].filter(Boolean).join(' - '))}${c.prazoLimite ? ' · prazo ' + SN.dt(c.prazoLimite) : ''}</div></div>`).join('')}
+      ${l.length > 3 ? `<div class="small">e mais ${l.length - 3}…</div>` : ''}
+      <div class="os-alerta-acoes"><button type="button" class="btn sm" data-osdepois>Depois</button>${pede ? '<button type="button" class="btn sm" data-osnotif>Avisar com o app fechado</button>' : ''}
+        <button type="button" class="btn sm prim" data-osver>${l.length === 1 ? 'Abrir OS' : 'Ver minha fila'}</button></div>`;
+    SN.$('[data-osver]', d).onclick = () => { tirar(); SN.navegar(l.length === 1 ? '#/tec/os/' + l[0].id : '#/tec'); };
+    SN.$('[data-osdepois]', d).onclick = () => { tirar(); silencio = Date.now(); };
+    const bn = SN.$('[data-osnotif]', d); if (bn) bn.onclick = async () => { const ok = SN.conversa && await SN.conversa.pedirNotificacao(); bn.remove(); SN.toast(ok ? 'Pronto: a nova OS avisa mesmo com o app em segundo plano.' : 'Avisos não liberados.', ok ? 'ok' : ''); };
+    document.body.appendChild(d);
+  };
+  const titulo = n => { const b = tituloBase(); document.title = n ? `(${n}) Nova OS · ${b}` : b; };
+  SN.alertaNovaOs = () => {
+    const l = pendentes(); titulo(l.length);
+    if (!l.length) { tirar(); return; }
+    const ja = lidas(), novas = l.filter(c => !ja.includes(marca(c)));
+    if (SN.$('#osAlerta')) faixa(l); // atualiza a lista (aceitou uma, chegou outra)
+    if (!novas.length) return;
+    guardar(ja.concat(novas.map(marca)));
+    if (document.visibilityState === 'visible') { faixa(l); tocar(); }
+    else if (SN.conversa) novas.forEach(c => SN.conversa.notificarSistema('Nova OS · ' + c.id, [c.cliente, [c.endereco, c.cidade].filter(Boolean).join(' - ')].filter(Boolean).join('\n'), 'os-' + c.id, { os: c.id }));
+  };
+  // Lembrete: OS despachada e ainda não aceita volta a tocar a cada 5 min (com o app na tela).
+  setInterval(() => {
+    const l = pendentes(); if (!l.length || document.visibilityState !== 'visible' || Date.now() - silencio < 5 * 60000) return;
+    faixa(l); tocar();
+  }, 5 * 60000);
+  // Voltou para o app: mostra a faixa se ainda há OS sem aceitar (sem tocar de novo).
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && SN.sessao && SN.sessao()) { const l = pendentes(); if (l.length && !SN.$('#osAlerta')) faixa(l); } });
+  // Abriu a OS (ou aceitou): a faixa sai.
+  window.addEventListener('hashchange', () => { if (/^#\/tec\/os\//.test(location.hash)) tirar(); });
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.abrirOs) { tirar(); SN.navegar('#/tec/os/' + e.data.abrirOs); } });
+})();
