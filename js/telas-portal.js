@@ -355,8 +355,7 @@ SN.rota('/cadastros', () => {
     ${d.tecnicos.filter(t => ver === 'sem' ? !t.ativo : t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => `<tr class="clic" data-tec="${t.id}"><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.nome)}</td>
       <td>${SN.esc(t.equipe || '—')}</td><td>${t.equipe ? (t.titular ? '✔' : '') : '—'}</td><td>${SN.esc(t.frente || '')}</td><td class="small">${SN.empresa(t.empresa).vinculo}</td>
       <td>${t.ativo ? (SN.acessoOk(t) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>') : '—'}</td>
-      <td class="nowrap">${t.ativo ? `<button type="button" class="btn sm perigo" data-tiraracesso="${t.id}">Tirar acesso</button>`
-        : `<span class="badge erro">retirado</span>${t.acessoRetirado ? `<div class="small muted">${SN.dt(t.acessoRetirado.em)} · ${SN.esc(t.acessoRetirado.por)}</div>` : ''}<button type="button" class="btn sm" style="margin-top:4px" data-devolveracesso="${t.id}">Devolver acesso</button>`}</td></tr>`).join('')
+      <td class="nowrap">${SN.celulaAcesso('tecnico', t)}</td></tr>`).join('')
       || `<tr><td colspan="8" class="muted center">Nenhum técnico.</td></tr>`}
     </tbody></table></div></div>`; }
   if (aba === 'empresas') html = `<div class="card"><div class="card-tit"><h3>Prestadores e empresas</h3><button class="btn prim" data-novo="emp">+ Empresa</button></div>
@@ -364,13 +363,15 @@ SN.rota('/cadastros', () => {
     ${d.empresas.map((e, i) => `<tr class="clic" data-emp="${i}"><td><b>${SN.esc(e.nome)}</b></td><td>${SN.esc(e.razao || '')}</td><td class="mono">${SN.esc(e.cnpj || '—')}</td>
       <td>${{ CLT: 'CLT (hora-homem)', PRESTADOR: 'Prestador (LPU)', CONTRATO_FIXO: 'Contrato fixo' }[e.vinculo]}</td><td>${SN.esc(e.responsavelLpu || '—')}</td>
       <td class="num">${d.tecnicos.filter(t => t.empresa === e.nome && t.ativo).length}</td><td>${e.ativo !== false ? '✔' : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
-  if (aba === 'lideranca') html = `<div class="card"><div class="card-tit"><h3>Liderança e operação</h3><button class="btn prim" data-novo="lid">+ Pessoa</button></div>
+  if (aba === 'lideranca') { const semL = d.lideranca.filter(l => !l.ativo).length, verL = SN.cadLidVer === 'sem' && semL ? 'sem' : 'com';
+    html = `<div class="card"><div class="card-tit"><h3>Liderança e operação</h3><button class="btn prim" data-novo="lid">+ Pessoa</button></div>
+    ${semL ? `<div class="chips" style="margin-bottom:10px"><button type="button" class="chip ${verL === 'com' ? 'sel' : ''}" data-lidver="com">Com acesso (${d.lideranca.length - semL})</button><button type="button" class="chip ${verL === 'sem' ? 'sel' : ''}" data-lidver="sem">Acesso retirado (${semL})</button></div>` : ''}
     <div class="aviso info small" style="margin-bottom:10px">Modelo de acesso: <b>Nome + PIN</b> (definido aqui) <b>+ Complemento</b> pessoal criado no 1º acesso (guardado só como hash).
       As <b>telas</b> definem o que cada um abre; o <b>cargo</b> libera ações: Gerente/Gestor tudo · Encarregado aprova LPU, valida fibra e chamados e revisa as obras (Preventiva, Melhoria, Retirada) sem precisar marcar telas · OEM atua na sala técnica (GEOGRID/materiais/service desk).</div>
-    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Nome</th><th>Cargo</th><th>Telas liberadas</th><th>1º acesso</th><th>Último acesso</th><th>Ativo</th></tr></thead><tbody>
-    ${d.lideranca.map(l => `<tr class="clic" data-lid="${l.id}"><td><b>${SN.esc(l.nome)}</b>${l.nomeCompleto ? `<div class="small muted">${SN.esc(l.nomeCompleto)}</div>` : ''}</td><td>${SN.esc(l.cargo)}</td>
+    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Nome</th><th>Cargo</th><th>Telas liberadas</th><th>1º acesso</th><th>Último acesso</th><th>Acesso</th></tr></thead><tbody>
+    ${d.lideranca.filter(l => verL === 'sem' ? !l.ativo : l.ativo).map(l => `<tr class="clic" data-lid="${l.id}"><td><b>${SN.esc(l.nome)}</b>${l.nomeCompleto ? `<div class="small muted">${SN.esc(l.nomeCompleto)}</div>` : ''}</td><td>${SN.esc(l.cargo)}</td>
       <td class="small">${l.telas.includes('*') ? '<span class="badge verde">Todas</span>' : l.telas.map(t => SN.TELAS[t] || t).join(', ')}</td>
-      <td>${SN.acessoOk(l) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>'}</td><td class="nowrap">${SN.dt(SN.ultimoAcesso(l))}</td><td>${l.ativo ? '✔' : '—'}</td></tr>`).join('')}</tbody></table></div></div>`;
+      <td>${SN.acessoOk(l) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>'}</td><td class="nowrap">${SN.dt(SN.ultimoAcesso(l))}</td><td class="nowrap">${SN.celulaAcesso('lideranca', l)}</td></tr>`).join('')}</tbody></table></div></div>`; }
   if (aba === 'disp') html = `<div class="card"><div class="card-tit"><h3>Disponibilidade da mão de obra</h3><button class="btn prim" data-novo="disp">+ Registrar período</button></div>
     <p class="small muted">Técnico com período cobrindo o dia fica bloqueado no despacho (férias, atestado, folga compensada…).</p>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico</th><th>Empresa</th><th>Motivo</th><th>Início</th><th>Fim</th><th>Registrado por</th><th></th></tr></thead><tbody>
@@ -398,8 +399,10 @@ SN.rota('/cadastros', () => {
   SN.$$('[data-aba]').forEach(b => b.onclick = () => { SN.abaCad = b.dataset.aba; SN.render(); });
   SN.$$('[data-tec]').forEach(tr => tr.onclick = () => SN.editarTecnico(SN.db.tecnicos.find(t => t.id === tr.dataset.tec)));
   SN.$$('[data-tecver]').forEach(b => b.onclick = () => { SN.cadTecVer = b.dataset.tecver; SN.render(); });
-  SN.$$('[data-tiraracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.tirarAcessoTecnico(SN.db.tecnicos.find(t => t.id === b.dataset.tiraracesso)); });
-  SN.$$('[data-devolveracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.devolverAcessoTecnico(SN.db.tecnicos.find(t => t.id === b.dataset.devolveracesso)); });
+  SN.$$('[data-lidver]').forEach(b => b.onclick = () => { SN.cadLidVer = b.dataset.lidver; SN.render(); });
+  const regDe = v => { const [tipo, id] = v.split('|'); return [tipo, (tipo === 'lideranca' ? SN.db.lideranca : SN.db.tecnicos).find(x => x.id === id)]; };
+  SN.$$('[data-tiraracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.tirarAcesso(...regDe(b.dataset.tiraracesso)); });
+  SN.$$('[data-devolveracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.devolverAcesso(...regDe(b.dataset.devolveracesso)); });
   SN.$$('[data-emp]').forEach(tr => tr.onclick = () => SN.editarEmpresa(SN.db.empresas[+tr.dataset.emp]));
   SN.$$('[data-lid]').forEach(tr => tr.onclick = () => SN.editarLider(SN.db.lideranca.find(t => t.id === tr.dataset.lid)));
   SN.$$('[data-novo]').forEach(b => b.onclick = () => ({ tec: () => SN.editarTecnico(null), emp: () => SN.editarEmpresa(null), lid: () => SN.editarLider(null), disp: SN.novaDisp })[b.dataset.novo]());
@@ -444,38 +447,48 @@ SN.editarTecnico = t => {
         if (SN.remoto && (novo || pinNovo)) { try { await SN.gravarAcesso('tecnico', t, { pin: pinNovo || PIN_INICIAL }); } catch (e) { SN.toast('Cadastro salvo, mas o PIN não: ' + e.message, 'erro'); } }
         SN.render(); } }] });
 };
-// Técnico que não vai mais usar o SigoNet: sai da lista de login e do despacho, o PIN é trocado
-// e a sessão aberta no celular cai (servidor). O cadastro e o histórico ficam.
-SN.tirarAcessoTecnico = async t => {
-  if (!t) return;
-  const abertas = SN.db.chamados.filter(c => SN.STATUS[c.status] && SN.STATUS[c.status].aberto && (c.tecnico === t.nome || (c.apoio && c.apoio.tecnico === t.nome)));
-  const mot = await SN.modal({ titulo: 'Tirar acesso · ' + t.nome, corpo: `<p class="small">${SN.esc(t.empresa)}${t.equipe ? ' · ' + SN.esc(t.equipe) : ''}</p>
-      <p>Ele deixa de entrar no SigoNet: sai da lista de login e do despacho, e se estiver com o app aberto é desconectado.
-      O cadastro, as OS e o histórico continuam guardados. Dá para devolver o acesso depois.</p>
-      ${abertas.length ? `<div class="aviso alerta small" style="margin-bottom:8px">Ele ainda tem <b>${abertas.length}</b> OS em aberto (${abertas.slice(0, 5).map(c => SN.esc(c.id)).join(', ')}${abertas.length > 5 ? '…' : ''}). Reatribua na Esteira para não ficarem paradas.</div>` : ''}
-      <div class="campo"><label>Motivo *</label><input class="inp" id="taMot" placeholder="ex.: desligado da empresa, saiu da prestadora"></div>`,
+// Pessoa que não vai mais usar o SigoNet (técnico ou liderança): sai da lista de login (e do
+// despacho), o PIN é trocado e a sessão aberta cai na hora (servidor). O cadastro e o histórico ficam.
+const gerenciaCadastros = l => l.ativo && (l.telas || []).some(x => x === '*' || x === 'cadastros');
+SN.tirarAcesso = async (tipo, x) => {
+  if (!x) return;
+  const lid = tipo === 'lideranca', eu = SN.usuario() || {};
+  if (lid && x.nome === eu.nome) return SN.toast('Você não pode tirar o seu próprio acesso.', 'erro');
+  if (lid && gerenciaCadastros(x) && !SN.db.lideranca.some(o => o !== x && gerenciaCadastros(o))) return SN.toast('É a única pessoa que gerencia Cadastros e Acessos: libere a tela para outra pessoa antes.', 'erro');
+  const abertas = lid ? [] : SN.db.chamados.filter(c => SN.STATUS[c.status] && SN.STATUS[c.status].aberto && (c.tecnico === x.nome || (c.apoio && c.apoio.tecnico === x.nome)));
+  const mot = await SN.modal({ titulo: 'Tirar acesso · ' + x.nome, corpo: `<p class="small">${lid ? SN.esc(x.cargo || '') : SN.esc(x.empresa) + (x.equipe ? ' · ' + SN.esc(x.equipe) : '')}</p>
+      <p>Deixa de entrar no SigoNet: sai da lista de login${lid ? '' : ' e do despacho'}, e se estiver com o app aberto é desconectado.
+      O cadastro${lid ? '' : ', as OS'} e o histórico continuam guardados. Dá para devolver o acesso depois.</p>
+      ${abertas.length ? `<div class="aviso alerta small" style="margin-bottom:8px">Ainda tem <b>${abertas.length}</b> OS em aberto (${abertas.slice(0, 5).map(c => SN.esc(c.id)).join(', ')}${abertas.length > 5 ? '…' : ''}). Reatribua na Esteira para não ficarem paradas.</div>` : ''}
+      <div class="campo"><label>Motivo *</label><input class="inp" id="taMot" placeholder="${lid ? 'ex.: saiu da empresa, mudou de área' : 'ex.: desligado da empresa, saiu da prestadora'}"></div>`,
     botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Tirar acesso', cls: 'perigo', acao: f => { const v = SN.$('#taMot', f).value.trim(); if (!v) { SN.toast('Informe o motivo.', 'erro'); return false; } return v; } }],
     aoAbrir: f => SN.$('#taMot', f).focus() });
   if (!mot) return;
-  t.ativo = false; t.acessoRetirado = { em: SN.agora(), por: (SN.usuario() || {}).nome || '', motivo: mot };
-  SN.log('TIRAR_ACESSO', t.nome, `${t.empresa} · ${mot}`); SN.salvar();
-  try { await SN.gravarAcesso('tecnico', t, { revogar: true }); SN.toast(t.nome + ' não acessa mais o SigoNet.', 'ok'); }
+  x.ativo = false; x.acessoRetirado = { em: SN.agora(), por: eu.nome || '', motivo: mot };
+  SN.log('TIRAR_ACESSO', x.nome, `${lid ? 'liderança' : x.empresa} · ${mot}`); SN.salvar();
+  try { await SN.gravarAcesso(lid ? 'lideranca' : 'tecnico', x, { revogar: true }); SN.toast(x.nome + ' não acessa mais o SigoNet.', 'ok'); }
   catch (e) { SN.toast('Cadastro desativado, mas o servidor não confirmou a troca do PIN: ' + e.message, 'erro'); }
   SN.render();
 };
-SN.devolverAcessoTecnico = async t => {
-  if (!t) return;
-  const pin = await SN.modal({ titulo: 'Devolver acesso · ' + t.nome, corpo: `${t.acessoRetirado ? `<p class="small muted">Retirado em ${SN.dt(t.acessoRetirado.em)} por ${SN.esc(t.acessoRetirado.por)}: ${SN.esc(t.acessoRetirado.motivo)}</p>` : ''}
+SN.devolverAcesso = async (tipo, x) => {
+  if (!x) return;
+  const lid = tipo === 'lideranca';
+  const pin = await SN.modal({ titulo: 'Devolver acesso · ' + x.nome, corpo: `${x.acessoRetirado ? `<p class="small muted">Retirado em ${SN.dt(x.acessoRetirado.em)} por ${SN.esc(x.acessoRetirado.por)}: ${SN.esc(x.acessoRetirado.motivo)}</p>` : ''}
       <div class="campo"><label>PIN novo *</label><input class="inp" id="daPin" value="${SN.esc(PIN_INICIAL)}"></div>
-      <p class="small muted">No primeiro acesso ele cria um complemento novo.</p>`,
+      <p class="small muted">No primeiro acesso cria um complemento novo.${lid ? ' As telas liberadas continuam as de antes.' : ''}</p>`,
     botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Devolver acesso', cls: 'prim', acao: f => { const v = SN.$('#daPin', f).value.trim(); if (v.length < 4) { SN.toast('PIN com pelo menos 4 caracteres.', 'erro'); return false; } return v; } }] });
   if (!pin) return;
-  t.ativo = true; delete t.acessoRetirado;
-  SN.log('DEVOLVER_ACESSO', t.nome, t.empresa); SN.salvar();
-  try { await SN.gravarAcesso('tecnico', t, { pin, reset: true, revogar: false }); SN.toast(t.nome + ' pode entrar de novo.', 'ok'); }
+  x.ativo = true; delete x.acessoRetirado;
+  SN.log('DEVOLVER_ACESSO', x.nome, lid ? 'liderança' : x.empresa); SN.salvar();
+  try { await SN.gravarAcesso(lid ? 'lideranca' : 'tecnico', x, { pin, reset: true, revogar: false }); SN.toast(x.nome + ' pode entrar de novo.', 'ok'); }
   catch (e) { SN.toast('Cadastro ativado, mas o PIN não foi gravado: ' + e.message, 'erro'); }
   SN.render();
 };
+SN.tirarAcessoTecnico = t => SN.tirarAcesso('tecnico', t);
+SN.devolverAcessoTecnico = t => SN.devolverAcesso('tecnico', t);
+// Coluna "Acesso" das listas de técnicos e liderança.
+SN.celulaAcesso = (tipo, x) => x.ativo ? `<button type="button" class="btn sm perigo" data-tiraracesso="${tipo}|${x.id}">Tirar acesso</button>`
+  : `<span class="badge erro">retirado</span>${x.acessoRetirado ? `<div class="small muted">${SN.dt(x.acessoRetirado.em)} · ${SN.esc(x.acessoRetirado.por)}</div>` : ''}<button type="button" class="btn sm" style="margin-top:4px" data-devolveracesso="${tipo}|${x.id}">Devolver acesso</button>`;
 SN.editarEmpresa = e => {
   const novo = !e; e = e || { nome: '', razao: '', cnpj: '', vinculo: 'PRESTADOR', responsavelLpu: '', ativo: true };
   const tecs = SN.db.tecnicos.filter(t => t.empresa === e.nome);
@@ -504,8 +517,8 @@ SN.editarLider = l => {
     <div class="campo"><label>Telas liberadas</label><div class="chips">
       <label class="chip"><input type="checkbox" data-tela="*" ${l.telas.includes('*') ? 'checked' : ''}> Todas</label>
       ${Object.entries(SN.TELAS).map(([k, r]) => `<label class="chip"><input type="checkbox" data-tela="${k}" ${l.telas.includes(k) ? 'checked' : ''}> ${r}</label>`).join('')}</div></div>
-    <label class="small"><input type="checkbox" id="lAt" ${l.ativo ? 'checked' : ''}> Ativo</label>`,
-    botoes: [{ rot: 'Cancelar' }, ...(novo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
+    ${!novo && !l.ativo ? '<div class="aviso alerta small">Acesso retirado. Use "Devolver acesso" na lista para liberar de novo.</div>' : ''}`,
+    botoes: [{ rot: 'Cancelar' }, ...(novo || !l.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcesso('lideranca', l), 0); } }]), ...(novo || !l.ativo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
         try { await SN.gravarAcesso('lideranca', l, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
         SN.log('RESET_COMPLEMENTO', l.nome); SN.salvar(); SN.toast('Complemento resetado.'); SN.render(); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
@@ -514,7 +527,7 @@ SN.editarLider = l => {
         const pinNovo = SN.$('#lPin').value.trim();
         const antes = { ...l, pin: 0, complementoHash: 0 };
         Object.assign(l, { nome, nomeCompleto: SN.$('#lComp').value.trim(), cargo: SN.$('#lCargo').value,
-          telas: telas.includes('*') ? ['*'] : telas, ativo: SN.$('#lAt').checked });
+          telas: telas.includes('*') ? ['*'] : telas });
         if (SN.remoto) delete l.pin; else l.pin = pinNovo || l.pin || PIN_INICIAL;
         if (novo) SN.db.lideranca.push(l);
         SN.log(novo ? 'CRIAR_LIDERANCA' : 'EDITAR_LIDERANCA', l.nome, SN.diff(antes, { ...l, pin: 0, complementoHash: 0 }) + (pinNovo ? '; PIN alterado' : '')); SN.salvar();
