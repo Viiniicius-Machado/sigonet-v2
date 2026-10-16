@@ -83,14 +83,54 @@
     return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
   };
   const tempo = (url, ms) => fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined });
+  // Endereço do jeito que vem do O&M/Elleven ("RUA MARIO OLIVO, 411,PQ FLORENCE,VALINHOS - VALINHOS")
+  // em partes: rua, número, bairro e cidade (a busca do OpenStreetMap não acha o texto inteiro).
+  const ABREV = [[/^R\.?\s+/i, 'Rua '], [/^AV\.?\s+/i, 'Avenida '], [/^AL\.?\s+/i, 'Alameda '], [/^ESTR?\.?\s+/i, 'Estrada '], [/^ROD\.?\s+/i, 'Rodovia '],
+    [/^TV\.?\s+/i, 'Travessa '], [/^PC\.?\s+|^PCA\.?\s+/i, 'Praça '], [/^PQ\.?\s+/i, 'Parque '], [/^JD\.?\s+/i, 'Jardim '], [/^VL\.?\s+/i, 'Vila '], [/^CH\.?\s+/i, 'Chácara '], [/^RES\.?\s+/i, 'Residencial ']];
+  const expandir = s => ABREV.reduce((t, [re, por]) => t.replace(re, por), String(s || '').trim());
+  SN.partesEndereco = (endereco, cidade) => {
+    const partes = String(endereco || '').split(/\s*,\s*|\s+-\s+/).map(s => s.trim()).filter(Boolean);
+    const norm = s => SN.normal ? SN.normal(s) : String(s).toLowerCase();
+    const cid = cidade || (partes.length > 1 ? partes[partes.length - 1] : '');
+    let rua = '', num = '', bairro = '';
+    partes.forEach(p => {
+      if (cid && norm(p) === norm(cid)) return;
+      if (!num && /^(n[º°o.]?\s*)?\d+[a-z]?$/i.test(p)) { num = p.replace(/\D+$/, '').replace(/^\D+/, ''); return; }
+      if (!rua) { const m = p.match(/^(.*\D)\s+(\d+)$/); if (m && !num) { rua = m[1]; num = m[2]; } else rua = p; return; }
+      if (!bairro && !/^(sp|brasil)$/i.test(p)) bairro = p;
+    });
+    return { rua: expandir(rua), num, bairro: expandir(bairro), cidade: String(cid || '').trim() };
+  };
+  // Tentativas da mais precisa para a mais aproximada.
+  SN.buscasEndereco = (endereco, cidade) => {
+    const e = SN.partesEndereco(endereco, cidade), c = e.cidade, out = [];
+    if (e.rua && c) { if (e.num) out.push({ p: { street: e.num + ' ' + e.rua, city: c }, fonte: 'endereço' }); out.push({ p: { street: e.rua, city: c }, fonte: e.num ? 'endereço (rua, sem o número)' : 'endereço' }); }
+    if (e.rua) out.push({ p: { q: [e.rua, e.num, e.bairro, c].filter(Boolean).join(', ') }, fonte: 'endereço' });
+    if (e.bairro && c) out.push({ p: { q: e.bairro + ', ' + c }, fonte: 'aproximada (bairro)' });
+    if (c) out.push({ p: { city: c, state: 'São Paulo' }, fonte: 'aproximada (centro da cidade)' }, { p: { city: c }, fonte: 'aproximada (centro da cidade)' });
+    return out;
+  };
+  const geoCache = () => { try { return JSON.parse(localStorage.getItem('sigonet_v2_geo_end') || '{}'); } catch (e) { return {}; } };
   SN.destinoDoChamado = async c => {
     const p = SN.coordsDoLink(c.gps); if (p) return { ...p, fonte: 'link do mapa' };
-    const q = [c.endereco, c.cidade, 'Brasil'].filter(Boolean).join(', ');
-    if (!c.endereco) return null;
-    try {
-      const r = await (await tempo('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR&q=' + encodeURIComponent(q), 8000)).json();
-      if (r && r[0]) return { lat: Number(r[0].lat), lng: Number(r[0].lon), fonte: 'endereço' };
-    } catch (e) { }
+    if (!c.endereco && !c.cidade) return null;
+    const chave = (c.endereco || '') + '|' + (c.cidade || ''), cache = geoCache();
+    if (cache[chave]) return cache[chave];
+    for (const b of SN.buscasEndereco(c.endereco, c.cidade)) {
+      try {
+        const qs = Object.entries(b.p).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+        const r = await (await tempo('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&countrycodes=br&accept-language=pt-BR&' + qs, 8000)).json();
+        // Só vale resultado na cidade do chamado (bairro com o mesmo nome existe em outras cidades).
+        const n = s => SN.normal ? SN.normal(s || '') : String(s || '').toLowerCase(), cid = n(SN.partesEndereco(c.endereco, c.cidade).cidade);
+        const achou = (r || []).find(x => { const a = x.address || {}; return !cid || [a.city, a.town, a.village, a.municipality, a.city_district].some(v => v && n(v) === cid); });
+        if (achou) {
+          const d = { lat: Number(achou.lat), lng: Number(achou.lon), fonte: b.fonte };
+          try { const k = Object.keys(cache); if (k.length > 300) delete cache[k[0]]; cache[chave] = d; localStorage.setItem('sigonet_v2_geo_end', JSON.stringify(cache)); } catch (e) { }
+          return d;
+        }
+      } catch (e) { if (e && e.name === 'TimeoutError') break; }
+      await new Promise(ok => setTimeout(ok, 1000)); // regra do OpenStreetMap: 1 busca por segundo
+    }
     return null;
   };
   SN.gpsAgora = () => new Promise(res => {

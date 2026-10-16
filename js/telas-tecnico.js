@@ -136,7 +136,7 @@ SN.rota('/tec/os/:id', id => {
       <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('${SN.vst.hrefPrev(prev)}')">${SN.vst.progDe(prev) ? 'Abrir atividade' : 'Abrir rota'} ${SN.esc(prev.id_rota)}</button></div>` : ''}
     ${titular && c.status === 'EM_DESLOCAMENTO' ? (() => { const pi = SN.previsaoInfo(c), nav = SN.appNavegar();
       return `<div class="card" style="margin-bottom:10px"><h3>🚗 A caminho</h3>
-        ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)</div>`
+        ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)${/aproximada/.test((c.deslocamento.destino || {}).fonte || '') ? ' · destino ' + SN.esc(c.deslocamento.destino.fonte) : ''}</div>`
           : `<div class="aviso alerta small">${SN.esc(pi ? pi.txt : 'Previsão ainda não calculada.')}</div>`}
         <div class="grid g2" style="gap:8px;margin-top:10px">
           <a class="btn ${nav === 'maps' ? 'prim' : ''}" data-nav="maps" href="${SN.esc(SN.linkNavegar(c, 'maps'))}" target="_blank" rel="noopener">🗺 Google Maps</a>
@@ -258,7 +258,8 @@ SN.rota('/tec/os/:id', id => {
   };
   SN.$$('[data-nav]').forEach(a => a.addEventListener('click', () => SN.definirAppNavegar(a.dataset.nav)));
   const bRc = SN.$('#bRecalc');
-  if (bRc) bRc.onclick = async () => { const d = await SN.calcularPrevisao(c);
+  if (bRc) bRc.onclick = async () => { bRc.disabled = true; bRc.textContent = 'Calculando…'; const d = await SN.calcularPrevisao(c);
+    if (!d.previsaoChegada) SN.toast('Sem previsão: ' + d.erro + '.', 'erro');
     SN.hist(c, 'Previsão recalculada', d.previsaoChegada ? SN.hora(d.previsaoChegada) : d.erro); SN.salvar(); SN.render(); };
   const bPv = SN.$('#bPedirVal');
   if (bPv) bPv.onclick = () => { if (SN.$('#rCausa')) salvarRfo(); SN.pedirValidacao(c, SN.$('#vObs').value.trim()); SN.log('PEDIR_VALIDACAO', c.id, '');

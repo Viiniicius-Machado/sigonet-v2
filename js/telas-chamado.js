@@ -189,7 +189,7 @@ SN.rota('/chamados', () => {
         ${c.protocoloOem || c.protocoloNoc ? `<span class="muted">#${SN.esc(c.protocoloOem || c.protocoloNoc)}</span>` : ''}</div>
       <div class="l3" style="margin-top:4px"><span class="badge ${p.cls}">${SN.esc(p.txt)}</span>
         ${u ? `<span class="muted">${u.n} ${SN.hora(u.ts)}</span>` : ''}</div>
-      ${c.status === 'EM_DESLOCAMENTO' && SN.previsaoInfo(c) ? (pi => `<div class="l3" style="margin-top:4px"><span class="badge ${pi.cls}">🚗 ${SN.esc(pi.txt)}${pi.atrasado ? ' · atrasado' : ''}</span>${pi.km ? ` <span class="muted">${pi.km}</span>` : ''}</div>`)(SN.previsaoInfo(c)) : ''}
+      ${c.status === 'EM_DESLOCAMENTO' && SN.previsaoInfo(c) ? (pi => `<div class="l3" style="margin-top:4px"><span class="badge badge-quebra ${pi.semPrevisao ? 'alerta' : pi.cls}" title="${SN.esc(pi.txt)}">🚗 ${pi.semPrevisao ? 'Sem previsão de chegada' : SN.esc(pi.txt)}${pi.atrasado ? ' · atrasado' : ''}</span>${pi.km ? ` <span class="muted">${pi.km}</span>` : ''}</div>`)(SN.previsaoInfo(c)) : ''}
       ${c.validacao && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) ? `<div class="l3" style="margin-top:4px"><span class="badge ${SN.VALIDACAO_ST[c.validacao.status].cls}">🛎 ${SN.VALIDACAO_ST[c.validacao.status].rot}${c.validacao.status === 'PEDIDA' ? ' · ' + SN.esc(SN.nomeValidador(c)) : ''}</span></div>` : ''}</div>`;
   };
   const cont = t => SN.db.chamados.filter(c => SN.STATUS[c.status].aberto && (t === 'Todos' || c.tipo === t)).length;
