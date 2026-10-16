@@ -56,10 +56,18 @@ SN.conversa = (() => {
   const estado = ref => E[ref] || (E[ref] = { msgs: [], ids: new Set(), desde: '', conversa: null, pend: [], carregada: false });
   const juntar = (st, lista) => {
     let novas = 0;
-    (lista || []).forEach(m => { if (st.ids.has(m.id_msg)) return; st.ids.add(m.id_msg); st.msgs.push(m); novas++; });
+    (lista || []).forEach(m => {
+      if (st.ids.has(m.id_msg)) { // já tenho: só troca se foi editada
+        const i = st.msgs.findIndex(x => x.id_msg === m.id_msg);
+        if (i >= 0 && String(m.editada_em || '') > String(st.msgs[i].editada_em || '')) st.msgs[i] = m;
+        return;
+      }
+      st.ids.add(m.id_msg); st.msgs.push(m); novas++;
+    });
     st.msgs.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
     st.pend = st.pend.filter(p => !st.ids.has(p.id_msg));
-    if (st.msgs.length) st.desde = st.msgs[st.msgs.length - 1].ts;
+    // "desde" = o mais recente entre envio e edição (a edição de outra pessoa chega no próximo ciclo).
+    st.msgs.forEach(m => { [m.ts, m.editada_em].forEach(t => { if (t && String(t) > String(st.desde || '')) st.desde = t; }); });
     return novas;
   };
   C.ler = async ref => {
@@ -151,7 +159,8 @@ SN.conversa = (() => {
           ${img ? `<img class="conv-img" src="${img}" alt="" data-conv-ver="${esc(grande)}" data-conv-url="${esc(m.url || '')}" data-conv-nome="${esc((an && an.nome) || 'imagem')}">` : ''}${arquivo}
           ${m.texto ? `<div class="conv-txt">${C.textoComLinks(m.texto)}</div>` : ''}
           ${temCoord ? `<a class="conv-coord" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${m.lat},${m.lng}">${ico('local')}${m.rotulo_coord ? esc(m.rotulo_coord) + ' · ' : ''}${m.lat}, ${m.lng}<span>abrir no mapa</span></a>` : ''}
-          <div class="conv-hora">${m._erro ? `<button type="button" class="conv-reenviar" data-reenviar="${esc(m.id_msg)}">⚠ não enviada · tocar para tentar de novo</button>` : m._pend ? '⏳ enviando…' : SN.hora(m.ts)}</div></div>`;
+          <div class="conv-hora">${m._erro ? `<button type="button" class="conv-reenviar" data-reenviar="${esc(m.id_msg)}">⚠ não enviada · tocar para tentar de novo</button>` : m._pend ? '⏳ enviando…'
+            : `${minha ? `<button type="button" class="conv-editar" data-conv-editar="${esc(m.id_msg)}">Editar</button>` : ''}${m.editada_em ? `<button type="button" class="conv-editada" data-conv-original="${esc(m.id_msg)}" title="Ver o texto original">editada</button> · ` : ''}${SN.hora(m.ts)}`}</div></div>`;
       }).join('');
       SN.$$('[data-conv-ver]', lista).forEach(i => {
         i.onclick = () => SN.verFoto(SN.$$('[data-conv-ver]', lista).map(x => x.dataset.convVer), SN.$$('[data-conv-ver]', lista).indexOf(i));
@@ -161,6 +170,8 @@ SN.conversa = (() => {
         if (i.complete && !i.naturalWidth && i.src) semMiniatura(); else i.onerror = semMiniatura;
       });
       SN.$$('[data-reenviar]', lista).forEach(b => b.onclick = () => { const p = st.pend.find(x => x.id_msg === b.dataset.reenviar); if (p) mandar(p); });
+      SN.$$('[data-conv-editar]', lista).forEach(b => b.onclick = () => editar(st.msgs.find(x => x.id_msg === b.dataset.convEditar)));
+      SN.$$('[data-conv-original]', lista).forEach(b => b.onclick = () => original(st.msgs.find(x => x.id_msg === b.dataset.convOriginal)));
       if (rolarFim) lista.scrollTop = lista.scrollHeight;
       const ultimaOutro = st.msgs.filter(m => !(m.de === me.nome && m.tipo === me.tipo)).pop();
       if (ultimaOutro && document.visibilityState === 'visible') C.marcarLida(ref, ultimaOutro.ts);
@@ -199,6 +210,36 @@ SN.conversa = (() => {
         .concat(anexos.slice(1).map(a => nova({}, a)));
       st.pend.push(...fila); txt.value = ''; txt.style.height = ''; anexos = []; pintarAnexo();
       (async () => { for (const p of fila) await mandar(p); })(); // na ordem
+    };
+    // Corrigir a própria mensagem (só o texto; anexo e foto ficam). O original fica guardado.
+    const editar = async m => {
+      if (!m) return;
+      const novo = await SN.modal({ titulo: 'Editar mensagem',
+        corpo: `<div class="campo"><label>Texto</label><textarea class="inp" id="cvEd" rows="5"></textarea></div>
+          <p class="small muted">A mensagem fica marcada como "editada" e o texto anterior continua guardado.</p>`,
+        botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Salvar', cls: 'prim', acao: f => {
+          const v = SN.$('#cvEd', f).value.trim();
+          if (!v && !m.url && !(m.lat !== '' && m.lat != null)) { SN.toast('A mensagem não pode ficar vazia.', 'erro'); return false; }
+          return { v };
+        } }],
+        aoAbrir: f => { const t = SN.$('#cvEd', f); t.value = m.texto || ''; t.focus(); t.setSelectionRange(t.value.length, t.value.length); } });
+      if (!novo || novo.v === (m.texto || '')) return;
+      // Coordenada que veio do texto acompanha o texto novo.
+      const antiga = C.coordNoTexto(m.texto), daTexto = antiga && m.lat !== '' && Number(m.lat) === antiga.lat && Number(m.lng) === antiga.lng;
+      const coord = daTexto || (m.lat === '' && !m.url) ? (C.coordNoTexto(novo.v) || { lat: '', lng: '' }) : undefined;
+      try {
+        const r = await api('CONV_EDITAR', { ref, id_msg: m.id_msg, texto: novo.v, coord });
+        if (!r.ok) return SN.toast(r.erro, 'erro');
+        juntar(st, [r.mensagem]); pintar(); SN.toast('Mensagem editada.', 'ok');
+      } catch (e) { SN.toast(e.rede ? 'Sem conexão: tente editar de novo quando o sinal voltar.' : e.message, 'erro'); }
+    };
+    const original = m => {
+      if (!m) return;
+      const ed = m.edicoes || [];
+      SN.modal({ titulo: 'Mensagem editada', largo: false,
+        corpo: (ed.length ? ed.map((x, i) => `<div class="small muted" style="margin-top:${i ? 10 : 0}px">${i ? 'Versão ' + (i + 1) : 'Original'} · trocada em ${esc(SN.dt(x.em))}</div><div class="conv-txt">${esc(x.texto) || '<span class="muted">(sem texto)</span>'}</div>`).join('')
+          : '<p class="small muted">Sem o texto anterior.</p>') + `<div class="small muted" style="margin-top:10px">Atual</div><div class="conv-txt">${esc(m.texto || '')}</div>`,
+        botoes: [{ rot: 'Fechar', valor: null }] });
     };
     SN.$('[data-conv-enviar]', el).onclick = enviar;
     // Resposta rápida: um toque envia (com o anexo, se houver).
@@ -410,7 +451,7 @@ SN.conversa = (() => {
     doc._y += 2;
     r.linhas.forEach(m => {
       const t = [m.texto, m.anexo ? `[anexo: ${m.anexo.nome}${m.anexo.tipo !== 'imagem' ? ' · ' + m.url : ''}]` : m.url ? '[imagem anexada]' : '', m.lat !== '' && m.lat != null && !C.coordNoTexto(m.texto) ? `[coordenada ${m.rotulo_coord ? m.rotulo_coord + ': ' : ''}${m.lat}, ${m.lng}]` : ''].filter(Boolean).join(' ');
-      const cab = `${SN.dt(m.ts)} · ${m.sistema ? 'Sistema' : m.de + (m.tipo === 'lideranca' ? ' (gestão)' : '')}`;
+      const cab = `${SN.dt(m.ts)} · ${m.sistema ? 'Sistema' : m.de + (m.tipo === 'lideranca' ? ' (gestão)' : '')}${m.editada_em ? ' · editada em ' + SN.dt(m.editada_em) : ''}`;
       const linhas = doc.splitTextToSize(t, 186);
       if (doc._y + 4 + 4.4 * linhas.length > 285) { doc.addPage(); doc._y = 18; }
       doc.setFontSize(8); doc.setTextColor(110); doc.setFont('helvetica', 'bold'); doc.text(cab, 12, doc._y);

@@ -2,13 +2,13 @@
 //
 // Pedido do usuário (2026-10-12). Substitui a planilha online "TROCA DE POSTES":
 //   Mapa      — agendamentos do dia / semana / mês no mapa (com a rede GeoGrid por baixo), e dali
-//               despacha (cria o chamado na Esteira e abre o despacho de sempre), registra o resultado
+//               despacha (só aí cria o chamado na Esteira, já com o técnico), registra o resultado
 //               (Preventiva / Improdutiva / Acompanhamento) e marca massiva (3+ clientes em risco).
 //   Lista     — tudo filtrável e exportável; "sem localização" para completar no mapa.
 //   Painel    — o "PAINEL MENSAL" da planilha: recebidas, com ação, % improdutiva, por equipe/tipo/cidade.
 //   Importar  — (1) a planilha histórica; (2) notificações recebidas por e-mail (PDF ou Excel): arrastar,
 //               o SigoNet entende tema, número, data/hora, cidade, endereço e coordenadas, mostra para
-//               conferir e coloca na Esteira.
+//               conferir e guarda na agenda (Esteira só no despacho).
 // Regras puras em cpfl-regras.js. Os registros ficam na coleção "notificacoes" (aba CPFL da planilha).
 (() => {
   const esc = SN.esc, C = window.CPFL;
@@ -50,6 +50,7 @@
         <div class="acoes"><button class="btn prim" id="bNovoAg">➕ Novo agendamento</button></div></div>
       ${(() => { const n = lista().filter(doTecnico).length; return n ? `<div class="aviso alerta" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">🧑‍🔧 <b>${n}</b> acompanhamento(s) com o resultado informado pelo técnico, aguardando a sua confirmação. <button class="btn sm prim" id="bConfTec">Confirmar</button></div>` : ''; })()}
       ${(() => { const n = lista().filter(r => r.a_conferir).length; return n ? `<div class="aviso info" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">📬 <b>${n}</b> notificação(ões) recebida(s) por e-mail a conferir (com o resultado da nossa rede). <button class="btn sm prim" id="bConfEmail">Conferir</button></div>` : ''; })()}
+      ${(() => { const n = naoDespachados().length; return n ? `<div class="aviso alerta" style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span><b>${n}</b> chamado(s) CPFL na fila da Manutenção sem técnico (abertos antes do despacho). Agora a atividade só entra na Esteira quando você despacha.</span> <button class="btn sm prim" id="bTirarEst">Tirar da Esteira</button></div>` : ''; })()}
       ${semLocal ? `<div class="aviso alerta small" style="margin-bottom:10px">${semLocal} agendamento(s) futuro(s) sem localização: veja na Lista (filtro "sem localização") e marque no mapa.</div>` : ''}
       <div class="abas">${abas.map(([k, r]) => `<button class="aba ${st.aba === k ? 'ativa' : ''}" data-abacp="${k}">${r}</button>`).join('')}</div>
       <div id="cpCorpo"></div>`);
@@ -57,6 +58,7 @@
     SN.$('#bNovoAg').onclick = () => editar(null);
     if (SN.$('#bConfEmail')) SN.$('#bConfEmail').onclick = () => conferirEmails().then(pintar);
     if (SN.$('#bConfTec')) SN.$('#bConfTec').onclick = () => confirmarTecnicos().then(pintar);
+    if (SN.$('#bTirarEst')) SN.$('#bTirarEst').onclick = () => tirarDaEsteira().then(pintar);
     ({ MAPA: pintarMapa, ROTAS: pintarRotas, LISTA: pintarLista, PAINEL: pintarPainel, IMPORTAR: pintarImportar })[st.aba]();
     verificarAuto().catch(() => { });
   };
@@ -240,10 +242,26 @@
     SN.db.chamados.push(c); r.id_chamado = c.id; hist(r, 'CHAMADO', c.id); SN.log('CPFL_CHAMADO', c.id, r.id);
     return c;
   };
+  // Técnicos para o despacho (mesma regra da Esteira: indisponível hoje fica bloqueado).
+  const tecOpts = sel => { const porEmp = {}; SN.tecnicosDespacho().forEach(t => (porEmp[t.empresa] = porEmp[t.empresa] || []).push(t));
+    return Object.keys(porEmp).sort().map(e => `<optgroup label="${esc(e)}">${porEmp[e].sort((a, b) => a.nome.localeCompare(b.nome)).map(t => { const ind = SN.indisponivel(t.nome);
+      return `<option value="${esc(t.nome)}" ${ind ? 'disabled' : ''} ${t.nome === sel ? 'selected' : ''}>${esc(SN.nomeExibicao(t.nome))} · ${SN.cargaAberta(t.nome)} OS${ind ? ' · indisponível' : ''}</option>`; }).join('')}</optgroup>`).join(''); };
+  const aplicarDespacho = (c, nome, apo) => {
+    const t = SN.tecnico(nome), anterior = c.tecnico;
+    c.tecnico = t.nome; c.empresa = t.empresa;
+    c.apoio = apo ? { empresa: apo.split('|')[0], tecnico: apo.split('|').slice(1).join('|') } : null;
+    if (!c.tempos.atribuicao) c.tempos.atribuicao = SN.agora();
+    if (anterior && anterior !== t.nome) { ['aceite', 'deslocamento', 'chegada'].forEach(k => delete c.tempos[k]); c.status = 'ATRIBUIDO'; } else if (c.status === 'NAO_ATRIBUIDO') c.status = 'ATRIBUIDO';
+    SN.hist(c, anterior && anterior !== t.nome ? 'Reatribuição' : 'Despacho', `${anterior && anterior !== t.nome ? anterior + ' → ' : ''}${t.nome} (${t.empresa})${c.apoio ? ' · apoio ' + c.apoio.tecnico : ''}`);
+    SN.log(anterior ? 'REATRIBUIR' : 'DESPACHAR', c.id, t.nome);
+    SN.int.ellevenStatus(c, 'Atribuída');
+  };
+  // Decisão do usuário (16/10/2026): a atividade só entra na Esteira quando a gestão despacha.
+  // O chamado nasce aqui, já com o técnico; "Voltar" não cria nada.
   const despachar = async r => {
-    if (!r) return;
+    if (!r) return null;
     let c = chamadoDe(r);
-    if (c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status)) { SN.navegar('#/chamado/' + c.id); return; }
+    if (c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status)) { SN.navegar('#/chamado/' + c.id); return null; }
     if (!r.rede) { const fim = SN.cobrirCarregando('Conferindo se o endereço tem rede Net Turbo…'); try { await verificarRede(r); SN.salvar(); } catch (e) { } finally { fim(); } }
     const dups = mesmaNotificacao(r.numero, r.id), dupComChamado = dups.filter(x => x.id_chamado && x.id_chamado !== r.id_chamado);
     const res = await SN.modal({ titulo: (c ? 'Despachar ' + c.id + ' · ' : 'Despachar ') + tipoRot(r.tipo) + ' · ' + numTxt(r),
@@ -253,15 +271,34 @@
         <div class="campo"><label>Conta contábil *</label><select class="inp" id="mConta">${contasOpts((c && c.conta) || CONTA)}</select></div>
         <div class="campo"><label>Clientes em risco</label><input class="inp" type="number" min="0" id="mCli" value="${esc(r.clientes ?? '')}" placeholder="estimativa">
           <div class="small muted">${C.MIN_CLIENTES_MASSIVA} ou mais = massiva (a Manutenção acompanha).</div></div>
-        <p class="small muted">${c ? 'Ajusta a conta do chamado e abre o despacho da Esteira para escolher o técnico.' : 'Cria o chamado na Esteira (Manutenção › Acompanhamento Cia Energia, prazo na hora agendada) e abre o despacho da Esteira para escolher o técnico.'} No celular, o técnico informa primeiro o resultado (Preventiva / Improdutiva / Acompanhamento) e depois as demais obrigações; o resultado volta aqui para você confirmar.</p>`,
-      botoes: [{ rot: 'Voltar', valor: null }, { rot: c ? 'Despachar' : 'Criar chamado e despachar', cls: 'prim', acao: m => ({ cli: SN.$('#mCli', m).value, conta: SN.$('#mConta', m).value }) }] });
-    if (!res) return;
+        <div class="campo"><label>Técnico titular *</label><select class="inp" id="mTec"><option value="">Selecione…</option>${tecOpts(c && c.tecnico)}</select></div>
+        <div class="campo"><label>Equipe de apoio (opcional)</label><select class="inp" id="mApo"><option value="">Sem apoio</option>
+          ${SN.db.tecnicos.filter(t => t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => `<option value="${esc(t.empresa + '|' + t.nome)}" ${c && c.apoio && c.apoio.tecnico === t.nome ? 'selected' : ''}>${esc(t.empresa)} · ${esc(t.nome)}</option>`).join('')}</select></div>
+        <p class="small muted">${c ? 'Atualiza o chamado e manda para a fila do técnico.' : 'Só agora a atividade entra na Esteira: o chamado é criado (Manutenção › Acompanhamento Cia Energia, prazo na hora agendada) já com o técnico.'} No celular, o técnico informa primeiro o resultado (Preventiva / Improdutiva / Acompanhamento) e depois as demais obrigações; o resultado volta aqui para você confirmar.</p>`,
+      botoes: [{ rot: 'Voltar', valor: null }, { rot: 'Despachar', cls: 'prim', acao: m => { const tec = SN.$('#mTec', m).value; if (!tec) { SN.toast('Escolha o técnico.', 'erro'); return false; }
+        return { cli: SN.$('#mCli', m).value, conta: SN.$('#mConta', m).value, tec, apo: SN.$('#mApo', m).value }; } }] });
+    if (!res) return null;
     if (res.cli !== '') { r.clientes = Number(res.cli) || 0; r.massiva = r.clientes >= C.MIN_CLIENTES_MASSIVA; }
     r.editado = true;
-    if (!c) { try { c = await novoChamado(r, { conta: res.conta }); } catch (e) { return SN.toast(e.message, 'erro'); } SN.toast(`Chamado ${c.id} criado na Esteira.`, 'ok'); }
+    if (!c) { try { c = await novoChamado(r, { conta: res.conta }); } catch (e) { SN.toast(e.message, 'erro'); return null; } }
     else if (res.conta && c.conta !== res.conta) { SN.hist(c, 'Conta contábil', SN.contaTxt(c.conta) + ' → ' + SN.contaTxt(res.conta)); c.conta = res.conta; }
-    SN.salvar();
-    SN.atribuir(c);
+    aplicarDespacho(c, res.tec, res.apo);
+    SN.salvar(); SN.toast(`Chamado ${c.id} na Esteira, na fila de ${SN.nomeExibicao(c.tecnico)}.`, 'ok');
+    return c;
+  };
+  // Chamados CPFL abertos antes desta regra e nunca despachados: saem da Esteira (cancelados com
+  // o motivo) e o agendamento volta a "Despachar". Nada se perde: o histórico fica nos dois.
+  const naoDespachados = () => lista().map(r => ({ r, c: chamadoDe(r) })).filter(x => x.c && x.c.status === 'NAO_ATRIBUIDO' && !x.c.tecnico);
+  const tirarDaEsteira = async () => {
+    const l = naoDespachados(); if (!l.length) return;
+    if (!await SN.confirmar('Tirar da Esteira', `<b>${l.length}</b> chamado(s) CPFL estão na Esteira sem técnico (foram abertos sem despacho).<br>Eles saem da fila da Manutenção (ficam cancelados, com o motivo) e os agendamentos voltam para "Despachar" aqui.`, 'Tirar da Esteira', 'prim')) return;
+    l.forEach(({ r, c }) => {
+      c.status = 'CANCELADO'; c.tempos.fechamento = SN.agora(); SN.hist(c, 'Cancelado', 'Saiu da Esteira: acompanhamento CPFL ainda não despachado');
+      SN.int.ellevenStatus(c, 'Cancelada');
+      (r.chamados_retirados = r.chamados_retirados || []).push(c.id); delete r.id_chamado; r.editado = true; hist(r, 'SAIU DA ESTEIRA', c.id + ' (não despachado)');
+    });
+    SN.log('CPFL_TIRAR_ESTEIRA', '', l.map(x => x.c.id).join(', ')); SN.salvar();
+    SN.toast(`${l.length} chamado(s) saíram da Esteira. Despache por aqui quando for a hora.`, 'ok');
   };
 
   // ─────────── Resultado ───────────
@@ -303,13 +340,15 @@
           <div class="campo"><label>Postes</label><input class="inp" type="number" min="0" id="ePos" value="${esc(x.postes)}"></div>
           <div class="campo"><label>Clientes em risco</label><input class="inp" type="number" min="0" id="eCli" value="${esc(x.clientes ?? '')}"></div></div>
         <div class="campo"><label>Observação</label><textarea class="inp" id="eObs">${esc(x.obs || '')}</textarea></div>
-        ${novo ? '<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eCh" checked> Já criar o chamado na Esteira</label>' : ''}
+        ${novo ? '<p class="small muted">A atividade só entra na Esteira quando for despachada. Use "Salvar e despachar" para já escolher o técnico.</p>' : ''}
         ${!novo && (x.historico || []).length ? `<details class="small" style="margin-top:6px"><summary>Histórico</summary>${x.historico.slice().reverse().map(h => `<div>${SN.dt(h.ts)} · ${esc(h.usuario)} · ${esc(h.acao)} ${esc(h.detalhe || '')}</div>`).join('')}</details>` : ''}`,
-      botoes: [{ rot: 'Cancelar', valor: null }].concat(!novo && !x.id_chamado ? [{ rot: 'Excluir', cls: 'perigo', valor: 'excluir' }] : []).concat([{ rot: 'Salvar', cls: 'prim', acao: m => {
+      botoes: (() => { const ler = despachar => m => {
         const g = id => SN.$('#' + id, m).value.trim();
         if (!g('eData') || !g('eCid')) { SN.toast('Informe a data e a cidade.', 'erro'); return false; }
         return { tipo: g('eTipo'), numero: g('eNum'), data: g('eData'), hora: g('eHora'), prazo: g('ePrazo'), cidade: g('eCid'), endereco: g('eEnd'), coord: g('eCoord'),
-          status: g('eSt'), equipe: C.equipeDe(g('eEq')), postes: g('ePos') === '' ? '' : Number(g('ePos')), clientes: g('eCli') === '' ? '' : Number(g('eCli')), obs: g('eObs'), chamado: novo && SN.$('#eCh', m).checked }; } }]) });
+          status: g('eSt'), equipe: C.equipeDe(g('eEq')), postes: g('ePos') === '' ? '' : Number(g('ePos')), clientes: g('eCli') === '' ? '' : Number(g('eCli')), obs: g('eObs'), despachar }; };
+        return [{ rot: 'Cancelar', valor: null }].concat(!novo && !x.id_chamado ? [{ rot: 'Excluir', cls: 'perigo', valor: 'excluir' }] : [])
+          .concat(novo ? [{ rot: 'Salvar', acao: ler(false) }, { rot: 'Salvar e despachar', cls: 'prim', acao: ler(true) }] : [{ rot: 'Salvar', cls: 'prim', acao: ler(false) }]); })() });
     if (!res) return;
     if (res === 'excluir') { if (!await SN.confirmar('Excluir agendamento', 'Excluir a notificação ' + (x.numero || 's/n') + '?', 'Excluir', 'perigo')) return;
       SN.db.notificacoes = lista().filter(y => y.id !== x.id); SN.log('CPFL_EXCLUIR', x.id, ''); SN.salvar(); return; }
@@ -321,8 +360,8 @@
       const reg = { ...dados, origem: 'MANUAL', resultado: '', historico: [] }; reg.id = C.chave(reg);
       if (lista().some(y => y.id === reg.id)) return SN.toast('Já existe essa notificação nessa data.', 'erro');
       hist(reg, 'CRIADO', 'manual'); lista().push(reg);
-      if (res.chamado) { try { await novoChamado(reg); } catch (e) { SN.toast(e.message, 'erro'); } }
-      SN.log('CPFL_NOVO', reg.id, ''); SN.salvar(); SN.toast('Agendamento criado' + (reg.id_chamado ? ' e chamado ' + reg.id_chamado + ' na Esteira.' : '.'), 'ok');
+      SN.log('CPFL_NOVO', reg.id, ''); SN.salvar();
+      if (res.despachar) await despachar(reg); else SN.toast('Agendamento criado. Ele entra na Esteira quando você despachar.', 'ok');
     } else {
       const mudouLocal = JSON.stringify([x.cidade, x.endereco, x.pontos]) !== JSON.stringify([dados.cidade, dados.endereco, dados.pontos]);
       Object.assign(x, dados, { editado: true }); if (mudouLocal) delete x.rede; hist(x, 'EDITADO'); SN.salvar(); SN.toast('Salvo.', 'ok');
@@ -503,7 +542,7 @@
   const pintarImportar = () => {
     SN.$('#cpCorpo').innerHTML = `<div class="grid g2">
       <div class="card"><h3>📩 E-mail da CPFL</h3>
-        <p class="small">Abra o e-mail no Outlook, selecione tudo (Ctrl+A), copie (Ctrl+C) e cole aqui (Ctrl+V) — com o assunto, se puder. O SigoNet entende o tema, o número, a data, as ruas (ou a tabela da programação semanal), localiza cada rua e confere se <b>passa na nossa rede</b> (GeoGrid). O que tiver rede vai para a Esteira.</p>
+        <p class="small">Abra o e-mail no Outlook, selecione tudo (Ctrl+A), copie (Ctrl+C) e cole aqui (Ctrl+V) — com o assunto, se puder. O SigoNet entende o tema, o número, a data, as ruas (ou a tabela da programação semanal), localiza cada rua e confere se <b>passa na nossa rede</b> (GeoGrid). Fica na agenda com o resultado da rede; entra na Esteira quando você despachar.</p>
         <textarea class="inp" id="tEmail" rows="7" placeholder="Cole aqui o e-mail inteiro (Ctrl+V)"></textarea>
         <div class="acoes" style="margin-top:6px"><button class="btn prim" id="bLerEmail">🔎 Ler e conferir a rede</button></div>
         <label class="cp-solta" id="zNot" style="min-height:90px"><input type="file" id="fNot" accept=".pdf,.xlsx,.xls,.csv,.eml,.txt,.html,.htm,application/pdf,message/rfc822" multiple hidden><span>…ou solte aqui o e-mail salvo (.eml), o PDF ou o Excel<br><span class="small muted">no Outlook: arraste o e-mail para a área de trabalho, ou "Salvar como"</span></span></label></div>
@@ -583,14 +622,14 @@
       <td>${esc(r.cidade || '')}<div class="muted">${esc(r.endereco || '')}${r.bairro ? ' – ' + esc(r.bairro) : ''}</div></td>
       <td>${r.rede ? (r.rede.tem ? `<span style="color:var(--ok,#15803d)">✔ ${SN.num(r.rede.metros)} m de cabo nosso${r.rede.caixas ? ' · ' + r.rede.caixas + ' caixa(s)' : ''}</span><div class="muted">${(r.rede.cabos || []).slice(0, 3).map(esc).join(', ')}</div>` : '✖ sem rede nossa') : '<span style="color:#b45309">a conferir (rua não localizada)</span>'}</td>
       <td class="small muted">${esc(((r.email || {}).de) || '')}</td>
-      <td><div class="acoes" style="gap:6px;min-width:220px"><button class="btn sm ${r.rede && r.rede.tem ? 'prim' : ''}" data-cxesteira="${esc(r.id)}">Mandar para a Esteira</button><button class="btn sm" data-cxnao="${esc(r.id)}">Não acompanhar</button></div></td></tr>`;
+      <td><div class="acoes" style="gap:6px;min-width:220px"><button class="btn sm ${r.rede && r.rede.tem ? 'prim' : ''}" data-cxesteira="${esc(r.id)}">Acompanhar</button><button class="btn sm" data-cxnao="${esc(r.id)}">Não acompanhar</button></div></td></tr>`;
     await SN.modal({ titulo: `Recebidas por e-mail · ${l.length} a conferir`, largo: true, botoes: [{ rot: 'Fechar', valor: null }],
-      corpo: `<p class="small">Conferidas na rede GeoGrid pela rua informada. "Mandar para a Esteira" cria o chamado (não atribuído, prazo na hora agendada).</p>
+      corpo: `<p class="small">Conferidas na rede GeoGrid pela rua informada. "Acompanhar" guarda na agenda; a atividade entra na Esteira quando você despachar.</p>
         <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Data</th><th>Tipo</th><th>Notificação</th><th>Onde</th><th>Nossa rede</th><th>Encaminhado por</th><th></th></tr></thead><tbody>${l.map(linha).join('')}</tbody></table></div>`,
       aoAbrir: m => {
         const tirar = id => { const tr = m.querySelector(`tr[data-id="${CSS.escape(id)}"]`); if (tr) tr.remove(); if (!m.querySelector('tbody tr')) SN.$('[data-x]', m).click(); };
         SN.$$('[data-cxesteira]', m).forEach(b => b.onclick = async () => { const r = lista().find(x => x.id === b.dataset.cxesteira); if (!r) return; b.disabled = true;
-          try { if (!r.id_chamado) await novoChamado(r); r.a_conferir = false; hist(r, 'CONFERIDA', 'mandada para a Esteira'); SN.salvar(); SN.toast('Chamado ' + r.id_chamado + ' na Esteira.', 'ok'); tirar(r.id); } catch (e) { b.disabled = false; SN.toast(e.message, 'erro'); } });
+          r.a_conferir = false; hist(r, 'CONFERIDA', 'acompanhar'); SN.salvar(); SN.toast('Na agenda. Despache quando for a hora.', 'ok'); tirar(r.id); });
         SN.$$('[data-cxnao]', m).forEach(b => b.onclick = () => { const r = lista().find(x => x.id === b.dataset.cxnao); if (!r) return;
           r.a_conferir = false; hist(r, 'CONFERIDA', 'não acompanhar'); SN.salvar(); tirar(r.id); });
       } });
@@ -707,8 +746,7 @@
       c.temChamado = c.dups.some(x => x.id_chamado); });
     const tem = c => !!((c.rede && c.rede.tem) || c.semConferencia) && !c.temChamado && !c.dupLote;
     const linha = (c, i) => `<tr data-i="${i}" class="${c.foraArea ? 'muted' : ''}"><td><input type="checkbox" data-k="ok" ${c.foraArea ? '' : 'checked'}></td>
-      <td><input type="checkbox" data-k="ch" ${tem(c) ? 'checked' : ''} title="Colocar na Esteira"></td>
-      <td class="small" style="min-width:170px">${c.dups && c.dups.length ? `<div style="color:#b45309;margin-bottom:4px">${dupTxt(c.dups)}${c.temChamado ? ' — Esteira desmarcada' : ''}</div>` : ''}${c.dupLote ? '<div style="color:#b45309;margin-bottom:4px">⚠️ Repetida neste e-mail</div>' : ''}${c.redeTxt ? `<span style="color:${tem(c) ? 'var(--ok,#15803d)' : c.foraArea ? 'inherit' : '#b45309'}">${esc(c.redeTxt)}</span>` : ''}${c.rede && c.rede.cabos.length ? `<div class="muted">${c.rede.cabos.map(esc).join(', ')}</div>` : ''}</td>
+      <td class="small" style="min-width:170px">${c.dups && c.dups.length ? `<div style="color:#b45309;margin-bottom:4px">${dupTxt(c.dups)}</div>` : ''}${c.dupLote ? '<div style="color:#b45309;margin-bottom:4px">⚠️ Repetida neste e-mail</div>' : ''}${c.redeTxt ? `<span style="color:${tem(c) ? 'var(--ok,#15803d)' : c.foraArea ? 'inherit' : '#b45309'}">${esc(c.redeTxt)}</span>` : ''}${c.rede && c.rede.cabos.length ? `<div class="muted">${c.rede.cabos.map(esc).join(', ')}</div>` : ''}</td>
       <td><select class="inp" data-k="tipo">${Object.entries(C.TIPOS).map(([k, v]) => `<option value="${k}" ${c.tipo === k ? 'selected' : ''}>${v.rot}</option>`).join('')}</select></td>
       <td><input class="inp" data-k="numero" value="${esc(c.numero)}" style="width:110px"></td>
       <td><input class="inp" type="date" data-k="data" value="${esc(c.data)}"></td><td><input class="inp" type="time" data-k="hora" value="${esc(c.hora)}"></td>
@@ -717,20 +755,21 @@
       <td class="small muted" title="${esc(c.trecho || '')}">${esc(c.fonte || '')}${c.postes ? ' · ' + c.postes + ' postes' : ''}${c.acao_cpfl ? ' · ' + esc(c.acao_cpfl) : ''}</td></tr>`;
     const nTem = cands.filter(tem).length, nFora = cands.filter(c => c.foraArea).length;
     const res = await SN.modal({ titulo: `Conferir ${cands.length} notificação(ões)`, largo: true,
-      corpo: `<p class="small"><b>${nTem}</b> com rede nossa (marcadas para a Esteira) · <b>${cands.length - nTem - nFora}</b> sem rede nossa ou a conferir · <b>${nFora}</b> fora da nossa área (desmarcadas).
+      corpo: `<p class="small"><b>${nTem}</b> com rede nossa · <b>${cands.length - nTem - nFora}</b> sem rede nossa ou a conferir · <b>${nFora}</b> fora da nossa área (desmarcadas).
+        Guardar só coloca na agenda: a atividade entra na Esteira quando você despachar.
         Passe o mouse no arquivo para ver o trecho lido. "Pontos da rua" = traçado da rua usado na conferência.</p>
-        <div class="tabela-wrap"><table class="tab small cp-conf"><thead><tr><th title="Guardar no SigoNet">Guardar</th><th title="Abrir chamado na Esteira">Esteira</th><th>Nossa rede</th><th>Tipo</th><th>Notificação</th><th>Data</th><th>Hora</th><th>Cidade</th><th>Endereço</th><th>Coordenadas</th><th>Origem</th></tr></thead><tbody>${cands.map(linha).join('')}</tbody></table></div>
+        <div class="tabela-wrap"><table class="tab small cp-conf"><thead><tr><th title="Guardar no SigoNet">Guardar</th><th>Nossa rede</th><th>Tipo</th><th>Notificação</th><th>Data</th><th>Hora</th><th>Cidade</th><th>Endereço</th><th>Coordenadas</th><th>Origem</th></tr></thead><tbody>${cands.map(linha).join('')}</tbody></table></div>
         <div class="acoes" style="margin-top:8px"><button class="btn sm" id="cResumo" type="button">📋 Copiar resumo (tem / não tem rede) para responder o e-mail</button></div>`,
       aoAbrir: m => { SN.$('#cResumo', m).onclick = () => { const txt = resumoRede(cands); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => SN.toast('Resumo copiado: cole na resposta do e-mail.', 'ok'), () => SN.pedirTexto('Resumo para o e-mail', 'Copie o texto abaixo', false)); }; },
       botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Guardar', cls: 'prim', acao: m => {
-        const out = SN.$$('tbody tr', m).map(tr => { const g = k => SN.$(`[data-k="${k}"]`, tr); return { i: +tr.dataset.i, ok: g('ok').checked, ch: g('ch').checked, tipo: g('tipo').value, numero: g('numero').value.trim(), data: g('data').value, hora: g('hora').value,
+        const out = SN.$$('tbody tr', m).map(tr => { const g = k => SN.$(`[data-k="${k}"]`, tr); return { i: +tr.dataset.i, ok: g('ok').checked, tipo: g('tipo').value, numero: g('numero').value.trim(), data: g('data').value, hora: g('hora').value,
           cidade: g('cidade').value.trim(), endereco: g('endereco').value.trim(), coord: g('coord').value }; }).filter(x => x.ok);
         if (out.some(x => !x.data || !x.cidade)) { SN.toast('Cada notificação marcada precisa de data e cidade.', 'erro'); return false; }
         return { linhas: out }; } }] });
     if (!res) return;
     const fim = SN.cobrirCarregando('Guardando…'), anexos = new Map();
     try {
-      let inc = 0, ch = 0;
+      let inc = 0;
       for (const x of res.linhas) {
         const c = cands[x.i];
         if (c.arquivo && !anexos.has(c.arquivo)) { try { anexos.set(c.arquivo, await SN.guardarDataUrl(await dataUrlDe(c.arquivo), c.arquivo.name, 'arquivo', 'cpfl')); } catch (e) { anexos.set(c.arquivo, null); } }
@@ -745,10 +784,9 @@
         const r = lista().find(y => y.id === reg.id);
         if (ax && !(r.anexos || []).some(a => a.id === ax.id)) r.anexos = (r.anexos || []).concat([ax]);
         if (c.rede) r.rede = c.rede;
-        if (x.ch && !r.id_chamado && r.status === 'PLANEJADO') { await novoChamado(r); ch++; }
       }
-      SN.log('CPFL_NOTIFICACOES', '', `${res.linhas.length} lidas · ${inc} novas · ${ch} chamados`); SN.salvar();
-      SN.toast(`${inc} notificação(ões) nova(s)${ch ? ` · ${ch} chamado(s) na Esteira` : ''}.`, 'ok');
+      SN.log('CPFL_NOTIFICACOES', '', `${res.linhas.length} lidas · ${inc} novas`); SN.salvar();
+      SN.toast(`${inc} notificação(ões) nova(s) na agenda. Despache as que forem acompanhar.`, 'ok');
       st.aba = 'MAPA'; st.per = 'tudo'; pintar();
     } finally { fim(); }
   };
@@ -783,10 +821,6 @@
         ${ja ? `${SN.num(ja)} já estão no SigoNet (atualiza só o que não foi editado aqui). ` : ''}${semLoc ? `${SN.num(semLoc)} sem coordenada (link encurtado ou vazio): ficam na lista "sem localização".` : ''}<br>Não abre chamados: é histórico.`, 'Importar', 'prim')) return;
       const r = mesclar(regs, 'PLANILHA'); SN.log('CPFL_IMPORTAR_PLANILHA', file.name, `${r.inc} novas · ${r.atu} atualizadas`); SN.salvar();
       SN.toast(`${r.inc} notificação(ões) nova(s), ${r.atu} atualizada(s).`, 'ok');
-      const futuras = lista().filter(x => x.status === 'PLANEJADO' && !x.resultado && !x.id_chamado && x.data >= hoje());
-      if (futuras.length && await SN.confirmar('Agendamentos futuros', `${futuras.length} agendamento(s) a partir de hoje ainda sem chamado. Criar os chamados na Esteira (não atribuídos) para controle?`, 'Criar chamados', 'prim')) {
-        for (const x of futuras) await novoChamado(x); SN.salvar(); SN.toast(futuras.length + ' chamado(s) criado(s) na Esteira.', 'ok');
-      }
       st.aba = 'LISTA'; st.per = 'tudo'; pintar();
     } finally { fim(); }
   };

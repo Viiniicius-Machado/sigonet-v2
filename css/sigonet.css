@@ -525,6 +525,9 @@ img[data-ver]{cursor:zoom-in}
 .conv-coord>span:last-child{display:block;font-size:.72rem;color:var(--texto-3)}
 .conv-hora{font-size:.68rem;color:var(--texto-3);text-align:right;margin-top:2px}
 .conv-reenviar{background:none;border:0;color:var(--erro);font-size:.72rem;cursor:pointer;padding:0}
+.conv-editar,.conv-editada{background:none;border:0;color:var(--texto-3);font:inherit;cursor:pointer;padding:0}
+.conv-editar{float:left;color:var(--verde,inherit);font-weight:600}
+.conv-editar:hover,.conv-editada:hover{text-decoration:underline}
 .conv-envio{display:flex;flex-direction:column;gap:6px}
 .conv-envio textarea{resize:none;min-height:40px}
 .conv-acoes{display:flex;gap:6px;align-items:center}
