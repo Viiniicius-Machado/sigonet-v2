@@ -364,7 +364,7 @@
       if (res.despachar) await despachar(reg); else SN.toast('Agendamento criado. Ele entra na Esteira quando você despachar.', 'ok');
     } else {
       const mudouLocal = JSON.stringify([x.cidade, x.endereco, x.pontos]) !== JSON.stringify([dados.cidade, dados.endereco, dados.pontos]);
-      Object.assign(x, dados, { editado: true }); if (mudouLocal) delete x.rede; hist(x, 'EDITADO'); SN.salvar(); SN.toast('Salvo.', 'ok');
+      Object.assign(x, dados, { editado: true }); if (mudouLocal) { delete x.rede; delete x.local_aprox; } hist(x, 'EDITADO'); SN.salvar(); SN.toast('Salvo.', 'ok');
     }
   };
 
@@ -428,7 +428,7 @@
     if (!rt.sel.__dia || rt.sel.__dia !== d) { rt.sel = { __dia: d }; dia0.forEach(r => { rt.sel[r.id] = true; }); rt.rota = null; }
     const semLocal = lista().filter(r => r.data === d && r.status === 'PLANEJADO' && !r.resultado && !(r.pontos || []).length);
     const linha = (r, atras) => `<label class="cp-rt-it"><input type="checkbox" data-rsel="${esc(r.id)}" ${rt.sel[r.id] ? 'checked' : ''}>
-      <span><b>${r.hora ? esc(r.hora) : 'sem hora'}</b> · ${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>${atras ? ` <span class="badge alerta">atrasado de ${dia(r.data)}</span>` : ''}${redeTxt(r)}
+      <span><b>${r.hora ? esc(r.hora) : 'sem hora'}</b> · ${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>${atras ? ` <span class="badge alerta">atrasado de ${dia(r.data)}</span>` : ''}${r.local_aprox ? ` <span class="badge alerta" title="Ponto aproximado: confira no mapa">${esc(r.local_aprox)}</span>` : ''}${redeTxt(r)}
         <span class="small muted" style="display:block">${esc(r.cidade || '')}${r.endereco ? ' · ' + esc(r.endereco) : ''}${r.id_chamado ? ' · ' + esc(r.id_chamado) : ''}</span></span></label>`;
     const blocos = C.blocosAtrasados(at.map(r => ({ id: r.id, ponto: pt(r), tipo: r.tipo, data: r.data })), { raioKm: rt.raioKm });
     const agendaFutura = lista().filter(r => r.data >= hoje() && r.data <= somaDias(hoje(), 14) && abertoAgend(r)).map(r => ({ id: r.id, data: r.data, ponto: pt(r) }));
@@ -438,7 +438,11 @@
         <p class="small muted">Saída no 1º agendamento · ${C.TEMPO_LOCAL.TROCA_POSTE} min por troca de poste, ${C.TEMPO_LOCAL.LIMPEZA} min por limpeza/reordenamento · hora marcada pela CPFL fica fixa; atrasados e sem hora entram nos intervalos, sempre o mais perto.</p>
         <div id="rtLista">${dia0.map(r => linha(r, false)).join('') || '<p class="muted small">Nenhum agendamento aberto com localização neste dia.</p>'}
           ${perto.length ? `<h4 style="margin:10px 0 4px">Atrasados perto destes serviços (até ${rt.raioKm} km)</h4>${perto.map(r => linha(r, true)).join('')}` : ''}
-          ${semLocal.length ? `<p class="small" style="color:#b45309">${semLocal.length} agendamento(s) do dia sem localização (fora da rota): marque no mapa pela Lista.</p>` : ''}</div>
+          ${semLocal.length ? `<h4 style="margin:10px 0 4px;color:#b45309">Sem localização (${semLocal.length}) — ficam fora da rota até localizar</h4>
+            ${semLocal.map(r => `<div class="cp-rt-it" style="align-items:center"><span style="flex:1;min-width:0"><b>${r.hora ? esc(r.hora) : 'sem hora'}</b> · ${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>
+              <span class="small muted" style="display:block">${esc(r.cidade || '')}${r.endereco ? ' · ' + esc(r.endereco) : ''}</span></span><button type="button" class="btn sm" data-rloc="${esc(r.id)}">Localizar</button></div>`).join('')}
+            ${semLocal.length > 1 ? `<button type="button" class="btn sm" id="bLocTodos" style="margin-top:4px">Localizar todos (${semLocal.length})</button>` : ''}
+            <p class="small muted">Procura a rua; se não achar, o bairro ou o centro da cidade (fica marcado como aproximado). Para o ponto exato, use Editar na Lista.</p>` : ''}</div>
         <div class="acoes" style="margin-top:8px"><button class="btn prim" id="bMontar">Montar rota</button></div>
         <div id="rtRes"></div></div>
       <div class="card cp-lado"><h3>⏰ Atrasados (${at.length})</h3>
@@ -453,6 +457,15 @@
     SN.$('#rtDias').onchange = e => { rt.diasAtraso = +e.target.value; pintarRotas(); };
     SN.$$('[data-rsel]').forEach(c => c.onchange = () => { rt.sel[c.dataset.rsel] = c.checked; rt.rota = null; SN.$('#rtRes').innerHTML = ''; });
     SN.$('#bMontar').onclick = () => montarRotaTela(d).catch(e => SN.toast(e.message, 'erro'));
+    const localizar = async regs => {
+      const fim = SN.cobrirCarregando('Localizando o endereço…'); let ok = 0, aprox = 0;
+      try { for (const r of regs) { if (await localizarReg(r)) { ok++; if (r.local_aprox) aprox++; rt.sel[r.id] = true; } } } finally { fim(); }
+      if (ok) { SN.salvar(); rt.rota = null; }
+      SN.toast(ok ? `${ok} localizado(s)${aprox ? `, ${aprox} aproximado(s) — confira no mapa` : ''}. Já entram na rota.` : 'Não foi possível localizar. Use Editar na Lista para marcar a coordenada.', ok ? 'ok' : 'erro');
+      pintar(); // a tela inteira: o aviso "sem localização" do topo também atualiza
+    };
+    SN.$$('[data-rloc]').forEach(b => b.onclick = () => localizar([lista().find(r => r.id === b.dataset.rloc)].filter(Boolean)));
+    if (SN.$('#bLocTodos')) SN.$('#bLocTodos').onclick = () => localizar(semLocal);
     const levarPara = async (i, dataNova) => { const b = blocos[i], regs = b.itens.map(x => lista().find(r => r.id === x.id));
       if (!await SN.confirmar('Encaixar ' + regs.length + ' atrasado(s)', `Remarcar para <b>${dia(dataNova)}</b> e abrir a rota desse dia com eles marcados?<br><span class="small muted">${regs.map(r => esc(numTxt(r)) + ' · ' + esc(r.endereco || r.cidade)).join('<br>')}</span>`, 'Encaixar', 'prim')) return;
       regs.forEach(r => { if (!r.data_original) r.data_original = r.data; hist(r, 'REAGENDADO', dia(r.data) + ' → ' + dia(dataNova)); r.data = dataNova; r.editado = true;
@@ -719,17 +732,33 @@
     if (res && window.REDE) res.trechos = res.trechos.map(t => t.length > 2 ? REDE.simplificar(t, 5).map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]) : t);
     geoGuardar(k, res); return res;
   };
+  // Rua não achada: mesmo caminho da previsão de chegada (campo.js) — rua+número, rua, bairro, centro
+  // da cidade, sempre dentro da cidade. fonte diz se é aproximado.
+  const pontoAproximado = async r => { try { return SN.destinoDoChamado ? await SN.destinoDoChamado({ endereco: [r.endereco, r.bairro].filter(Boolean).join(', '), cidade: r.cidade }) : null; } catch (e) { return null; } };
+  // Agendamento sem localização (veio sem coordenada e a rua não foi achada na importação): tenta de novo.
+  const localizarReg = async r => {
+    let p = null, fonte = '';
+    if (r.endereco) { const g = await localizarRua(r.endereco, r.cidade); if (g && g.trechos[0]) { const t = g.trechos[0]; p = t[Math.floor(t.length / 2)]; fonte = g.aprox ? 'aproximado (rua)' : ''; } }
+    if (!p) { const d = await pontoAproximado(r); if (d) { p = [d.lat, d.lng]; fonte = /aproximada/.test(d.fonte) ? d.fonte.replace('aproximada', 'aproximado') : ''; } }
+    if (!p) return false;
+    r.pontos = [[Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]]; r.editado = true; delete r.rede;
+    if (fonte) r.local_aprox = fonte; else delete r.local_aprox;
+    hist(r, 'LOCALIZADO', fonte || 'pelo endereço');
+    return true;
+  };
   const conferirRede = async cands => {
     const ind = SN.rede ? await SN.rede.indice().catch(() => null) : null, fim = SN.cobrirCarregando('Conferindo na nossa rede…'), passo = t => { const p = document.querySelector('.carregando-sobre p'); if (p) p.textContent = t; };
     try {
       for (let i = 0; i < cands.length; i++) {
         const c = cands[i], cid = ind && window.REDE ? REDE.acharCidade(ind, c.cidade) : null;
-        if (!ind) { c.redeTxt = 'rede GeoGrid não importada — sem conferência'; c.semConferencia = true; continue; }
-        if (!cid) { c.foraArea = true; c.redeTxt = 'fora da nossa área (sem rede nesta cidade)'; continue; }
-        passo(`Conferindo ${i + 1}/${cands.length}: ${c.endereco || c.cidade}…`);
+        passo(`Localizando ${i + 1}/${cands.length}: ${c.endereco || c.cidade}…`);
+        // Localiza SEMPRE (mapa e rota precisam), mesmo sem rede importada ou fora da nossa área.
         let trechos = (c.pontos || []).length ? [c.pontos] : null;
         if (!trechos && c.endereco) { const g = await localizarRua(c.endereco, c.cidade); if (g) { trechos = g.trechos; c.ruaAprox = !!g.aprox; } }
-        if (!trechos) { c.redeTxt = c.endereco ? 'rua não localizada — confira no mapa' : 'sem endereço'; continue; }
+        if (!trechos && (c.endereco || c.cidade)) { const p = await pontoAproximado(c); if (p) { c.pontos = [[p.lat, p.lng]]; c.local_aprox = p.fonte; } }
+        if (!ind) { c.redeTxt = 'rede GeoGrid não importada — sem conferência'; c.semConferencia = true; continue; }
+        if (!cid) { c.foraArea = true; c.redeTxt = 'fora da nossa área (sem rede nesta cidade)'; continue; }
+        if (!trechos) { c.redeTxt = c.endereco ? (c.local_aprox ? 'rua não localizada — ponto ' + c.local_aprox + ', confira no mapa' : 'rua não localizada — confira no mapa') : 'sem endereço'; continue; }
         const d = await SN.rede.cidade(cid.cidade), r = C.naRede(trechos, d, REDE);
         c.rede = r && { tem: r.tem, metros: r.metros, ruaM: r.ruaM, cabos: r.cabos.slice(0, 5), caixas: r.caixas.length };
         if (!(c.pontos || []).length) c.pontos = trechos.reduce((a, t) => a.length >= 40 ? a : a.concat(t.slice(0, 40 - a.length)), []).map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
@@ -775,7 +804,7 @@
         if (c.arquivo && !anexos.has(c.arquivo)) { try { anexos.set(c.arquivo, await SN.guardarDataUrl(await dataUrlDe(c.arquivo), c.arquivo.name, 'arquivo', 'cpfl')); } catch (e) { anexos.set(c.arquivo, null); } }
         const ax = c.arquivo ? anexos.get(c.arquivo) : null;
         const lidos = /pontos da rua/.test(x.coord) ? c.pontos : C.pontosDe(x.coord);
-        const reg = { tipo: x.tipo, numero: x.numero, data: x.data, hora: x.hora, cidade: x.cidade, endereco: x.endereco, bairro: c.bairro || '', pontos: lidos || [], prazo: c.prazo || '', data_fim: c.data_fim || '',
+        const reg = { tipo: x.tipo, numero: x.numero, data: x.data, hora: x.hora, cidade: x.cidade, endereco: x.endereco, bairro: c.bairro || '', pontos: lidos || [], ...(c.local_aprox && (lidos || []).length ? { local_aprox: c.local_aprox } : {}), prazo: c.prazo || '', data_fim: c.data_fim || '',
           status: c.status || 'PLANEJADO', equipe: c.equipe || '', resultado: c.resultado || '', postes: c.postes || '', acao_cpfl: c.acao_cpfl || '', obs: c.obs || '',
           rede: c.rede || null, origem: /\.pdf$/i.test(c.fonte || '') ? 'PDF' : /e-mail|\.eml/i.test(c.fonte || '') ? 'EMAIL' : 'EXCEL', anexos: ax ? [ax] : [] };
         reg.id = c.seq || c.origem_formato === 'COMUNICADO' ? C.chaveRua(reg) : C.chave(reg);
