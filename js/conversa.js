@@ -436,7 +436,9 @@ SN.conversa = (() => {
         }
       } catch (e) { }
     }
-    timerAvisos = setTimeout(buscarAvisos, !visivel ? 60000 : souGestao() ? 30000 : 45000);
+    // 12 s com a tela aberta (era 30/45 s: a pessoa abria a conversa antes do aviso chegar). A consulta
+    // é leve: o servidor responde do cache, sem abrir a planilha.
+    timerAvisos = setTimeout(buscarAvisos, !visivel ? 60000 : 12000);
   };
   // Chamado depois do login/carga. Na 1ª busca não pipoca aviso do que chegou com o app fechado
   // além das não lidas (cada uma uma vez).
