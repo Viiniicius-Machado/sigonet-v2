@@ -545,7 +545,20 @@ img[data-ver]{cursor:zoom-in}
 .conv-fab button{width:52px;height:52px;border-radius:50%;border:0;background:var(--verde-escuro);color:#fff;font-size:1.4rem;box-shadow:0 6px 16px rgba(0,0,0,.25);cursor:pointer;position:relative}
 .conv-fab .conv-selo{position:absolute;top:2px;right:4px;font-size:.9rem}
 .conv-avisos{position:fixed;right:16px;bottom:84px;z-index:210;display:flex;flex-direction:column;gap:8px;max-width:340px}
-.conv-aviso{background:#fff;border:1px solid var(--verde-borda);border-left:4px solid var(--verde);border-radius:10px;padding:10px 12px;box-shadow:0 10px 24px rgba(0,0,0,.18);font-size:.88rem}
+.conv-aviso{background:#fff;border:1px solid var(--verde-borda);border-left:5px solid var(--erro);border-radius:10px;padding:10px 12px;box-shadow:0 12px 30px rgba(0,0,0,.25);font-size:.9rem;animation:convEntra .35s ease-out,convPulso 1.6s ease-in-out .4s 3}
+.conv-aviso-cab{display:flex;align-items:center;gap:6px;margin-bottom:2px;color:var(--erro)}.conv-aviso-cab .small{margin-left:auto}
+.conv-aviso-txt{margin-top:4px;overflow-wrap:anywhere}
+@keyframes convEntra{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
+@keyframes convPulso{0%,100%{box-shadow:0 12px 30px rgba(0,0,0,.25)}50%{box-shadow:0 0 0 6px rgba(220,38,38,.25),0 12px 30px rgba(0,0,0,.25)}}
+.badge.conv-nova{background:var(--erro);color:#fff;border-color:var(--erro);cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.badge.conv-nova .conv-ico svg{width:13px;height:13px}
+.conv-selo-card:has(.conv-nova.oculto){display:none}
+.conv-selo-card{margin-bottom:4px}
+.conv-destaque{box-shadow:0 0 0 2px var(--erro) !important}
+.conv-msg.conv-piscar{animation:convPisca 1.2s ease-in-out 2}
+@keyframes convPisca{50%{background:#fff3c4;border-color:#f5c542}}
+.conv-notif{background:var(--verde-bg);border:1px solid var(--verde-borda);border-radius:8px;padding:6px 8px;margin:0 0 8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){.conv-aviso,.conv-msg.conv-piscar{animation:none}}
 .conv-pessoas{margin:4px 0 0;padding-left:18px}
 .conv-contatos{max-height:260px;overflow:auto;border:1px solid var(--borda);border-radius:8px;margin-top:6px;padding:4px 8px}
 .conv-contatos label{display:block;padding:5px 0;border-bottom:1px solid var(--bg-2);cursor:pointer}

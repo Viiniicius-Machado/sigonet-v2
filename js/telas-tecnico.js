@@ -58,7 +58,9 @@ SN.rota('/tec', () => {
      (c.apoio && c.apoio.empresa === u.empresa && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === 'apoio')))) : [];
   const card = c => {
     const p = SN.prazoInfo(c), papel = SN.papelNo(c) || 'titular';
-    return `<div class="tec-os ${p.estourado ? 'estourado' : ''}" data-id="${c.id}">
+    const nova = SN.conversa && SN.conversa.naoLida(c.id);
+    return `<div class="tec-os ${p.estourado ? 'estourado' : ''} ${nova ? 'conv-destaque' : ''}" data-id="${c.id}" data-conv-card="${c.id}">
+      ${SN.conversa ? `<div class="conv-selo-card">${SN.conversa.seloCard(c.id)}</div>` : ''}
       <div class="small muted" style="display:flex;justify-content:space-between"><span class="mono">${c.id}${c.protocoloOem ? ' · #' + SN.esc(c.protocoloOem) : ''}</span>${SN.badgeStatus(c.status)}</div>
       <div class="cli">${SN.esc(c.cliente)}</div>
       <div class="small">${SN.esc(c.tipo || '')}${c.cat2 ? ' · ' + SN.esc(c.cat2) : ''}</div>

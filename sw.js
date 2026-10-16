@@ -3,7 +3,7 @@
 // sem rede, usa a última cópia guardada no aparelho. Só arquivos do site e das
 // bibliotecas (jsPDF, SheetJS, fonte). O servidor de dados (Apps Script) nunca
 // passa por aqui: POST e script.google.com seguem direto.
-const CACHE = 'sigonet-v2-app'; // versão do site f11542490a
+const CACHE = 'sigonet-v2-app'; // versão do site 88f3c1a920
 const BIBLIOTECAS = /^https:\/\/(cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -30,5 +30,17 @@ self.addEventListener('fetch', ev => {
       if (req.mode === 'navigate') { const inicio = await cache.match(new URL('./', self.location).href) || await cache.match(new URL('index.html', self.location).href); if (inicio) return inicio; }
       throw e;
     }
+  })());
+});
+
+// Toque no aviso de mensagem nova (conversa.js): traz o SigoNet para a frente e abre a conversa.
+self.addEventListener('notificationclick', ev => {
+  ev.notification.close();
+  const ref = (ev.notification.data || {}).ref;
+  ev.waitUntil((async () => {
+    const abertas = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const c = abertas.find(x => x.url.startsWith(self.registration.scope));
+    if (c) { await c.focus(); if (ref) c.postMessage({ abrirConversa: ref }); return; }
+    await self.clients.openWindow(new URL('./', self.registration.scope).href + (ref ? '?conversa=' + encodeURIComponent(ref) : ''));
   })());
 });

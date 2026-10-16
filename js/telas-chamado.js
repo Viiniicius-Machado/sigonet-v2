@@ -182,7 +182,9 @@ SN.rota('/chamados', () => {
   ];
   const card = c => {
     const p = SN.prazoInfo(c), u = SN.ultimaEtapa(c);
-    return `<div class="os ${p.estourado ? 'estourado' : p.atencao ? 'atencao' : ''}" data-id="${c.id}">
+    const nova = SN.conversa && SN.conversa.naoLida(c.id);
+    return `<div class="os ${p.estourado ? 'estourado' : p.atencao ? 'atencao' : ''} ${nova ? 'conv-destaque' : ''}" data-id="${c.id}" data-conv-card="${c.id}">
+      ${SN.conversa ? `<div class="l3 conv-selo-card">${SN.conversa.seloCard(c.id)}</div>` : ''}
       <div class="l1"><span class="mono">${c.id}</span><span>${SN.esc(c.tipo ? c.tipo.toUpperCase() : 'SEM CLASSIFICAÇÃO')}</span></div>
       <div class="cli">${SN.esc(c.cliente || '—')}</div>
       <div class="l3">${c.tecnico ? `👷 ${SN.esc(SN.nomeExibicao(c.tecnico))}` : '<span class="muted">sem técnico</span>'}

@@ -35,11 +35,40 @@ SN.conversa = (() => {
   // ─────────── Botão (com selo de não lida) ───────────
   C.botao = (ref, rot = 'Conversa', cls = '') => !ref || !C.disponivel() ? '' :
     `<button type="button" class="btn ${cls}" data-conversa="${esc(ref)}">${ico('conversa')}${esc(rot)}<span class="conv-selo ${C.naoLida(ref) ? '' : 'oculto'}" data-conv-selo="${esc(ref)}">●</span></button>`;
-  const pintarSelos = () => SN.$$('[data-conv-selo]').forEach(el => el.classList.toggle('oculto', !C.naoLida(el.dataset.convSelo)));
+  // Etiqueta "Mensagem nova" para os cartões da Esteira e da fila do técnico (some quando lida).
+  C.seloCard = ref => !ref || !C.disponivel() ? '' : `<span class="badge conv-nova ${C.naoLida(ref) ? '' : 'oculto'}" data-conv-selo="${esc(ref)}" data-conversa="${esc(ref)}" title="Abrir a conversa">${ico('conversa')}Mensagem nova</span>`;
+  const tituloBase = document.title;
+  const pintarSelos = () => {
+    SN.$$('[data-conv-selo]').forEach(el => el.classList.toggle('oculto', !C.naoLida(el.dataset.convSelo)));
+    SN.$$('[data-conv-card]').forEach(el => el.classList.toggle('conv-destaque', C.naoLida(el.dataset.convCard)));
+    const n = C.naoLidas().length; document.title = n ? `(${n}) Mensagem nova · ${tituloBase}` : tituloBase;
+  };
+  C.pintarSelos = pintarSelos;
+
+  // ─────────── Som e aviso do sistema ───────────
+  // O navegador só deixa tocar som depois de um toque na página: o áudio é preparado no 1º toque.
+  let audio = null;
+  document.addEventListener('pointerdown', () => { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) { } }, { passive: true });
+  C.tocar = () => {
+    try { if (navigator.vibrate) navigator.vibrate([180, 90, 180]); } catch (e) { }
+    if (!audio || audio.state !== 'running') return;
+    [[880, 0], [1320, 0.16]].forEach(([f, t]) => { const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + t;
+      o.type = 'sine'; o.frequency.value = f; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.25, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+      o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + 0.25); });
+  };
+  // Aviso do sistema (aparece na barra do celular/Windows) quando o SigoNet não está na tela.
+  C.podeNotificar = () => 'Notification' in window && Notification.permission === 'granted';
+  C.pedirNotificacao = async () => { try { if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission(); } catch (e) { } return C.podeNotificar(); };
+  const notificar = async (ref, a) => {
+    if (!C.podeNotificar()) return;
+    const titulo = 'Mensagem de ' + (a.de || 'SigoNet'), op = { body: (a.titulo ? a.titulo + '\n' : '') + (a.texto || ''), tag: 'conv-' + ref, renotify: true, icon: 'icones/i192.png', data: { hash: location.pathname + '#' + location.hash.slice(1), ref } };
+    try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) return reg.showNotification(titulo, op); } catch (e) { }
+    try { const n = new Notification(titulo, op); n.onclick = () => { window.focus(); C.abrir(ref); n.close(); }; } catch (e) { }
+  };
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-conversa]');
-    if (b) { e.preventDefault(); C.abrir(b.dataset.conversa); }
-  });
+    if (b) { e.preventDefault(); e.stopPropagation(); C.abrir(b.dataset.conversa); }
+  }, true); // captura: o botão/etiqueta dentro de um cartão abre a conversa sem abrir o cartão junto
 
   // Botão flutuante (telas do técnico longas: rota da Preventiva, OS). Some ao trocar de tela.
   C.flutuante = ref => {
@@ -112,6 +141,7 @@ SN.conversa = (() => {
     el.innerHTML = `
       <div class="conv-topo"><div class="conv-tit"><b>Conversa</b><span class="small muted" data-conv-sub>${esc(ref)}</span></div>
         <button type="button" class="btn sm" data-conv-pessoas>${ico('cadastros')}Pessoas</button></div>
+      ${'Notification' in window && Notification.permission === 'default' ? `<div class="conv-notif small" data-conv-notif>Avisar no ${'ontouchstart' in window ? 'celular' : 'computador'} quando chegar mensagem, mesmo com o SigoNet em segundo plano? <button type="button" class="btn sm" data-conv-notif-sim>Ativar avisos</button></div>` : ''}
       <div class="conv-lista" data-conv-lista>${SN.carregando('Abrindo a conversa…')}</div>
       <div class="conv-envio">
         <div class="conv-rapidas">${(souGestao() ? C.RAPIDAS_GESTAO : C.RAPIDAS_TECNICO).map(t => `<button type="button" class="chip" data-rapida="${esc(t)}">${esc(t)}</button>`).join('')}</div>
@@ -154,7 +184,7 @@ SN.conversa = (() => {
         const arquivo = an && !ehImg ? `<a class="conv-arq" ${m.url ? `href="${esc(m.url)}" target="_blank" rel="noopener"` : ''}>${ico(icoAnexo(an.tipo))}<span><b>${esc(an.nome || 'arquivo')}</b>
           <small>${an.tipo === 'pdf' ? 'PDF' : 'KMZ/KML'}${an.tamanho ? ' · ' + tamanho(an.tamanho) : ''}${m.url ? ' · abrir' : ''}</small></span></a>` : '';
         const temCoord = m.lat !== '' && m.lat != null && !C.coordNoTexto(m.texto);
-        return sep + `<div class="conv-msg ${minha ? 'minha' : ''} ${m.tipo === 'lideranca' ? 'gestao' : ''}">
+        return sep + `<div class="conv-msg ${minha ? 'minha' : ''} ${m.tipo === 'lideranca' ? 'gestao' : ''} ${st.piscar && st.piscar.has(m.id_msg) ? 'conv-piscar' : ''}">
           ${minha ? '' : `<div class="conv-de">${esc(m.de)}<span>${m.tipo === 'lideranca' ? 'Gestão' : esc(m.empresa || 'Técnico')}</span></div>`}
           ${img ? `<img class="conv-img" src="${img}" alt="" data-conv-ver="${esc(grande)}" data-conv-url="${esc(m.url || '')}" data-conv-nome="${esc((an && an.nome) || 'imagem')}">` : ''}${arquivo}
           ${m.texto ? `<div class="conv-txt">${C.textoComLinks(m.texto)}</div>` : ''}
@@ -169,6 +199,7 @@ SN.conversa = (() => {
           a.innerHTML = `${ico('imagem')}<span><b>${esc(i.dataset.convNome)}</b><small>Imagem${i.dataset.convUrl ? ' · abrir' : ' · enviando…'}</small></span>`; i.replaceWith(a); };
         if (i.complete && !i.naturalWidth && i.src) semMiniatura(); else i.onerror = semMiniatura;
       });
+      st.piscar = null;
       SN.$$('[data-reenviar]', lista).forEach(b => b.onclick = () => { const p = st.pend.find(x => x.id_msg === b.dataset.reenviar); if (p) mandar(p); });
       SN.$$('[data-conv-editar]', lista).forEach(b => b.onclick = () => editar(st.msgs.find(x => x.id_msg === b.dataset.convEditar)));
       SN.$$('[data-conv-original]', lista).forEach(b => b.onclick = () => original(st.msgs.find(x => x.id_msg === b.dataset.convOriginal)));
@@ -181,7 +212,10 @@ SN.conversa = (() => {
       if (!vivo) return;
       clearTimeout(timer);
       try {
-        await C.ler(ref);
+        const jaTinha = st.carregada, n0 = st.msgs.length, { novas } = await C.ler(ref);
+        // Resposta chegando com a conversa aberta: som e o balão novo pisca.
+        const me = eu(), deOutro = st.msgs.slice(n0).filter(m => !m.sistema && !(m.de === me.nome && m.tipo === me.tipo));
+        if (jaTinha && novas && deOutro.length) { C.tocar(); st.piscar = new Set(deOutro.map(m => m.id_msg)); rolarFim = true; }
         pintar();
         st.pend.filter(p => p._erro && !p._tentando).forEach(p => mandar(p)); // sinal voltou: reenvia
       } catch (e) {
@@ -265,7 +299,10 @@ SN.conversa = (() => {
       const fs = Array.from((e.clipboardData && e.clipboardData.files) || []);
       if (fs.length) { e.preventDefault(); anexar(fs.map((f, i) => f.name && f.name !== 'image.png' ? f : new File([f], 'print-' + new Date().toTimeString().slice(0, 8).replace(/:/g, '') + (i ? '-' + i : '') + '.png', { type: f.type }))); }
     });
-    SN.$('[data-conv-pessoas]', el).onclick = () => pessoas(ref, () => { st.desde = ''; atualizar(); });
+    const bNotif = SN.$('[data-conv-notif-sim]', el);
+    if (bNotif) bNotif.onclick = async () => { const ok = await C.pedirNotificacao(); const box = SN.$('[data-conv-notif]', el); if (box) box.remove();
+      SN.toast(ok ? 'Pronto: o aviso de mensagem nova chega mesmo com o SigoNet em segundo plano.' : 'Avisos não liberados. Dá para liberar depois nas configurações do navegador.', ok ? 'ok' : ''); };
+    SN.$('[data-conv-pessoas]', el).onclick =() => pessoas(ref, () => { st.desde = ''; atualizar(); });
 
     const visivel = () => { if (document.visibilityState === 'visible') atualizar(); };
     document.addEventListener('visibilitychange', visivel);
@@ -354,37 +391,44 @@ SN.conversa = (() => {
 
   // ─────────── Avisos em qualquer tela ───────────
   let timerAvisos = null, avisados = {}, donoAvisos = '';
-  const card = (ref, a) => {
+  const card = (ref, a, semSom) => {
     let area = SN.$('#convAvisos'); if (!area) { area = document.createElement('div'); area.id = 'convAvisos'; area.className = 'conv-avisos'; document.body.appendChild(area); }
     SN.$$(`[data-aviso="${CSS.escape(ref)}"]`, area).forEach(x => x.remove());
     const d = document.createElement('div'); d.className = 'conv-aviso'; d.dataset.aviso = ref;
-    d.innerHTML = `<div class="small muted">${ico('conversa')}${esc(a.titulo || ref)}</div><div><b>${esc(a.de)}:</b> ${esc(a.texto)}</div>
-      <div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end"><button type="button" class="btn sm" data-x>Depois</button><button type="button" class="btn sm prim" data-abrir>Abrir conversa</button></div>`;
+    d.innerHTML = `<div class="conv-aviso-cab">${ico('conversa')}<b>Mensagem nova</b><span class="small muted">${SN.hora(a.ts)}</span></div>
+      <div class="small muted">${esc(a.titulo || ref)}</div><div class="conv-aviso-txt"><b>${esc(a.de)}:</b> ${esc(a.texto)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;justify-content:flex-end"><button type="button" class="btn sm" data-x>Depois</button><button type="button" class="btn sm prim" data-abrir>Abrir conversa</button></div>`;
     SN.$('[data-x]', d).onclick = () => d.remove();
     SN.$('[data-abrir]', d).onclick = () => { d.remove(); C.abrir(ref); };
     area.appendChild(d);
-    setTimeout(() => d.remove(), 30000);
-    try { if (navigator.vibrate) navigator.vibrate(120); } catch (e) { }
+    // Fica na tela até a pessoa responder ("Depois" ou abrir); continua marcada como não lida no cartão.
+    if (!semSom) C.tocar();
   };
   const buscarAvisos = async () => {
     clearTimeout(timerAvisos);
     const s = SN.sessao();
     if (!s || !s.token || !C.disponivel() || s.token !== donoAvisos) return; // saiu ou trocou de pessoa
-    if (document.visibilityState === 'visible' && navigator.onLine !== false) {
+    const visivel = document.visibilityState === 'visible';
+    // Com o SigoNet em segundo plano só consulta se a pessoa liberou o aviso do sistema (e mais devagar).
+    if ((visivel || C.podeNotificar()) && navigator.onLine !== false) {
       try {
         const r = await api('CONV_AVISOS', {}, 20000);
         if (r.ok && (SN.sessao() || {}).token === donoAvisos) {
           C.avisos = r.avisos || {};
+          let som = false;
           C.naoLidas().forEach(ref => {
             const a = C.avisos[ref];
-            if (!C._abertas[ref] && String(avisados[ref] || '') < String(a.ts)) { avisados[ref] = a.ts; card(ref, a); }
+            if (C._abertas[ref] && visivel) return;
+            if (String(avisados[ref] || '') < String(a.ts)) { avisados[ref] = a.ts; som = true;
+              if (visivel) card(ref, a, true); else notificar(ref, a); }
           });
+          if (som && visivel) C.tocar();
           pintarSelos();
           document.dispatchEvent(new CustomEvent('sn-conversa'));
         }
       } catch (e) { }
     }
-    timerAvisos = setTimeout(buscarAvisos, souGestao() ? 30000 : 45000);
+    timerAvisos = setTimeout(buscarAvisos, !visivel ? 60000 : souGestao() ? 30000 : 45000);
   };
   // Chamado depois do login/carga. Na 1ª busca não pipoca aviso do que chegou com o app fechado
   // além das não lidas (cada uma uma vez).
@@ -393,7 +437,13 @@ SN.conversa = (() => {
     if (donoAvisos === s.token) return;
     donoAvisos = s.token; avisados = {}; C.avisos = {};
     setTimeout(buscarAvisos, 4000 + Math.random() * 4000);
+    // Aberto pelo toque no aviso do sistema com o app fechado (sw.js → ?conversa=REF).
+    const pedida = new URLSearchParams(location.search).get('conversa');
+    if (pedida) { history.replaceState(null, '', location.pathname + location.hash); setTimeout(() => C.abrir(pedida), 800); }
   };
+  C.buscarAvisos = () => buscarAvisos();
+  // Aviso tocado com o SigoNet já aberto em outra aba/janela.
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.abrirConversa) C.abrir(e.data.abrirConversa); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && donoAvisos) buscarAvisos(); });
 
   // ─────────── PDF: o gestor decide se a conversa entra ───────────
