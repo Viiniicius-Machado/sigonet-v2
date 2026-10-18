@@ -29,6 +29,9 @@
   };
   const hist = (r, acao, det) => (r.historico = r.historico || []).push({ ts: SN.agora(), usuario: (SN.usuario() || {}).nome || '', acao, detalhe: det || '' });
   const chamadoDe = r => r.id_chamado ? SN.db.chamados.find(c => c.id === r.id_chamado) : null;
+  // Prazo na hora marcada; hora fora do padrão ("8:50", vazia…) não derruba o despacho: vira HH:MM ou 23:59.
+  const prazoIso = (data, hora) => { const m = C.minDe(hora); return new Date(data + 'T' + (m == null ? '23:59' : C.hhmm(m)) + ':00').toISOString(); };
+  const chamadoAtivo = r => { const c = chamadoDe(r); return c && c.status !== 'CANCELADO' ? c : null; }; // cancelado = como se não tivesse
   const tipoRot = t => (C.TIPOS[t] || C.TIPOS.OUTRO).rot;
   const numTxt = r => r.numero && !/^s\/?n$/i.test(String(r.numero).trim()) ? String(r.numero) : 's/n';
   const cidadesConhecidas = () => [...new Set(lista().map(r => r.cidade).concat(SN.db.chamados.map(c => c.cidade)).concat((((SN.rede && SN.rede.ultimoIndice && SN.rede.ultimoIndice()) || {}).cidades || []).map(c => String(c.cidade).replace(/\s-\s[A-Z]{2}.*$/, ''))).filter(Boolean))];
@@ -91,7 +94,7 @@
   const doTecnico = r => { const c = chamadoDe(r); return c && c.cpfl && c.cpfl.resultado && !(c.cpfl.confirmado) ? { c, res: c.cpfl.resultado } : null; };
   const tecTxt = r => { const t = doTecnico(r); return t ? ` <span class="badge alerta" title="Informado pelo técnico na OS">técnico: ${esc(C.RESULTADOS[t.res].rot)} · confirmar</span>` : ''; };
   const badgeReg = r => `${SN.badge(C.STATUS, r.status)}${redeTxt(r)}${tecTxt(r)}${r.resultado ? ` <span class="badge ${r.resultado === 'IMPRODUTIVA' ? 'erro' : 'ok'}">${esc(C.RESULTADOS[r.resultado].rot)}</span>` : ''}${r.massiva ? ' <span class="badge erro">massiva</span>' : ''}`;
-  const acoesReg = r => `<button class="btn sm ${r.id_chamado ? '' : 'prim'}" data-desp="${esc(r.id)}">${r.id_chamado ? 'Chamado ' + esc(r.id_chamado) : 'Despachar'}</button>
+  const acoesReg = r => `<button class="btn sm ${chamadoAtivo(r) ? '' : 'prim'}" data-desp="${esc(r.id)}">${chamadoAtivo(r) ? 'Chamado ' + esc(r.id_chamado) : 'Despachar'}</button>
     <button class="btn sm" data-res="${esc(r.id)}">${r.resultado ? 'Resultado ✓' : 'Resultado'}</button><button class="btn sm" data-ed="${esc(r.id)}">Editar</button>${r.rede ? '' : `<button class="btn sm" data-verrede="${esc(r.id)}" title="Confere se o endereço tem rede Net Turbo (GeoGrid)">Verificar rede</button>`}`;
   const ligarAcoes = (raiz, repintar) => {
     raiz.querySelectorAll('[data-desp]').forEach(b => b.onclick = () => despachar(lista().find(r => r.id === b.dataset.desp)).then(repintar));
@@ -124,10 +127,10 @@
     return Object.keys(g).sort().map(id => { const regs = g[id].sort((a, b) => a.rota.ordem - b.rota.ordem), c = regs.map(chamadoDe).find(Boolean); return { id, regs, tec: c ? c.tecnico : '' }; }); };
   const ordemMontada = id => { const x = rt.rota && rt.rota.res.seq.find(s => s.id === id); return x ? x.ordem : null; };
   const itemHtml = (r, atras) => { const ord = ordemMontada(r.id), loc = (r.pontos || []).length;
-    return `<div class="cp-it2">${abertoAgend(r) ? `<input type="checkbox" data-rsel="${esc(r.id)}" ${rt.sel[r.id] ? 'checked' : ''} title="Entra na rota">` : '<span class="cp-it2-sem"></span>'}
+    return `<div class="cp-it2">${abertoAgend(r) ? `<input type="checkbox" data-rsel="${esc(r.id)}" ${rt.sel[r.id] ? 'checked' : ''} title="Entra na rota">` : `<input type="checkbox" disabled title="Fora da rota: ${esc(foraDaRota(r))}">`}
       <div style="flex:1;min-width:0"><div class="cp-item-cab" data-foco="${esc(r.id)}">${ord ? `<span class="cp-ord">${ord}</span>` : ''}<b>${r.hora ? esc(r.hora) : 'sem hora'}</b> · ${esc(tipoRot(r.tipo))} · <span class="mono">${esc(numTxt(r))}</span>${atras ? ` <span class="badge alerta">de ${dia(r.data)}</span>` : ''}${loc ? '' : ' <span class="badge alerta">sem localização</span>'}</div>
         <div class="small muted">${esc(r.cidade || '')}${r.endereco ? ' · ' + esc(r.endereco) : ''}</div>
-        <div class="small" style="margin:4px 0">${badgeReg(r)}${r.rota ? ` <span class="badge info">${esc(r.rota.id)} · parada ${r.rota.ordem}</span>` : ''}${r.local_aprox ? ` <span class="badge alerta" title="Ponto aproximado: confira no mapa">${esc(r.local_aprox)}</span>` : ''}</div>
+        <div class="small" style="margin:4px 0">${badgeReg(r)}${r.rota ? ` <span class="badge info">${esc(r.rota.id)} · parada ${r.rota.ordem}</span>` : ''}${r.local_aprox ? ` <span class="badge alerta" title="Ponto aproximado: confira no mapa">${esc(r.local_aprox)}</span>` : ''}${abertoAgend(r) ? '' : ` <span class="badge">fora da rota: ${esc(foraDaRota(r))}</span>`}</div>
         <div class="acoes" style="gap:6px">${acoesReg(r)}${loc ? '' : `<button type="button" class="btn sm" data-rloc="${esc(r.id)}">Localizar</button>`}</div></div></div>`; };
   // Planilha (Excel) de uma lista: a do dia ou a antiga (atrasados), com a ordem da rota quando houver.
   const baixarLista = (nome, regs) => SN.exportar(nome, regs.map(r => ({ ORDEM: ordemMontada(r.id) || (r.rota ? r.rota.ordem : ''), ROTA: r.rota ? r.rota.id : '', DATA: dia(r.data), HORA: r.hora || '', 'AÇÃO': tipoRot(r.tipo).toUpperCase(),
@@ -138,7 +141,7 @@
     const d = st.ref || hoje(), at = atrasados();
     const dia0 = lista().filter(r => r.data === d && doTipo(r)).sort(porHora);
     // Ao trocar de dia: já marca o que está aberto e ainda não foi para uma rota.
-    if (rt.sel.__dia !== d) { rt.sel = { __dia: d }; dia0.filter(r => abertoAgend(r) && !r.rota).forEach(r => { rt.sel[r.id] = true; }); if (rt.rota && rt.rota.data !== d) rt.rota = null; mp.verRota = ''; }
+    if (rt.sel.__dia !== d) { rt.sel = { __dia: d }; dia0.filter(r => abertoAgend(r) && (!r.rota || !chamadoAtivo(r))).forEach(r => { rt.sel[r.id] = true; }); if (rt.rota && rt.rota.data !== d) rt.rota = null; mp.verRota = ''; }
     const l = regsMapa(d, at), comLocal = l.filter(r => (r.pontos || []).length);
     const nDesp = dia0.filter(r => r.id_chamado).length, nRes = dia0.filter(r => r.resultado).length;
     SN.$('#cpCorpo').innerHTML = `<div class="card card-filtros"><div class="filtros">
@@ -253,8 +256,8 @@
     const levarPara = async (i, dataNova) => { const b = blocos[i], regs = b.itens.map(x => lista().find(r => r.id === x.id));
       if (!await SN.confirmar('Encaixar ' + regs.length + ' atrasado(s)', `Remarcar para <b>${dia(dataNova)}</b> e abrir esse dia com eles marcados para a rota?<br><span class="small muted">${regs.map(r => esc(numTxt(r)) + ' · ' + esc(r.endereco || r.cidade)).join('<br>')}</span>`, 'Encaixar', 'prim')) return;
       regs.forEach(r => { if (!r.data_original) r.data_original = r.data; hist(r, 'REAGENDADO', dia(r.data) + ' → ' + dia(dataNova)); r.data = dataNova; r.editado = true;
-        const c = chamadoDe(r); if (c && ['NAO_ATRIBUIDO', 'ATRIBUIDO', 'ACEITO'].includes(c.status)) { c.prazoLimite = new Date(dataNova + 'T' + (r.hora || '23:59') + ':00').toISOString(); SN.hist(c, 'Reagendado (CPFL)', dia(dataNova)); } });
-      SN.salvar(); st.ref = dataNova; rt.sel = { __dia: dataNova }; lista().filter(r => r.data === dataNova && abertoAgend(r) && !r.rota).forEach(r => { rt.sel[r.id] = true; }); rt.rota = null; mp.painel = 'DIA';
+        const c = chamadoDe(r); if (c && ['NAO_ATRIBUIDO', 'ATRIBUIDO', 'ACEITO'].includes(c.status)) { c.prazoLimite = prazoIso(dataNova, r.hora); SN.hist(c, 'Reagendado (CPFL)', dia(dataNova)); } });
+      SN.salvar(); st.ref = dataNova; rt.sel = { __dia: dataNova }; lista().filter(r => r.data === dataNova && abertoAgend(r) && (!r.rota || !chamadoAtivo(r))).forEach(r => { rt.sel[r.id] = true; }); rt.rota = null; mp.painel = 'DIA';
       pintarMapa(); SN.toast(regs.length + ' atrasado(s) encaixado(s) em ' + dia(dataNova) + '.', 'ok'); };
     SN.$$('[data-encx]', box).forEach(b => b.onclick = () => levarPara(+b.dataset.encx, b.dataset.dia));
     SN.$$('[data-blocodia]', box).forEach(b => b.onclick = async () => { const v = await SN.modal({ titulo: 'Escolher o dia', corpo: `<input class="inp" type="date" id="mDia" min="${hoje()}" value="${hoje()}">`,
@@ -366,8 +369,9 @@
     const linha = MATRIZ_SLA.find(m => m.tipo === CLASSE.tipo && m.cat1 === CLASSE.cat1 && m.cat2 === CLASSE.cat2 && m.cat3 === CLASSE.cat3) || { sla: 8 };
     SN.aplicarClassificacao(c, { ...CLASSE, cat4: '', sla: linha.sla });
     // Agendado: o prazo é a hora marcada pela CPFL (sem SLA corrido).
-    c.planejada = true; c.prazoLimite = new Date(r.data + 'T' + (r.hora || '23:59') + ':00').toISOString();
+    c.planejada = true; c.prazoLimite = prazoIso(r.data, r.hora);
     SN.hist(c, 'Abertura', 'Origem CPFL — notificação ' + numTxt(r));
+    if (r.id_chamado && r.id_chamado !== c.id) (r.chamados_retirados = r.chamados_retirados || []).push(r.id_chamado); // o cancelado fica no histórico
     SN.db.chamados.push(c); r.id_chamado = c.id; hist(r, 'CHAMADO', c.id); SN.log('CPFL_CHAMADO', c.id, r.id);
     return c;
   };
@@ -389,8 +393,8 @@
   // O chamado nasce aqui, já com o técnico; "Voltar" não cria nada.
   const despachar = async r => {
     if (!r) return null;
-    let c = chamadoDe(r);
-    if (c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status)) { SN.navegar('#/chamado/' + c.id); return null; }
+    let c = chamadoAtivo(r);
+    if (c && !['NAO_ATRIBUIDO', 'ATRIBUIDO', 'ACEITO'].includes(c.status)) { SN.navegar('#/chamado/' + c.id); return null; }
     if (!r.rede) { const fim = SN.cobrirCarregando('Conferindo se o endereço tem rede Net Turbo…'); try { await verificarRede(r); SN.salvar(); } catch (e) { } finally { fim(); } }
     const dups = mesmaNotificacao(r.numero, r.id), dupComChamado = dups.filter(x => x.id_chamado && x.id_chamado !== r.id_chamado);
     const res = await SN.modal({ titulo: (c ? 'Despachar ' + c.id + ' · ' : 'Despachar ') + tipoRot(r.tipo) + ' · ' + numTxt(r),
@@ -557,11 +561,23 @@
   // atrasados em blocos por proximidade para replanejar. Regras em cpfl-regras.js (C.montarRota…).
   // Tela: painel "Rotas" ao lado do mapa (pintarLado); a rota é desenhada no mapa principal.
   const rt = { diasAtraso: 30, sel: {}, rota: null, raioKm: 3 };
-  const abertoAgend = r => r.status === 'PLANEJADO' && !r.resultado && (r.pontos || []).length && !(chamadoDe(r) && ['CONCLUIDO_TECNICO', 'FECHADO', 'CANCELADO'].includes(chamadoDe(r).status));
+  // Por que a notificação não entra na rota ('' = entra). Chamado cancelado não prende a notificação: ao
+  // despachar de novo nasce outro chamado (pedido de 18/10/2026: 7 de 8 do dia ficavam sem poder marcar).
+  const CH_EM_ANDAMENTO = ['EM_DESLOCAMENTO', 'EM_CAMPO', 'DEVOLVIDO'];
+  const foraDaRota = r => {
+    if (r.resultado) return 'já tem resultado';
+    if (r.status !== 'PLANEJADO') return (C.STATUS[r.status] || { rot: r.status }).rot.toLowerCase();
+    const c = chamadoAtivo(r);
+    if (c && ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status)) return `chamado ${c.id} concluído — registre o resultado`;
+    if (c && CH_EM_ANDAMENTO.includes(c.status)) return `chamado ${c.id} ${SN.STATUS[c.status].rot.toLowerCase()}`;
+    if (!(r.pontos || []).length) return 'sem localização';
+    return '';
+  };
+  const abertoAgend = r => !foraDaRota(r);
   const atrasados = () => { const hj = hoje(), lim = somaDias(hj, -rt.diasAtraso); return lista().filter(r => abertoAgend(r) && r.data < hj && r.data >= lim); };
   const pt = r => r.pontos[0];
   // Ordem sugerida sem consultar as ruas (estimativa pela distância): usada na Lista do dia.
-  const ordemSugerida = regs => { const it = regs.filter(r => abertoAgend(r) && !r.rota); if (!it.length || it.length > 40) return {};
+  const ordemSugerida = regs => { const it = regs.filter(r => abertoAgend(r) && (!r.rota || !chamadoAtivo(r))); if (!it.length || it.length > 40) return {};
     const res = C.montarRota(it.map(r => ({ id: r.id, ponto: pt(r), tipo: r.tipo, hora: r.hora })), {}); return Object.fromEntries(res.seq.map(x => [x.id, x])); };
   // Tempo de deslocamento pelas ruas (OSRM table, carro); sem resposta, estimativa pela distância.
   const matrizTempos = async pts => {
@@ -603,7 +619,7 @@
   const despacharRota = async () => {
     const { res, regs, data } = rt.rota, porId = Object.fromEntries(regs.map(r => [r.id, r]));
     const porEmp = {}; SN.tecnicosDespacho().forEach(t => (porEmp[t.empresa] = porEmp[t.empresa] || []).push(t));
-    const ocupado = res.seq.map(x => chamadoDe(porId[x.id])).filter(c => c && !['NAO_ATRIBUIDO', 'ATRIBUIDO'].includes(c.status));
+    const ocupado = res.seq.map(x => chamadoAtivo(porId[x.id])).filter(c => c && !['NAO_ATRIBUIDO', 'ATRIBUIDO', 'ACEITO'].includes(c.status));
     if (ocupado.length) return SN.toast(`${ocupado.map(c => c.id).join(', ')} já está(ão) em andamento: tire da rota.`, 'erro');
     const v = await SN.modal({ titulo: `Despachar rota de ${dia(data)} · ${res.seq.length} parada(s)`,
       corpo: `<div class="campo"><label>Conta contábil *</label><select class="inp" id="mConta">${contasOpts(CONTA)}</select></div>
@@ -616,9 +632,9 @@
       for (const x of res.seq) {
         const r = porId[x.id];
         if (r.data !== data) { if (!r.data_original) r.data_original = r.data; hist(r, 'REAGENDADO', dia(r.data) + ' → ' + dia(data) + ' (rota)'); r.data = data; }
-        let c = chamadoDe(r); if (!c) c = await novoChamado(r, { conta: v.conta }); else if (c.conta !== v.conta) { SN.hist(c, 'Conta contábil', SN.contaTxt(c.conta) + ' → ' + SN.contaTxt(v.conta)); c.conta = v.conta; }
+        let c = chamadoAtivo(r); if (!c) c = await novoChamado(r, { conta: v.conta }); else if (c.conta !== v.conta) { SN.hist(c, 'Conta contábil', SN.contaTxt(c.conta) + ' → ' + SN.contaTxt(v.conta)); c.conta = v.conta; }
         c.rota = { id: idRota, data, ordem: x.ordem, total: res.seq.length, prevista: x.inicio, lat: pt(r)[0], lng: pt(r)[1] };
-        c.prazoLimite = new Date(data + 'T' + (x.horaMarcada || x.saida) + ':00').toISOString();
+        c.prazoLimite = prazoIso(data, x.horaMarcada || x.saida);
         const anterior = c.tecnico; c.tecnico = t.nome; c.empresa = t.empresa; if (!c.tempos.atribuicao) c.tempos.atribuicao = SN.agora();
         if (anterior && anterior !== t.nome) { ['aceite', 'deslocamento', 'chegada'].forEach(k => delete c.tempos[k]); c.status = 'ATRIBUIDO'; } else if (c.status === 'NAO_ATRIBUIDO') c.status = 'ATRIBUIDO';
         SN.hist(c, anterior && anterior !== t.nome ? 'Reatribuição' : 'Despacho', `${t.nome} (${t.empresa}) · rota ${idRota}, parada ${x.ordem}/${res.seq.length}, prevista ${x.inicio}`);
