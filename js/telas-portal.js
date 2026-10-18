@@ -345,8 +345,9 @@ SN.htmlLpuDaConta = cod => {
 SN.rota('/cadastros', () => {
   // Com servidor, atualiza quem já configurou o complemento (no máximo a cada 30s).
   if (SN.remoto && Date.now() - SN._acessosTs > 30000) SN.carregarStatusAcessos().then(() => { if (location.hash.startsWith('#/cadastros')) SN.render(); });
+  if (SN.abaCad === 'disp') SN.abaCad = 'tecnicos'; // a disponibilidade da M.O. foi para a Esteira (Mão de obra hoje), 18/10/2026
   const d = SN.db, aba = SN.abaCad;
-  const abas = [['tecnicos', 'Técnicos'], ['empresas', 'Prestadores / CNPJ'], ['lideranca', 'Liderança e acessos'], ['disp', 'Disponibilidade da M.O.'], ['contas', 'Contas e budget'], ['sistema', 'Sistema']];
+  const abas = [['tecnicos', 'Técnicos'], ['empresas', 'Prestadores / CNPJ'], ['lideranca', 'Liderança e acessos'], ['contas', 'Contas e budget'], ['sistema', 'Sistema']];
   let html = '';
   if (aba === 'tecnicos') { const sem = d.tecnicos.filter(t => !t.ativo).length, ver = SN.cadTecVer === 'sem' && sem ? 'sem' : 'com';
     html = `<div class="card"><div class="card-tit"><h3>Técnicos (${d.tecnicos.length - sem} com acesso)</h3><button class="btn prim" data-novo="tec">+ Técnico</button></div>
@@ -534,16 +535,18 @@ SN.editarLider = l => {
         if (SN.remoto && (novo || pinNovo)) { try { await SN.gravarAcesso('lideranca', l, { pin: pinNovo || PIN_INICIAL }); } catch (e) { SN.toast('Cadastro salvo, mas o PIN não: ' + e.message, 'erro'); } }
         SN.render(); } }] });
 };
-SN.novaDisp = () => {
-  const hoje = SN.agora().slice(0, 10);
+// Chamado da Esteira (Mão de obra hoje): tec já vem escolhido quando é "Marcar indisponível" na linha.
+SN.novaDisp = tec => {
+  const hoje = SN.dataIsoLocal(new Date());
   SN.modal({ titulo: 'Registrar indisponibilidade', corpo: `
     <div class="campo"><label>Técnico</label><select class="inp" id="dTec">${SN.db.tecnicos.filter(t => t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome))
-      .map(t => `<option value="${SN.esc(t.nome)}">${SN.esc(t.empresa)} · ${SN.esc(t.nome)}</option>`).join('')}</select></div>
+      .map(t => `<option value="${SN.esc(t.nome)}" ${t.nome === tec ? 'selected' : ''}>${SN.esc(t.empresa)} · ${SN.esc(t.nome)}</option>`).join('')}</select></div>
     <div class="linha-form"><div class="campo"><label>Motivo</label><select class="inp" id="dMot">${Object.entries(MOTIVOS_DISPONIBILIDADE).map(([k, r]) => `<option value="${k}">${r}</option>`).join('')}</select></div>
     <div class="campo"><label>Início</label><input class="inp" type="date" id="dIni" value="${hoje}"></div><div class="campo"><label>Fim</label><input class="inp" type="date" id="dFim" value="${hoje}"></div></div>`,
     botoes: [{ rot: 'Cancelar' }, { rot: 'Registrar', cls: 'prim', acao: () => {
       const x = { id: SN.uid(), tecnico: SN.$('#dTec').value, motivo: SN.$('#dMot').value, inicio: SN.$('#dIni').value, fim: SN.$('#dFim').value, por: SN.usuario().nome };
       if (!x.inicio || !x.fim || x.fim < x.inicio) { SN.toast('Período inválido.', 'erro'); return false; }
+      if (SN.db.disponibilidade.some(y => y.tecnico === x.tecnico && y.inicio <= x.fim && y.fim >= x.inicio)) { SN.toast('Já existe um período para este técnico nessas datas.', 'erro'); return false; }
       SN.db.disponibilidade.push(x); SN.log('REGISTRAR_DISPONIBILIDADE', x.tecnico, `${x.motivo} ${x.inicio}→${x.fim}`); SN.salvar(); SN.render(); } }] });
 };
 

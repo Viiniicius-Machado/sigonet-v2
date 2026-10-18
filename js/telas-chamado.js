@@ -98,7 +98,7 @@ SN.rota('/inicio', () => {
     ['materiais', '#/materiais', '📦', 'Controle de Materiais', 'Busca por dia, semana, mês e ano; conferência e registro da baixa feita no Elleven.', 'em aberto'],
     ['fibra', '#/fibra', '🧵', 'Cadastro de Fibra', 'Validação do líder e cadastro GEOGRID pela sala técnica.', 'em fila'],
     ['portal', '#/portal', '📊', 'Portal de Gestão', 'Indicadores, eficiência por técnico, relatórios e fechamento mensal.', ''],
-    ['cadastros', '#/cadastros', '👥', 'Cadastros e Acessos', 'Técnicos, prestadores/CNPJ, liderança, telas, disponibilidade e budgets.', ''],
+    ['cadastros', '#/cadastros', '👥', 'Cadastros e Acessos', 'Técnicos, prestadores/CNPJ, liderança, telas e budgets.', ''],
     ['auditoria', '#/auditoria', '🕑', 'Auditoria', 'Quem fez o quê e quando — e o log de integrações.', '']
   ].filter(c => SN.temTela(c[0]));
   const estourados = abertos.filter(c => SN.prazoInfo(c).estourado).length;
@@ -206,14 +206,8 @@ SN.rota('/chamados', () => {
       ${SN.htmlLinhaTempo ? `<div class="chips" style="margin-bottom:8px"><button class="chip ${SN.visaoChamados !== 'linha' ? 'sel' : ''}" data-visao="quadro">Quadro</button><button class="chip ${SN.visaoChamados === 'linha' ? 'sel' : ''}" data-visao="linha">Linha do tempo</button></div>` : ''}</div>
     ${SN.visaoChamados === 'linha' && SN.htmlLinhaTempo ? SN.htmlLinhaTempo(lista, despachaveis) : `<div class="kanban">${cols.map(([nome, f]) => { const itens = lista.filter(f).sort((a, b) => (a.prazoLimite || 'z').localeCompare(b.prazoLimite || 'z'));
       return `<div class="coluna"><h4>${nome}<span class="badge">${itens.length}</span></h4>${itens.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>`}
-    <div class="card" style="margin-top:16px"><div class="card-tit"><h3>Mão de obra hoje</h3><span class="muted small">Titulares de dupla representam a equipe</span></div>
-      <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico / equipe</th><th>Empresa</th><th>Frente</th><th>Situação</th><th class="num">OS em aberto</th></tr></thead><tbody>
-      ${despachaveis.sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => { const ind = SN.indisponivel(t.nome); const carga = SN.cargaAberta(t.nome);
-        const emCampo = SN.db.chamados.some(c => c.tecnico === t.nome && ['EM_CAMPO', 'EM_DESLOCAMENTO'].includes(c.status));
-        return `<tr><td>${SN.esc(SN.nomeExibicao(t.nome))}</td><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.frente || '—')}</td>
-          <td>${ind ? `<span class="badge erro">${MOTIVOS_DISPONIBILIDADE[ind.motivo]}</span>` : emCampo ? '<span class="badge verde">Em atividade</span>' : '<span class="badge">Disponível</span>'}</td>
-          <td class="num">${carga}</td></tr>`; }).join('')}
-      </tbody></table></div></div>`);
+    ${SN.htmlMaoDeObra(despachaveis)}`);
+  SN.ligarMaoDeObra();
   SN.ligarValidacao();
   SN.$$('.aba[data-t]').forEach(b => b.onclick = () => { SN.filtroTipoChamados = b.dataset.t; SN.render(); });
   // Quadro (colunas) ou Linha do tempo por técnico (estilo Dispatch Console do Oracle). Lembra a escolha no aparelho.
@@ -224,6 +218,54 @@ SN.rota('/chamados', () => {
   SN.$('#btnElleven').onclick = () => SN.novaOS({ origem: 'Elleven', motivo: 'POSSÍVEL ROMPIMENTO', cliente: 'CLIENTE EXEMPLO LTDA', etiqueta: 'AB12CD34',
     endereco: 'Av. Exemplo, 100', cidade: 'Campinas', protocoloOem: String(140000 + SN.db.chamados.length) });
 });
+
+// ─────────── Mão de obra hoje + disponibilidade ───────────
+// A disponibilidade saiu de Cadastros (só a gestão via) e veio para cá (pedido de 18/10/2026): o
+// encarregado marca quem não está disponível (férias, atestado, folga…) e libera de volta.
+// Quem está indisponível no dia fica bloqueado no despacho (SN.indisponivel).
+SN.verPeriodosMO = false;
+SN.podeDisponibilidade = () => SN.podeAprovar() || SN.temTela('cadastros');
+SN.htmlMaoDeObra = despachaveis => {
+  const pode = SN.podeDisponibilidade(), hoje = SN.dataIsoLocal(new Date()), fmt = d => d.split('-').reverse().join('/');
+  const periodos = SN.db.disponibilidade.filter(x => x.fim >= SN.dataIsoLocal(new Date(Date.now() - 30 * 864e5))).sort((a, b) => b.inicio.localeCompare(a.inicio));
+  const nInd = despachaveis.filter(t => SN.indisponivel(t.nome)).length;
+  return `<div class="card" style="margin-top:16px"><div class="card-tit"><h3>Mão de obra hoje</h3>
+      <div class="acoes" style="gap:6px;align-items:center"><span class="muted small">${despachaveis.length - nInd} disponível(is) · ${nInd} indisponível(is) · titulares de dupla representam a equipe</span>
+        <button type="button" class="btn sm" id="moPeriodos">${SN.verPeriodosMO ? 'Esconder períodos' : `Períodos registrados (${periodos.length})`}</button>
+        ${pode ? '<button type="button" class="btn sm prim" id="moNovo">+ Registrar indisponibilidade</button>' : ''}</div></div>
+    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico / equipe</th><th>Empresa</th><th>Frente</th><th>Situação</th><th class="num">OS em aberto</th>${pode ? '<th>Disponibilidade</th>' : ''}</tr></thead><tbody>
+    ${despachaveis.sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => { const ind = SN.indisponivel(t.nome); const carga = SN.cargaAberta(t.nome);
+      const emCampo = SN.db.chamados.some(c => c.tecnico === t.nome && ['EM_CAMPO', 'EM_DESLOCAMENTO'].includes(c.status));
+      return `<tr><td>${SN.esc(SN.nomeExibicao(t.nome))}</td><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.frente || '—')}</td>
+        <td>${ind ? `<span class="badge erro">${MOTIVOS_DISPONIBILIDADE[ind.motivo] || SN.esc(ind.motivo)}</span><div class="small muted">${ind.inicio === ind.fim ? 'só hoje' : 'até ' + fmt(ind.fim)}</div>` : emCampo ? '<span class="badge verde">Em atividade</span>' : '<span class="badge">Disponível</span>'}</td>
+        <td class="num">${carga}</td>
+        ${pode ? `<td class="nowrap">${ind ? `<button type="button" class="btn sm" data-moliberar="${SN.esc(ind.id)}">Liberar</button>` : `<button type="button" class="btn sm" data-moind="${SN.esc(t.nome)}">Marcar indisponível</button>`}</td>` : ''}</tr>`; }).join('')}
+    </tbody></table></div>
+    ${SN.verPeriodosMO ? `<h4 style="margin:14px 0 6px">Períodos registrados (em vigor, futuros e dos últimos 30 dias)</h4>
+      <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Técnico</th><th>Empresa</th><th>Motivo</th><th>Início</th><th>Fim</th><th>Registrado por</th>${pode ? '<th></th>' : ''}</tr></thead><tbody>
+      ${periodos.map(x => `<tr><td>${SN.esc(x.tecnico)}</td><td>${SN.esc((SN.tecnico(x.tecnico) || {}).empresa || '')}</td><td>${MOTIVOS_DISPONIBILIDADE[x.motivo] || SN.esc(x.motivo)}${x.inicio <= hoje && x.fim >= hoje ? ' <span class="badge erro">hoje</span>' : x.inicio > hoje ? ' <span class="badge">futuro</span>' : ''}</td>
+        <td>${fmt(x.inicio)}</td><td>${fmt(x.fim)}</td><td>${SN.esc(x.por || '')}</td>${pode ? `<td><button type="button" class="btn sm perigo" data-model="${SN.esc(x.id)}">Excluir</button></td>` : ''}</tr>`).join('') || `<tr><td colspan="7" class="muted center">Nenhum período registrado.</td></tr>`}</tbody></table></div>` : ''}</div>`;
+};
+SN.ligarMaoDeObra = () => {
+  const hoje = SN.dataIsoLocal(new Date());
+  if (SN.$('#moPeriodos')) SN.$('#moPeriodos').onclick = () => { SN.verPeriodosMO = !SN.verPeriodosMO; SN.render(); };
+  if (SN.$('#moNovo')) SN.$('#moNovo').onclick = () => SN.novaDisp();
+  SN.$$('[data-moind]').forEach(b => b.onclick = () => SN.novaDisp(b.dataset.moind));
+  // Liberar: o período que começou hoje sai; o que começou antes termina ontem (o histórico fica).
+  SN.$$('[data-moliberar]').forEach(b => b.onclick = async () => {
+    const x = SN.db.disponibilidade.find(y => y.id === b.dataset.moliberar); if (!x) return;
+    const ontem = SN.dataIsoLocal(new Date(new Date(hoje + 'T12:00:00').getTime() - 864e5)), fmt = d => d.split('-').reverse().join('/');
+    if (!await SN.confirmar('Liberar ' + SN.nomeExibicao(x.tecnico), `${MOTIVOS_DISPONIBILIDADE[x.motivo] || x.motivo} de ${fmt(x.inicio)} a ${fmt(x.fim)}.<br>${x.inicio >= hoje ? 'O registro é apagado' : 'O período passa a terminar em ' + fmt(ontem)} e ele volta a receber despacho a partir de hoje.`, 'Liberar', 'prim')) return;
+    if (x.inicio >= hoje) SN.db.disponibilidade = SN.db.disponibilidade.filter(y => y.id !== x.id);
+    else x.fim = ontem;
+    SN.log('LIBERAR_DISPONIBILIDADE', x.tecnico, `${x.motivo} ${x.inicio}→${x.fim}`); SN.salvar(); SN.toast(SN.nomeExibicao(x.tecnico) + ' disponível.', 'ok'); SN.render();
+  });
+  SN.$$('[data-model]').forEach(b => b.onclick = async () => {
+    const x = SN.db.disponibilidade.find(y => y.id === b.dataset.model); if (!x) return;
+    if (!await SN.confirmar('Excluir período', `Excluir ${SN.esc(MOTIVOS_DISPONIBILIDADE[x.motivo] || x.motivo)} de ${SN.esc(x.tecnico)}?`, 'Excluir', 'perigo')) return;
+    SN.db.disponibilidade = SN.db.disponibilidade.filter(y => y.id !== x.id); SN.log('EXCLUIR_DISPONIBILIDADE', x.id, x.tecnico); SN.salvar(); SN.render();
+  });
+};
 
 SN.novaOS = (pre) => {
   pre = pre || {};

@@ -48,6 +48,17 @@ button,input,select,textarea{font:inherit;color:inherit}
 .sidebar .grupo{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--texto-3);margin:14px 12px 6px}
 .sidebar .ico{width:20px;text-align:center}
 .conteudo{flex:1;min-width:0;padding:22px 26px 60px;max-width:1500px}
+/* Menu recolhível: botão no topo; recolhido = só os ícones (nome no title) */
+.sidebar{transition:width .15s,flex-basis .15s}
+.sb-recolher{display:flex;align-items:center;gap:8px;width:100%;border:0;background:transparent;color:var(--texto-3);font-size:.78rem;cursor:pointer;padding:6px 12px;border-radius:8px;margin-bottom:4px;white-space:nowrap}
+.sb-recolher:hover{background:rgba(0,0,0,.05);color:var(--texto)}
+.menu-recolhido .sidebar{width:60px!important;flex:0 0 60px!important;padding-left:6px!important;padding-right:6px!important;overflow:hidden}
+.menu-recolhido .sidebar .rot{display:none}
+.menu-recolhido .sidebar a{justify-content:center;padding-left:0!important;padding-right:0!important;gap:0!important}
+.menu-recolhido .sidebar .ico{width:auto!important}
+.menu-recolhido .sidebar .grupo{height:1px;margin:10px 6px!important;background:var(--borda)}
+.menu-recolhido .sb-recolher{justify-content:center;padding:6px 0;font-size:1rem}
+.menu-recolhido .conteudo{max-width:none}
 .cab-pagina{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px}
 .cab-pagina p{margin:.2rem 0 0;color:var(--texto-3)}
 .acoes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -258,6 +269,11 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
   .sidebar.aberta{transform:none;box-shadow:4px 0 20px rgba(0,0,0,.15)}
   .btn-menu{display:inline-block}
   .conteudo{padding:16px}
+  .sb-recolher{display:none}
+  .menu-recolhido .sidebar{width:230px!important;flex:0 0 230px!important}
+  .menu-recolhido .sidebar .rot{display:inline}
+  .menu-recolhido .sidebar a{justify-content:flex-start;padding-left:12px!important;gap:10px!important}
+  .menu-recolhido .sidebar .grupo{height:auto;background:none}
   .g2,.g3,.g4{grid-template-columns:1fr}
   .login-box{grid-template-columns:1fr} .login-marca{padding:26px}
   .marca-sub{display:none}
@@ -693,6 +709,26 @@ html .grid > .kpi .val, html .kpis7 > .kpi .val, html .kpis-fin > .kpi .val{font
 .cp-rt-it input{margin-top:3px}
 .cp-num{width:26px;height:26px;border-radius:50%;background:#2563eb;color:#fff;font:700 12px/26px Arial;text-align:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
 .cp-num.erro{background:#dc2626}
+/* Mapa e rotas: painel ao lado (Do dia | Atrasados | Rotas) com o "Montar rota" sempre à vista */
+.cp-grade-mr{grid-template-columns:minmax(0,1fr) minmax(320px,420px)}
+.cp-lado-mr{display:flex;flex-direction:column;padding:10px 12px 0;overflow:hidden;height:calc(min(68vh,720px) + 90px);max-height:none}
+.cp-seg{width:100%;display:flex;margin-bottom:8px}
+.cp-seg button{flex:1 1 0;min-width:0;padding:7px 4px;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cp-lado-corpo{flex:1;overflow:auto;min-height:0;padding-right:2px}
+.cp-rodape{display:flex;gap:8px;align-items:center;justify-content:space-between;border-top:1px solid var(--borda);padding:8px 0 10px;background:inherit}
+.cp-it2{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--borda)}
+.cp-it2 > input{margin-top:3px;flex:0 0 auto}
+.cp-it2-sem{width:13px;flex:0 0 13px}
+.cp-ord{display:inline-block;min-width:20px;height:20px;padding:0 5px;margin-right:5px;border-radius:10px;background:#2563eb;color:#fff;font:700 11px/20px Arial;text-align:center;vertical-align:middle}
+.cp-ord.erro{background:#dc2626}
+.cp-bloco{padding:8px 0;border-bottom:2px solid var(--borda)}
+.cp-bloco .cp-it2{padding-left:6px}
+.cp-ol{margin:6px 0;padding-left:18px}
+.cp-ol li{margin-bottom:3px}
+.cp-ol-rota{list-style:none;padding:0}
+.cp-ol-rota li{display:flex;gap:6px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--borda)}
+.cp-ol-rota li.erro{background:#fef2f2}
+@media (max-width:1100px){.cp-grade-mr{grid-template-columns:minmax(0,1fr)}.cp-lado-mr{height:auto;max-height:none}.cp-lado-corpo{max-height:70vh}}
 /* "Ver como o técnico" (só leitura): faixa no topo e tela na largura de um celular */
 .vercomo-faixa{position:fixed;top:0;left:0;right:0;z-index:200;background:#7c2d12;color:#fff;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;padding:6px 12px;font-size:.85rem}
 .vercomo-faixa span{min-width:0;overflow-wrap:anywhere}

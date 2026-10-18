@@ -955,12 +955,15 @@ SN.MENU = [
   { tela: 'cadastros', rot: 'Cadastros e Acessos', ico: '👥', href: '#/cadastros' },
   { tela: 'auditoria', rot: 'Auditoria', ico: '🕑', href: '#/auditoria' }
 ];
+// Menu lateral recolhível (pedido de 18/10/2026: ganhar espaço). Recolhido, fica só o ícone (SVG do tema,
+// aparece em qualquer PC) e o nome ao passar o mouse; a escolha fica guardada no aparelho.
+SN.menuRecolhido = (() => { try { return localStorage.getItem('sigonet_v2_menu_recolhido') === '1'; } catch (e) { return false; } })();
 SN.casca = (ativo, html) => {
-  const u = SN.usuario();
+  const u = SN.usuario(), rec = SN.menuRecolhido;
   const itens = SN.MENU.filter(m => m.grupo || m.tela === 'inicio' || SN.temTela(m.tela));
   const menu = itens.map((m, i) => m.grupo
-    ? (itens[i + 1] && !itens[i + 1].grupo ? `<div class="grupo">${m.grupo}</div>` : '')
-    : `<a href="${m.href}" class="${(m.id || m.tela) === ativo ? 'ativo' : ''}"><span class="ico">${m.ico}</span>${m.rot}</a>`).join('');
+    ? (itens[i + 1] && !itens[i + 1].grupo ? `<div class="grupo"><span class="rot">${m.grupo}</span></div>` : '')
+    : `<a href="${m.href}" class="${(m.id || m.tela) === ativo ? 'ativo' : ''}" title="${SN.esc(m.rot)}"><span class="ico">${m.ico}</span><span class="rot">${m.rot}</span></a>`).join('');
   document.getElementById('app').innerHTML = `
     <header class="topbar">
       <button class="btn-menu" id="btnMenu">☰</button>
@@ -969,7 +972,14 @@ SN.casca = (ativo, html) => {
       ${SN.remoto ? '<span class="chip-user small" id="sync">● online</span>' : '<span class="chip-user small" title="Dados só neste navegador — configure o servidor em js/config.js">modo teste (local)</span>'}
       <div class="chip-user">Olá, ${SN.esc(u.nome.split(' ')[0])} · ${SN.esc(u.cargo)} <button id="btnSair">Sair</button></div>
     </header>
-    <div class="layout"><nav class="sidebar" id="sidebar">${menu}</nav><main class="conteudo">${html}</main></div>`;
+    <div class="layout ${rec ? 'menu-recolhido' : ''}"><nav class="sidebar" id="sidebar"><button type="button" class="sb-recolher" id="btnRecolher" title="${rec ? 'Abrir o menu' : 'Recolher o menu'}">${rec ? '»' : '« <span class="rot">Recolher menu</span>'}</button>${menu}</nav><main class="conteudo">${html}</main></div>`;
   SN.$('#btnSair').onclick = SN.sair;
+  // Recolher/abrir: só troca a classe (não redesenha a tela; o mapa aberto se ajusta ao novo espaço).
+  SN.$('#btnRecolher').onclick = () => {
+    SN.menuRecolhido = !SN.menuRecolhido; try { localStorage.setItem('sigonet_v2_menu_recolhido', SN.menuRecolhido ? '1' : '0'); } catch (e) { }
+    const lay = SN.$('.layout'), b = SN.$('#btnRecolher'); lay.classList.toggle('menu-recolhido', SN.menuRecolhido);
+    b.innerHTML = SN.menuRecolhido ? '»' : '« <span class="rot">Recolher menu</span>'; b.title = SN.menuRecolhido ? 'Abrir o menu' : 'Recolher o menu';
+    window.dispatchEvent(new Event('resize')); // mapas (Leaflet) recalculam o tamanho
+  };
   SN.$('#btnMenu').onclick = () => SN.$('#sidebar').classList.toggle('aberta');
 };
