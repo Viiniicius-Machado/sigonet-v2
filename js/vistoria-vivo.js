@@ -129,7 +129,7 @@
 
     // Aérea (pedido de 2026-10-15): um cartão por apontamento; cada item pedido na atividade (Rota percorrida,
     // Postes equipados, Cordoalha…) com o número e, logo embaixo, as fotos daquele item e quantas faltam.
-    const miniatura = f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`;
+    const miniatura = f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600">${SN.faseTag(f)}</div>`;
     const pintarAerea = () => {
       const srv = A.producao.slice().sort((a, b) => String(a.data).localeCompare(String(b.data)));
       const vivos = [];
@@ -175,7 +175,7 @@
         return `<tr><td class="nowrap">${a.data ? SN.vst.dia(a.data) : '—'}${a._tec ? `<div class="small muted">${esc(a._tec)} · ${haQuanto(a._at)}</div>` : ''}</td>
           <td>${a.tipo === 'final' ? 'Finalizado' : a.tipo === 'parcial' ? 'Parcial' : '<span class="muted">—</span>'}</td>
           <td class="small">${feito(a)}</td><td>${st}${a._vivo ? `<div class="small ${falta.length ? '' : 'muted'}">${falta.length ? 'falta ' + falta.length + ': ' + falta.slice(0, 3).map(esc).join(' · ') + (falta.length > 3 ? '…' : '') : '✓ pronto para enviar'}</div>` : ''}</td>
-          <td class="small">${esc(a.observacao || '')}<div class="vst-thumbs">${fotos.map(f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`).join('')}
+          <td class="small">${esc(a.observacao || '')}<div class="vst-thumbs">${fotos.map(f => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600">${SN.faseTag(f)}</div>`).join('')}
           ${a._fotosAparelho ? `<span class="small muted">⏳ ${a._fotosAparelho} foto(s) subindo</span>` : ''}</div></td></tr>`;
       };
       const p = VR.producaoProg(r, A.producao);
@@ -266,7 +266,7 @@
     if (!r.ok || !r.rota) { el.innerHTML = `<p class="muted small">${esc(r.erro || 'Não foi possível buscar as fotos.')}</p>`; return; }
     const rota = r.rota, prog = VR.ehProg(rota), aerea = rota.segmento === 'AEREA';
     const srv = {}; (r.fotos || []).forEach(f => { srv[f.id_foto] = f; });
-    const miniatura = (f, leg) => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" loading="lazy" data-leg="${esc(leg)}" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600"></div>`;
+    const miniatura = (f, leg) => `<div class="vst-thumb"><img src="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240" alt="" loading="lazy" data-leg="${esc(leg)}" data-ver="https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w1600">${SN.faseTag(f)}</div>`;
     const rotFoto = t => (L.foto(t) || {}).rot || t || 'Outras';
     // Fotos do envio, só as que já subiram, agrupadas pelo tipo (= item na aérea, campo na subterrânea).
     const grupos = (lista, titulo) => {

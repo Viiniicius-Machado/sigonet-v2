@@ -204,7 +204,7 @@
         const nome = `${String(feitos).padStart(2, '0')} - ${SN.vst.dia(x.data).replace(/\//g, '-')} ${x.tipo === 'final' ? 'final' : 'parcial'}${x.status_revisao === 'REJEITADA' ? ' (rejeitado)' : ''}`;
         const url = await SN.vst.pdfApontamentoProg(x, r, acumulado, locais);
         if (url) pasta.file(nomeArq(nome) + '.pdf', bytesDe(url));
-        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
+        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${SN.FASES[f.fase] ? SN.FASES[f.fase].rot + ' - ' : ''}${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
       }
       passo('Compactando…');
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
@@ -323,7 +323,7 @@
   const htmlFotos = a => (L.fotos_prog[seg] || []).map(c => {
     const fs = (a.fotos || []).filter(f => f.tipo_foto === c.tipo); if (!fs.length) return '';
     return `<div class="small" style="margin-top:6px"><b>${esc((L.foto(c.tipo) || {}).rot || c.tipo)}</b> (${fs.length})${fs.some(f => f.origem === 'galeria') ? ' <span class="badge">da galeria</span>' : ''}</div>
-      <div class="vst-thumbs">${fs.map(f => `<div class="vst-thumb"><img src="${fotoUrl(f, 240)}" alt="" data-ver="${esc(fotoUrl(f, 1600))}"></div>`).join('')}</div>`;
+      <div class="vst-thumbs">${fs.map(f => `<div class="vst-thumb"><img src="${fotoUrl(f, 240)}" alt="" data-ver="${esc(fotoUrl(f, 1600))}">${SN.faseTag(f)}</div>`).join('')}</div>`;
   }).join('');
   const htmlProducao = a => retirada()
     ? `<b>${SN.num(a.metros)} m</b> de cabo retirados · <b>${SN.num(a.ceo || 0)}</b> CEO/CTO`

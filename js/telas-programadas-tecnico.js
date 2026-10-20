@@ -173,7 +173,7 @@
   };
   const thumb = f => {
     const l = A.fotosLocais[f.id_foto], src = l && l.thumb ? l.thumb : (f.drive_id ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(f.drive_id)}&sz=w240` : '');
-    return `<div class="vst-thumb st-${l ? l.status : 'enviada'}">${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}<button type="button" class="del" data-del="${esc(f.id_foto)}">×</button></div>`;
+    return `<div class="vst-thumb st-${l ? l.status : 'enviada'}">${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}${SN.faseTag(f)}<button type="button" class="del" data-del="${esc(f.id_foto)}">×</button></div>`;
   };
   const contarFotos = () => {
     validar().fotos.itens.forEach(x => { const el = SN.$(`[data-cont="${x.tipo}"]`); if (!el) return;
@@ -183,12 +183,12 @@
     (L.fotos_prog[A.rota.segmento] || []).forEach(c => {
       const el = SN.$(`[data-fotos="${c.tipo}"]`); if (!el) return;
       el.innerHTML = (A.form.fotos || []).filter(f => f.tipo_foto === c.tipo).map(thumb).join('')
-        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.tipo}" hidden><span>＋<br>Tirar foto</span></label>`
-        + `<label class="vst-cap" title="Escolher fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.tipo}" data-galeria="1" hidden><span>＋<br>Galeria</span></label>`;
+        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.tipo}" data-fase hidden><span>＋<br>Tirar foto</span></label>`
+        + `<label class="vst-cap" title="Escolher fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.tipo}" data-galeria="1" data-fase hidden><span>＋<br>Galeria</span></label>`;
     });
     SN.$$('#aForm [data-del]').forEach(b => b.onclick = () => { A.form.fotos = A.form.fotos.filter(f => f.id_foto !== b.dataset.del); salvarRascunho(); pintarThumbs(); validarNaTela(); });
     SN.$$('#aForm [data-cam]').forEach(inp => inp.onchange = async ev => {
-      const files = [...(ev.target.files || [])], tipo = inp.dataset.cam, galeria = !!inp.dataset.galeria; if (!files.length) return;
+      const files = [...(ev.target.files || [])], tipo = inp.dataset.cam, galeria = !!inp.dataset.galeria, fase = SN.faseDe(inp), comFase = fase ? { fase } : {}; if (!files.length) return;
       const form = A.form, info = L.foto(tipo) || {}; fotosProcessando++;
       SN.toast(galeria ? `Processando ${files.length} foto(s) da galeria…` : 'Processando foto (GPS e endereço)…');
       try {
@@ -198,8 +198,8 @@
           if (A.form !== form || form._enviado) { SN.toast('O apontamento já foi enviado; a foto não entrou nele.', 'erro'); return; }
           const id_foto = 'F' + SN.uid() + SN.uid(), origem = img.origem || 'camera';
           const meta = { id_foto, id_apontamento: A.form.id_apontamento, id_rota: r.id_rota, tipo_foto: tipo, ref: '', lat: img.pos ? img.pos.lat : '', lng: img.pos ? img.pos.lng : '',
-            data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem };
-          A.form.fotos.push({ id_foto, tipo_foto: tipo, data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem });
+            data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem, ...comFase };
+          A.form.fotos.push({ id_foto, tipo_foto: tipo, data_hora_captura: img.agora, data_hora_arquivo: img.dataArquivo, endereco: img.endereco || '', origem, ...comFase });
           const reg = { id_foto, id_vistoria: '', id_rota: r.id_rota, meta, dataUrl: img.dataUrl, thumb: img.thumb, criadaEm: img.agora, status: 'pendente' };
           A.fotosLocais[id_foto] = reg; salvarRascunho(); await SN.VL.guardarFoto(reg); pintarThumbs(); validarNaTela();
         }

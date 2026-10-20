@@ -384,15 +384,15 @@
       const ico = { pendente: '⏳', enviando: '⟳', enviada: '✓', erro: '⚠' }[st] || '';
       return `<div class="vst-thumb ${f.flag_suspeita ? 'suspeita' : ''} st-${st}" title="${esc(l && l.erro ? l.erro : st)}">
         ${src ? `<img src="${src}" alt="" data-ver="${esc(f.drive_id ? 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(f.drive_id) + '&sz=w1600' : 'local:' + f.id_foto)}">` : '<div class="vazio">📷</div>'}<span class="st">${ico}</span>
-        ${f.flag_suspeita ? '<span class="sus">suspeita</span>' : ''}
+        ${f.flag_suspeita ? '<span class="sus">suspeita</span>' : ''}${SN.faseTag(f)}
         ${!ro ? `<button type="button" class="del" data-del-foto="${esc(f.id_foto)}" title="Remover">×</button>` : ''}</div>`;
     }).join('');
     const podeMais = !ro && (info.multipla || !lista.length);
     return `<div class="vst-foto" data-campo="${esc(campo)}">
       <div class="rot">📷 ${info.n}. ${esc(info.rot)}${obrig ? ' *' : ''}</div>
       <div class="vst-thumbs">${thumbs}
-        ${podeMais ? `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-foto="${tipo}" ${ref !== undefined ? `data-ref="${ref}"` : ''} hidden><span>＋<br>${lista.length ? 'Mais uma' : 'Tirar foto'}</span></label>` : ''}
-        ${!ro && !info.multipla && lista.length ? `<label class="vst-cap refazer"><input type="file" accept="image/*" capture="environment" data-foto="${tipo}" ${ref !== undefined ? `data-ref="${ref}"` : ''} hidden><span>↻<br>Refazer</span></label>` : ''}
+        ${podeMais ? `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-fase data-foto="${tipo}" ${ref !== undefined ? `data-ref="${ref}"` : ''} hidden><span>＋<br>${lista.length ? 'Mais uma' : 'Tirar foto'}</span></label>` : ''}
+        ${!ro && !info.multipla && lista.length ? `<label class="vst-cap refazer"><input type="file" accept="image/*" capture="environment" data-fase data-foto="${tipo}" ${ref !== undefined ? `data-ref="${ref}"` : ''} hidden><span>↻<br>Refazer</span></label>` : ''}
       </div></div>`;
   };
 
@@ -668,13 +668,13 @@
     });
     SN.$$('[data-foto]', el).forEach(inp => inp.onchange = async () => {
       const file = inp.files && inp.files[0]; if (!file) return;
-      await capturar(s, v, inp.dataset.foto, inp.dataset.ref !== undefined ? Number(inp.dataset.ref) : undefined, file);
+      await capturar(s, v, inp.dataset.foto, inp.dataset.ref !== undefined ? Number(inp.dataset.ref) : undefined, file, SN.faseDe(inp));
     });
     pintarEnvio(s, v);
   };
 
   // ─────────── Foto: captura → marca d'água → aparelho → fila ───────────
-  const capturar = async (s, v, tipo, ref, file) => {
+  const capturar = async (s, v, tipo, ref, file, fase) => {
     if (!v.id_cs && !v.cs_nova) return SN.toast('Escolha a CS antes das fotos.', 'erro');
     SN.toast('Processando foto…');
     try {
@@ -687,10 +687,10 @@
       const sus = VR.fotoSuspeita(dataArq && dataArq.toISOString(), agora, T.cfg.foto_tolerancia_min);
       const meta = { id_foto, id_vistoria: v.id_vistoria, id_trecho: tipo === 'anomalia' ? 'T_' + v.id_vistoria : '', id_rota: T.rota.id_rota,
         id_cs: v.cs_nova ? '' : v.id_cs, tipo_foto: tipo, ref: ref === undefined ? '' : ref, lat: pos ? pos.lat : '', lng: pos ? pos.lng : '',
-        data_hora_captura: agora, data_hora_arquivo: dataArq ? dataArq.toISOString() : '', fonte_data_arquivo: exif ? 'exif' : 'lastModified', endereco: img.endereco || '' };
+        data_hora_captura: agora, data_hora_arquivo: dataArq ? dataArq.toISOString() : '', fonte_data_arquivo: exif ? 'exif' : 'lastModified', endereco: img.endereco || '', ...(fase ? { fase } : {}) };
       if (!info.multipla) v.fotos = v.fotos.filter(f => !(f.tipo_foto === tipo && (ref === undefined || String(f.ref) === String(ref))));
       v.fotos.push({ id_foto, tipo_foto: tipo, ref: meta.ref, lat: meta.lat, lng: meta.lng, data_hora_captura: agora,
-        data_hora_arquivo: meta.data_hora_arquivo, flag_suspeita: sus.suspeita, diferenca_min: sus.diferenca_min });
+        data_hora_arquivo: meta.data_hora_arquivo, flag_suspeita: sus.suspeita, diferenca_min: sus.diferenca_min, ...(fase ? { fase } : {}) });
       const reg = { id_foto, id_vistoria: v.id_vistoria, id_rota: T.rota.id_rota, meta, dataUrl: img.dataUrl, thumb: img.thumb, criadaEm: agora, status: 'pendente' };
       T.fotosLocais[id_foto] = reg;
       await salvarSlot(s);

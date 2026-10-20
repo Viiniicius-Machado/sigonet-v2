@@ -177,9 +177,9 @@ SN.rota('/tec/os/:id', id => {
         <div class="campo"><label>Observações</label><textarea class="inp" id="rObs">${SN.esc(c.rfo.obs || '')}</textarea></div>
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
         <div class="grid g2" style="margin-top:8px;gap:8px">
-          <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço e lat/lng (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" hidden></label>
-          <label class="btn" title="Fotos da galeria ou PDF, sem marca d'água">🖼 Galeria / arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple hidden></label></div>
-        <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço e coordenadaso.</p>
+          <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço e lat/lng (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" data-fase hidden></label>
+          <label class="btn" title="Fotos da galeria ou PDF, sem marca d'água">🖼 Galeria / arquivo<input type="file" id="inFoto" accept="image/*,application/pdf" multiple data-fase hidden></label></div>
+        <p class="small muted" style="margin:4px 0 0">Pode adicionar quantas fotos precisar — elas ficam na ordem e vão no PDF do atendimento. "Tirar foto" já sai com data, hora, endereço e coordenadas.${SN.faseAtiva() ? ' Cada foto pergunta se é <b style="color:#c81e1e">ANTES</b> ou <b style="color:#168c3c">DEPOIS</b> do serviço.' : ''}</p>
         <button class="btn bloco" id="bSalvarRfo" style="margin-top:8px">Salvar relatório</button>
         <div class="small muted center" id="rfoAuto" style="margin-top:4px">O relatório é salvo automaticamente enquanto você escreve.</div>
       </div>` : ''}
@@ -342,8 +342,8 @@ SN.rota('/tec/os/:id', id => {
     }
     SN.$('#inFoto').onchange = async ev => {
       salvarRfo();
-      const arqs = [...ev.target.files]; ev.target.value = '';
-      for (const f of arqs) { try { (c.fotos = c.fotos || []).push(await SN.fotoDaGaleria(f, c.id)); pintarRfo(); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
+      const arqs = [...ev.target.files], fase = SN.faseDe(ev.target); ev.target.value = '';
+      for (const f of arqs) { try { const ax = await SN.fotoDaGaleria(f, c.id); if (fase && ax.tipo === 'imagem') ax.fase = fase; (c.fotos = c.fotos || []).push(ax); pintarRfo(); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
       SN.hist(c, 'Evidências anexadas', arqs.length + ' arquivo(s)'); SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); pintarRfo();
     };
     // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado), sem logo.
@@ -351,7 +351,9 @@ SN.rota('/tec/os/:id', id => {
       const f = ev.target.files && ev.target.files[0]; if (!f) return;
       salvarRfo(); SN.toast('Processando foto (GPS e endereço)…');
       try {
+        const fase = SN.faseDe(ev.target);
         const r = await SN.fotoDaCamera(f, `${c.id} · ${c.cliente || ''}${c.etiqueta ? ' · ' + c.etiqueta : ''}`, c.id);
+        if (fase) r.ax.fase = fase;
         (c.fotos = c.fotos || []).push(r.ax);
         SN.hist(c, 'Foto tirada no app', r.endereco || (r.semGps ? 'sem GPS' : r.ax.lat + ',' + r.ax.lng));
         SN.salvar(); SN.guardarLocal && SN.guardarLocal(true); pintarRfo();

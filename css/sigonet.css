@@ -304,6 +304,19 @@ table.tab{width:100%;border-collapse:collapse;font-size:.86rem}
 .vst-thumb.suspeita{border-color:#e29a1c}
 .vst-thumb .sus{position:absolute;left:0;right:0;bottom:0;background:#e29a1c;color:#fff;font-size:.66rem;text-align:center;font-weight:700}
 .vst-thumb .del{position:absolute;right:3px;top:3px;border:0;border-radius:50%;width:22px;height:22px;background:rgba(0,0,0,.6);color:#fff;cursor:pointer;line-height:1}
+/* ANTES (vermelho) / DEPOIS (verde) nas fotos da obra */
+.fase-tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:.66rem;font-weight:800;letter-spacing:.03em;color:#fff;line-height:1.4;vertical-align:middle}
+.fase-tag.antes{background:#c81e1e} .fase-tag.depois{background:#168c3c}
+.vst-thumb .fase-tag,.foto-fase .fase-tag{position:absolute;left:0;bottom:0;border-radius:0 6px 0 0}
+.vst-thumb.suspeita .fase-tag{bottom:15px}
+.foto-fase{position:relative;display:inline-block;border-radius:8px;overflow:hidden;line-height:0}
+.foto-fase img{display:block}
+figcaption .fase-tag{margin-right:4px}
+.fase-escolha{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fase-bt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:18px 8px;font-size:1.15rem;font-weight:800;color:#fff;border:0}
+.fase-bt small{font-size:.75rem;font-weight:500;opacity:.9}
+.fase-bt.antes{background:#c81e1e} .fase-bt.depois{background:#168c3c}
+.fase-bt:hover{filter:brightness(1.08)}
 .vst-cap{width:92px;height:92px;border-radius:9px;border:2px dashed var(--verde);display:flex;align-items:center;justify-content:center;
   text-align:center;font-size:.78rem;font-weight:700;color:var(--verde-escuro);cursor:pointer;background:var(--verde-bg)}
 .vst-cap span{line-height:1.3} .vst-cap.refazer{border-color:var(--borda-forte);background:#fff;color:var(--texto-2)}

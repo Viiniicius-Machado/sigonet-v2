@@ -26,7 +26,9 @@ SN.vst = SN.vst || {};
       if (col === 0 && doc._y + h + 10 > 285) { doc.addPage(); doc._y = 18; }
       const x = x0 + col * (larg + gap);
       try { doc.addImage(img.src, 'JPEG', x, doc._y, larg, h); } catch (e) { }
-      doc.setFontSize(7); doc.setTextColor(70); doc.text(doc.splitTextToSize(legenda(f), larg), x, doc._y + h + 3); doc.setFontSize(9.5); doc.setTextColor(29, 38, 20);
+      SN.pdfFase(doc, f, x, doc._y);
+      const fs = SN.FASES[f.fase];
+      doc.setFontSize(7); fs ? doc.setTextColor(...fs.rgb) : doc.setTextColor(70); doc.text(doc.splitTextToSize((fs ? fs.rot + ' · ' : '') + legenda(f), larg), x, doc._y + h + 3); doc.setFontSize(9.5); doc.setTextColor(29, 38, 20);
       alturaLinha = Math.max(alturaLinha, h + 8);
       col++;
       if (col === 3) { col = 0; doc._y += alturaLinha; alturaLinha = 0; }

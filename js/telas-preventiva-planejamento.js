@@ -412,7 +412,7 @@
         const url = aerea ? await SN.vst.pdfApontamento(x, r, VR.producaoRota(r, (d.producao || []).filter(p => p.id_rota === r.id_rota && p.status_revisao !== 'REJEITADA')).totais, locais)
           : await SN.vst.pdfFichaCs(x, r, locais);
         if (url) pasta.file(nomeArq(nome) + '.pdf', bytesDe(url));
-        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
+        if (op.fotos) fotos.forEach((f, i) => { if (b64[f.id_foto]) pasta.file(`fotos/${nomeArq(nome)}/${String(i + 1).padStart(2, '0')} - ${SN.FASES[f.fase] ? SN.FASES[f.fase].rot + ' - ' : ''}${nomeArq(f.tipo_foto)}.jpg`, bytesDe(b64[f.id_foto])); });
       }
       passo('Compactando…');
       const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });

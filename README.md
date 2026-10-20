@@ -97,6 +97,7 @@ Uma atividade só planejada não aparece na Esteira. Essas atividades também n�
 
 - **Botões:** toda ação que busca ou grava no servidor mostra que está carregando (o botão gira e fica travado, sem clique duplo). Se passar de ~1 s, aparece o foguete "Carregando…" no rodapé.
 - **Fotos:** toque na miniatura abre em tela cheia; outro toque amplia no ponto tocado; deslize ou use ‹ › para passar; "voltar" fecha.
+- **ANTES / DEPOIS (a partir de 21/10/2026):** em toda foto do técnico (RFO, Preventiva subterrânea e aérea, Melhoria e Retirada; a LPU não) o app pergunta se é **ANTES** ou **DEPOIS**, em quantidade livre. A marcação aparece na miniatura e no PDF: ANTES em vermelho, DEPOIS em verde.
 - **Sem sinal:** o técnico continua trabalhando; fotos, CS e apontamentos ficam no celular e sobem quando o sinal voltar. O acompanhamento ao vivo da gestão só atualiza quando há sinal.
 
 ## Estrutura

@@ -307,7 +307,8 @@ SN.pintarFotos = async (el, lista, opc) => {
     if (a.pendente && !d) { const b = document.createElement('span'); b.className = 'badge'; b.textContent = '⏳ ' + (a.tipo === 'imagem' ? 'foto' : a.nome) + ' subindo do celular'; comRemover(a, b); continue; }
     if (a.tipo === 'imagem' && d) {
       const img = document.createElement('img'); img.src = d; img.title = a.nome + (a.pendente ? ' (ainda subindo)' : ''); img.onclick = () => verDaLista(lista, a);
-      comRemover(a, img);
+      if (SN.FASES[a.fase]) { const w = document.createElement('span'); w.className = 'foto-fase'; w.innerHTML = SN.faseTag(a); w.prepend(img); comRemover(a, w); }
+      else comRemover(a, img);
     } else {
       const b = document.createElement('button'); b.className = 'btn sm'; b.textContent = '📄 ' + a.nome; b.onclick = () => SN.abrirAnexo(a.id); comRemover(a, b);
     }
@@ -340,6 +341,31 @@ SN.fotoDaCamera = async (file, legenda, pasta) => {
 };
 // Foto (ou PDF) da galeria, sem carimbo.
 SN.fotoDaGaleria = async (file, pasta) => SN.anexoLocal(await SN.comprimirImagem(file), file.name, file.type.startsWith('image/') ? 'imagem' : 'arquivo', pasta);
+
+// ═══════════════════════════ ANTES / DEPOIS nas fotos da obra ═══════════════════════════
+// Todo botão de foto do técnico marcado com data-fase (RFO, Preventiva, aérea, Melhoria,
+// Retirada — a LPU não) pergunta ANTES ou DEPOIS e só então abre a câmera/galeria.
+// A foto guarda { fase: 'antes' | 'depois' } e sai marcada na tela e no PDF
+// (ANTES em vermelho, DEPOIS em verde). Quantidade livre em cada uma.
+// Liberado para o técnico a partir de 21/10/2026 (antes disso o botão abre direto).
+SN.FASE_INICIO = Date.parse('2026-10-21T00:00:00-03:00');
+SN.faseAtiva = () => Date.now() >= SN.FASE_INICIO;
+SN.FASES = { antes: { rot: 'ANTES', rgb: [200, 30, 30] }, depois: { rot: 'DEPOIS', rgb: [22, 140, 60] } };
+SN.faseDe = inp => (SN.faseAtiva() && inp && SN.FASES[inp.dataset.faseEsc]) ? inp.dataset.faseEsc : '';
+SN.faseTag = f => f && SN.FASES[f.fase] ? `<span class="fase-tag ${f.fase}">${SN.FASES[f.fase].rot}</span>` : '';
+document.addEventListener('click', ev => {
+  const inp = ev.target;
+  if (!(inp instanceof HTMLInputElement) || inp.type !== 'file' || !('fase' in inp.dataset) || !SN.faseAtiva()) return;
+  if (inp._faseLiberada) { inp._faseLiberada = false; return; } // 2º clique: o da escolha, abre a câmera
+  ev.preventDefault();
+  const abrir = fase => { inp.dataset.faseEsc = fase; inp._faseLiberada = true; inp.click(); }; // síncrono: o celular só abre a câmera dentro do toque
+  SN.modal({ titulo: 'Esta foto é de antes ou depois?',
+    corpo: `<p class="small muted" style="margin:0 0 10px">Tire quantas fotos quiser de cada uma. No relatório, ANTES sai em vermelho e DEPOIS em verde.</p>
+      <div class="fase-escolha"><button type="button" class="btn fase-bt antes" data-f="antes">ANTES<small>como encontrei</small></button>
+      <button type="button" class="btn fase-bt depois" data-f="depois">DEPOIS<small>como deixei</small></button></div>`,
+    botoes: [{ rot: 'Cancelar', valor: null }],
+    aoAbrir: f => SN.$$('[data-f]', f).forEach(b => b.onclick = () => { f.remove(); abrir(b.dataset.f); }) });
+}, true);
 const COLS_COM_ANEXO = ['chamados', 'lpus', 'materiais', 'fibras'];
 const acharPendentes = (o, out, prof = 0) => {
   if (!o || typeof o !== 'object' || prof > 6) return;
@@ -380,6 +406,13 @@ SN.dadosDasFotos = async lista => {
   }
   return Promise.all(lista.map(async a => SN._fotoCache[a.id] || (SN.driveId(a.id) ? null : await SN.anexos.get(a.id).catch(() => null))));
 };
+// Faixa ANTES (vermelha) / DEPOIS (verde) no canto da foto do PDF.
+SN.pdfFase = (doc, f, x, y) => {
+  const fs = f && SN.FASES[f.fase]; if (!fs) return;
+  doc.setFillColor(...fs.rgb); doc.rect(x, y, 17, 5.5, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text(fs.rot, x + 8.5, y + 3.9, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(29, 38, 20);
+};
 // Grade de fotos no PDF (3 por linha), na ordem em que foram adicionadas, com legenda.
 SN.pdfFotos = async (doc, lista, titulo) => {
   const fotos = (lista || []).filter(a => a.tipo === 'imagem');
@@ -396,8 +429,9 @@ SN.pdfFotos = async (doc, lista, titulo) => {
     const x = x0 + col * (larg + gap);
     if (dim) { try { doc.addImage(src, /^data:image\/png/.test(src) ? 'PNG' : 'JPEG', x, doc._y, larg, h); } catch (e) { } }
     else { doc.setDrawColor(200); doc.rect(x, doc._y, larg, h); doc.setFontSize(7); doc.text('Foto no Drive (indisponível agora)', x + 2, doc._y + 8); }
-    const leg = [(n + 1) + '. ' + SN.dt(a.capturadaEm || a.ts), a.endereco || (a.lat ? a.lat + ',' + a.lng : '')].filter(Boolean).join(' · ');
-    doc.setFontSize(7); doc.setTextColor(70); const t = doc.splitTextToSize(leg, larg); doc.text(t, x, doc._y + h + 3);
+    SN.pdfFase(doc, a, x, doc._y);
+    const leg = [(n + 1) + '. ' + (SN.FASES[a.fase] ? SN.FASES[a.fase].rot + ' · ' : '') + SN.dt(a.capturadaEm || a.ts), a.endereco || (a.lat ? a.lat + ',' + a.lng : '')].filter(Boolean).join(' · ');
+    doc.setFontSize(7); SN.FASES[a.fase] ? doc.setTextColor(...SN.FASES[a.fase].rgb) : doc.setTextColor(70); const t = doc.splitTextToSize(leg, larg); doc.text(t, x, doc._y + h + 3);
     doc.setFontSize(9.5); doc.setTextColor(29, 38, 20);
     alturaLinha = Math.max(alturaLinha, h + 5 + 3 * t.length);
     if (++col === 3) { col = 0; doc._y += alturaLinha; alturaLinha = 0; }
