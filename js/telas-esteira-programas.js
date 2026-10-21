@@ -42,7 +42,7 @@
     const pend = meus.filter(a => a.status_revisao === 'AGUARDANDO_REVISAO').length, rej = meus.filter(a => a.status_revisao === 'REJEITADA').length;
     const aprov = meus.filter(a => a.status_revisao === 'APROVADA').length;
     const aprovada = r.status === 'CONCLUIDA' && (r.concluida_pela_gestao || (ch && FIM.includes(ch.status)) || tudoAprovado(r, dd));
-    const col = r.status === 'PLANEJADA' ? 0 : r.status === 'DESPACHADA' ? 1 : r.status === 'EM_CAMPO' ? 2 : r.status === 'CONCLUIDA' ? (aprovada ? 4 : 3) : -1;
+    const col = r.status === 'PLANEJADA' ? 0 : r.status === 'DESPACHADA' ? (ch && ['EM_CAMPO', 'DEVOLVIDO'].includes(ch.status) ? 2 : 1) : r.status === 'EM_CAMPO' ? 2 : r.status === 'CONCLUIDA' ? (aprovada ? 4 : 3) : -1;
     const quando = aprovada ? ((ch && (ch.tempos.conclusaoTecnica || ch.tempos.fechamento)) || meus.map(a => a.data_revisao || '').sort().pop() || r.concluida_em || '') : '';
     return { r, ch, pend, rej, aprov, total: meus.length, col, quando };
   };
@@ -82,6 +82,7 @@
         <div class="l1"><span class="mono">${esc(r.id_rota)}</span><span>${k === 'PREVENTIVA' ? (ehAerea(r) ? '🗼 AÉREA' : '🕳️ SUBTERRÂNEA') : esc(ch ? ch.id : '')}</span></div>
         <div class="cli">${esc(r.cidade || '—')}</div>
         ${descricao(k, r) ? `<div class="l3 small">${esc(descricao(k, r))}</div>` : ''}
+        ${SN.vst.etapaCampo(r)}
         <div class="l3">${r.tecnico ? `👷 ${esc(SN.nomeExibicao(r.tecnico))}` : `<span class="muted">${esc(r.prestador || 'sem técnico')}</span>`}</div>
         <div class="l3" style="margin-top:4px">${prazo ? `<span class="badge badge-quebra ${atrasada ? 'erro' : ''}">${r.data_limite ? 'até' : 'planejada'} ${dia(prazo)}</span>` : ''}
           ${x.pend ? `<span class="badge badge-quebra alerta">🔎 ${x.pend} aguardando revisão</span>` : ''}${x.rej ? ` <span class="badge badge-quebra erro">${x.rej} rejeitada(s)</span>` : ''}

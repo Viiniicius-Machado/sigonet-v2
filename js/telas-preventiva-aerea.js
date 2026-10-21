@@ -85,6 +85,7 @@
         ${r.kmz_url ? `<a class="btn prim bloco" style="margin-top:10px" href="${esc(r.kmz_url)}" target="_blank" rel="noopener">🗺️ Abrir rota (KMZ)</a>`
           : '<div class="aviso alerta small" style="margin-top:10px">Esta rota não tem KMZ. Peça o link ao planejamento.</div>'}
       </div>
+      ${SN.vst.htmlJornada(r)}
       ${(r.pontos_base || []).length ? `<div class="card" style="margin-bottom:10px"><details ${r.pontos_base.length <= 15 ? 'open' : ''}><summary><b>CEO e pontos no caminho (${r.pontos_base.length})</b></summary>
         <div class="small muted" style="margin:4px 0 6px">Pontos da base a até 30 m da rota. Confira cada um ao passar.</div>
         ${r.pontos_base.map(p => `<div class="item-lpu" style="grid-template-columns:1fr auto"><div><div class="d"><span class="badge ${p.tipo_ponto === 'CEO' ? 'info' : ''}">${esc(p.tipo_ponto)}</span> ${esc(p.id_cs)}</div>
@@ -97,6 +98,7 @@
       <div class="card" style="margin-bottom:10px"><h3>Apontamentos</h3><div id="aLista"></div></div>
       <div id="aForm"></div>`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => SN.navegar(el.dataset.os));
+    SN.vst.ligarJornada(r, pintar);
     pintarProgresso(); pintarLista(); pintarForm(); pintarMapa();
   };
 

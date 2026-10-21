@@ -84,12 +84,14 @@
         </tbody></table>
         ${(r.anexos || []).length ? `<div class="small muted" style="margin-top:8px">Anexos do planejamento (toque para abrir)</div><div class="fotos" id="aAnexosPlan"></div>` : ''}
       </div>
+      ${SN.vst.htmlJornada(r)}
       ${r.projeto && SN.prj ? SN.prj.htmlPacoteTecnico(r) : ''}
       ${A.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: o apontamento fica guardado e sobe quando a conexão voltar.</div>' : ''}
       ${SN.vst.cartaoOs ? SN.vst.cartaoOs(r, {}) : ''}
       <div class="card" style="margin-bottom:10px"><h3>Apontamentos</h3><div id="aLista"></div></div>
       <div id="aForm"></div>`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => SN.navegar(el.dataset.os));
+    SN.vst.ligarJornada(r, pintar);
     if (SN.$('#aAnexosPlan')) SN.pintarFotos(SN.$('#aAnexosPlan'), r.anexos);
     if (r.projeto && SN.prj) SN.prj.ligarPacoteTecnico(r);
     pintarLista(); pintarForm();

@@ -97,6 +97,55 @@ SN.pendenciasPos = c => {
 };
 
 // ═══════════════════════════ OS ═══════════════════════════
+// ─────────── Jornada até o local: Aceitar → Iniciar deslocamento (previsão) → Cheguei no local ───────────
+// Mesma jornada da OS comum e das rotas/atividades de Preventiva, Melhoria e Retirada (pedido de 21/10/2026:
+// antes a rota pulava direto para "em campo" no 1º envio e a gestão não via aceite/deslocamento/chegada).
+// Grava no chamado (tempos.aceite/deslocamento/chegada), que a gestão vê na Esteira, no Planejamento e no chamado.
+SN.ACOES_JORNADA = { ATRIBUIDO: '✅ Aceitar', ACEITO: '🚗 Iniciar deslocamento · ver previsão de chegada', EM_DESLOCAMENTO: '📍 Cheguei no local' };
+SN.htmlJornada = (c, oque) => {
+  const acao = SN.ACOES_JORNADA[c.status];
+  const desloc = c.status === 'EM_DESLOCAMENTO' ? (() => { const pi = SN.previsaoInfo(c), nav = SN.appNavegar();
+      return `<div class="card" style="margin-bottom:10px"><h3>🚗 A caminho</h3>
+        ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)${/aproximada/.test((c.deslocamento.destino || {}).fonte || '') ? ' · destino ' + SN.esc(c.deslocamento.destino.fonte) : ''}</div>`
+          : `<div class="aviso alerta small">${SN.esc(pi ? pi.txt : 'Previsão ainda não calculada.')}</div>`}
+        <div class="grid g2" style="gap:8px;margin-top:10px">
+          <a class="btn ${nav === 'maps' ? 'prim' : ''}" data-nav="maps" href="${SN.esc(SN.linkNavegar(c, 'maps'))}" target="_blank" rel="noopener">🗺 Google Maps</a>
+          <a class="btn ${nav === 'waze' ? 'prim' : ''}" data-nav="waze" href="${SN.esc(SN.linkNavegar(c, 'waze'))}" target="_blank" rel="noopener">🚙 Waze</a></div>
+        <button class="btn bloco sm" id="bRecalc" style="margin-top:8px">↻ Recalcular previsão daqui</button></div>`; })() : '';
+  return desloc + (acao ? `<button class="btn prim lg bloco" id="bAcao" style="margin-bottom:10px">${acao}${c.status === 'ATRIBUIDO' ? ' ' + SN.esc(oque || 'OS') : ''}</button>` : '');
+};
+SN.ligarJornada = (c, o = {}) => { // o.aoChegar: rota/atividade entra em campo; o.repintar: redesenho da tela que chamou
+  const bA = SN.$('#bAcao');
+  if (bA) bA.onclick = async () => {
+    const agora = SN.agora();
+    if (c.status === 'ATRIBUIDO') { c.status = 'ACEITO'; c.tempos.aceite = agora; SN.hist(c, 'Aceite', c.tecnico); }
+    else if (c.status === 'ACEITO') {
+      c.status = 'EM_DESLOCAMENTO'; c.tempos.deslocamento = agora; SN.salvar();
+      bA.disabled = true; bA.textContent = 'Calculando a previsão de chegada…';
+      const d = await SN.calcularPrevisao(c);
+      SN.hist(c, 'Deslocamento', d.previsaoChegada ? `previsão ${SN.hora(d.previsaoChegada)} · ${SN.num(d.distancia_m / 1000, 1)} km` : 'sem previsão: ' + d.erro);
+      if (!d.previsaoChegada) SN.toast('Deslocamento iniciado, mas sem previsão: ' + d.erro + '.', 'erro');
+    }
+    else if (c.status === 'EM_DESLOCAMENTO') {
+      bA.disabled = true; bA.textContent = 'Obtendo GPS…';
+      c.gpsChegada = await new Promise(res => {
+        if (!navigator.geolocation) return res('');
+        navigator.geolocation.getCurrentPosition(pos => res(pos.coords.latitude.toFixed(6) + ',' + pos.coords.longitude.toFixed(6)), () => res(''), { timeout: 8000, enableHighAccuracy: true });
+      });
+      c.status = 'EM_CAMPO'; c.tempos.chegada = SN.agora(); SN.hist(c, 'Chegada em campo', c.gpsChegada ? 'GPS ' + c.gpsChegada : 'GPS indisponível');
+      if (!c.preventiva) SN.int.ellevenStatus(c, 'Em execução');
+      if (!c.gpsChegada) SN.toast('Não foi possível obter o GPS — chegada registrada sem coordenada.');
+      if (o.aoChegar) await o.aoChegar();
+    }
+    SN.log('TECNICO_' + c.status, c.id, ''); SN.salvar(); (o.repintar || SN.render)();
+  };
+  SN.$$('[data-nav]').forEach(a => a.addEventListener('click', () => SN.definirAppNavegar(a.dataset.nav)));
+  const bRc = SN.$('#bRecalc');
+  if (bRc) bRc.onclick = async () => { bRc.disabled = true; bRc.textContent = 'Calculando…'; const d = await SN.calcularPrevisao(c);
+    if (!d.previsaoChegada) SN.toast('Sem previsão: ' + d.erro + '.', 'erro');
+    SN.hist(c, 'Previsão recalculada', d.previsaoChegada ? SN.hora(d.previsaoChegada) : d.erro); SN.salvar(); (o.repintar || SN.render)(); };
+};
+
 SN.rota('/tec/os/:id', id => {
   const c = SN.db.chamados.find(x => x.id === id);
   const papel = c && SN.papelNo(c);
@@ -111,9 +160,6 @@ SN.rota('/tec/os/:id', id => {
   const lpu = mod.lpus.find(l => l.papel === papel), mat = mod.materiais.find(l => l.papel === papel), fib = mod.fibras[0];
   const libera = SN.faseModulos(c);
   const temFibra = TIPOS_COM_FIBRA.includes(c.tipo);
-  const acao = {
-    ATRIBUIDO: ['aceitar', '✅ Aceitar OS'], ACEITO: ['deslocar', '🚗 Iniciar deslocamento · ver previsão de chegada'], EM_DESLOCAMENTO: ['chegar', '📍 Cheguei no local']
-  }[prev ? '' : c.status];
   SN.cascaTec('fila', `
     <a href="#/tec" class="small">← Minha fila</a>
     <div class="tec-os ${p.estourado ? 'estourado' : ''}" style="margin-top:8px">
@@ -136,14 +182,7 @@ SN.rota('/tec/os/:id', id => {
     ${prev ? `<div class="aviso info" style="margin-bottom:10px">🧭 Esta OS é a ${SN.vst.progDe(prev) ? 'atividade' : 'rota'} de <b>${SN.esc(SN.vst.nomePrev(prev))} ${SN.esc(prev.id_rota)}</b>. O trabalho é apontado ${SN.vst.progDe(prev) ? 'na atividade' : 'na rota'}; a OS conclui sozinha quando tudo for aprovado na revisão.
       ${prev.lpu_sugerida ? `<br>Aprovado: ${SN.vst.resumoAprovado(prev)}.` : ''}
       <button class="btn prim bloco" style="margin-top:8px" onclick="SN.navegar('${SN.vst.hrefPrev(prev)}')">${SN.vst.progDe(prev) ? 'Abrir atividade' : 'Abrir rota'} ${SN.esc(prev.id_rota)}</button></div>` : ''}
-    ${titular && c.status === 'EM_DESLOCAMENTO' ? (() => { const pi = SN.previsaoInfo(c), nav = SN.appNavegar();
-      return `<div class="card" style="margin-bottom:10px"><h3>🚗 A caminho</h3>
-        ${pi && !pi.semPrevisao ? `<div style="font-size:1.6rem;font-weight:700">${SN.esc(pi.txt)}</div><div class="small muted">${SN.esc(pi.sub || '')} · calculado ${SN.hora(c.deslocamento.calculadoEm)} pelo OpenStreetMap (sem trânsito)${/aproximada/.test((c.deslocamento.destino || {}).fonte || '') ? ' · destino ' + SN.esc(c.deslocamento.destino.fonte) : ''}</div>`
-          : `<div class="aviso alerta small">${SN.esc(pi ? pi.txt : 'Previsão ainda não calculada.')}</div>`}
-        <div class="grid g2" style="gap:8px;margin-top:10px">
-          <a class="btn ${nav === 'maps' ? 'prim' : ''}" data-nav="maps" href="${SN.esc(SN.linkNavegar(c, 'maps'))}" target="_blank" rel="noopener">🗺 Google Maps</a>
-          <a class="btn ${nav === 'waze' ? 'prim' : ''}" data-nav="waze" href="${SN.esc(SN.linkNavegar(c, 'waze'))}" target="_blank" rel="noopener">🚙 Waze</a></div>
-        <button class="btn bloco sm" id="bRecalc" style="margin-top:8px">↻ Recalcular previsão daqui</button></div>`; })() : ''}
+    ${titular ? SN.htmlJornada(c) : ''}
     ${titular && emCampo && SN.exigeValidacao(c) ? (() => { const v = c.validacao || {}, quem = SN.nomeValidador(c);
       return `<div class="card" style="margin-bottom:10px;border-left:4px solid ${v.status === 'VALIDADA' ? 'var(--ok)' : v.status === 'FALHA' ? 'var(--erro)' : 'var(--alerta,#d97706)'}"><h3>🛎 Validação ${quem}</h3>
         ${v.status === 'VALIDADA' ? `<div class="aviso ok small">✔ Validado por ${SN.esc(v.respondidaPor || quem)} às ${SN.hora(v.respondidaEm)}. Termine o relatório e conclua.</div>`
@@ -151,7 +190,6 @@ SN.rota('/tec/os/:id', id => {
         : `${v.status === 'FALHA' ? `<div class="aviso erro small" style="margin-bottom:8px">${quem}: ainda com falha — ${SN.esc(v.motivo || '')}</div>` : '<p class="small muted">Terminou o serviço? Peça a validação: o relógio de tempo em campo para aqui. Você pode preencher o relatório enquanto espera.</p>'}
           <input class="inp" id="vObs" placeholder="Observação para o ${quem} (opcional)" style="margin-bottom:8px">
           <button class="btn prim lg bloco" id="bPedirVal">🛎 ${v.status === 'FALHA' ? 'Pedir validação de novo' : 'Pedir validação ao ' + quem}</button>`}</div>`; })() : ''}
-    ${titular && acao ? `<button class="btn prim lg bloco" id="bAcao">${acao[1]}</button>` : ''}
     ${c.cpfl && window.CPFL ? (() => { const r = c.cpfl.resultado, pode = titular && emCampo;
       return `<div class="card" style="margin-top:12px;border-left:4px solid ${r ? 'var(--ok)' : 'var(--alerta,#d97706)'}"><h3>⚡ Acompanhamento CPFL · resultado${pode ? ' *' : ''}</h3>
         ${pode ? '<p class="small muted">Escolha primeiro o que aconteceu no local. Improdutiva: não precisa preencher mais nada, só concluir.</p>' : ''}
@@ -235,34 +273,7 @@ SN.rota('/tec/os/:id', id => {
     });
   };
   pintarCeoNovas();
-  const bA = SN.$('#bAcao');
-  if (bA) bA.onclick = async () => {
-    const agora = SN.agora();
-    if (c.status === 'ATRIBUIDO') { c.status = 'ACEITO'; c.tempos.aceite = agora; SN.hist(c, 'Aceite', c.tecnico); }
-    else if (c.status === 'ACEITO') {
-      c.status = 'EM_DESLOCAMENTO'; c.tempos.deslocamento = agora; SN.salvar();
-      bA.disabled = true; bA.textContent = 'Calculando a previsão de chegada…';
-      const d = await SN.calcularPrevisao(c);
-      SN.hist(c, 'Deslocamento', d.previsaoChegada ? `previsão ${SN.hora(d.previsaoChegada)} · ${SN.num(d.distancia_m / 1000, 1)} km` : 'sem previsão: ' + d.erro);
-      if (!d.previsaoChegada) SN.toast('Deslocamento iniciado, mas sem previsão: ' + d.erro + '.', 'erro');
-    }
-    else if (c.status === 'EM_DESLOCAMENTO') {
-      bA.disabled = true; bA.textContent = 'Obtendo GPS…';
-      c.gpsChegada = await new Promise(res => {
-        if (!navigator.geolocation) return res('');
-        navigator.geolocation.getCurrentPosition(pos => res(pos.coords.latitude.toFixed(6) + ',' + pos.coords.longitude.toFixed(6)), () => res(''), { timeout: 8000, enableHighAccuracy: true });
-      });
-      c.status = 'EM_CAMPO'; c.tempos.chegada = SN.agora(); SN.hist(c, 'Chegada em campo', c.gpsChegada ? 'GPS ' + c.gpsChegada : 'GPS indisponível');
-      SN.int.ellevenStatus(c, 'Em execução');
-      if (!c.gpsChegada) SN.toast('Não foi possível obter o GPS — chegada registrada sem coordenada.');
-    }
-    SN.log('TECNICO_' + c.status, c.id, ''); SN.salvar(); SN.render();
-  };
-  SN.$$('[data-nav]').forEach(a => a.addEventListener('click', () => SN.definirAppNavegar(a.dataset.nav)));
-  const bRc = SN.$('#bRecalc');
-  if (bRc) bRc.onclick = async () => { bRc.disabled = true; bRc.textContent = 'Calculando…'; const d = await SN.calcularPrevisao(c);
-    if (!d.previsaoChegada) SN.toast('Sem previsão: ' + d.erro + '.', 'erro');
-    SN.hist(c, 'Previsão recalculada', d.previsaoChegada ? SN.hora(d.previsaoChegada) : d.erro); SN.salvar(); SN.render(); };
+  SN.ligarJornada(c);
   const bPv = SN.$('#bPedirVal');
   if (bPv) bPv.onclick = () => { if (SN.$('#rCausa')) salvarRfo(); SN.pedirValidacao(c, SN.$('#vObs').value.trim()); SN.log('PEDIR_VALIDACAO', c.id, '');
     SN.salvar(); SN.toast('Pedido enviado ao ' + SN.nomeValidador(c) + '. Preencha o relatório enquanto aguarda.', 'ok'); SN.render(); };

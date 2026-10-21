@@ -163,6 +163,40 @@ SN.vst.dia = v => /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? String(v).split(
 // ─────────── Status (rótulos e cores vêm das listas) ───────────
 SN.vst.badgeRota = s => SN.badge(VR_LISTAS.status_rota, s);
 SN.vst.badgeVistoria = s => SN.badge(VR_LISTAS.status_vistoria, s);
+
+// ─────────── Jornada do técnico na rota/atividade (pedido de 21/10/2026) ───────────
+// Aceitar → Iniciar deslocamento (previsão de chegada) → Cheguei no local, como na OS comum
+// (SN.htmlJornada / SN.ligarJornada em telas-tecnico.js). Grava no chamado da rota; "Cheguei"
+// também põe a rota em campo. Se o técnico pular, o 1º envio continua preenchendo tudo (servidor).
+SN.vst.chamadoTitular = r => { const c = r && r.id_chamado && (SN.db.chamados || []).find(x => x.id === r.id_chamado); return c && SN.papelNo && SN.papelNo(c) === 'titular' ? c : null; };
+SN.vst.emJornada = r => { const c = SN.vst.chamadoTitular(r); return !!c && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) && ['ATRIBUIDO', 'ACEITO', 'EM_DESLOCAMENTO'].includes(c.status); };
+SN.vst.htmlJornada = r => {
+  if (!SN.vst.emJornada(r) || !SN.htmlJornada) return '';
+  const c = SN.vst.chamadoTitular(r), passos = [['aceite', 'Aceite'], ['deslocamento', 'Deslocamento'], ['chegada', 'No local']];
+  return `<div class="card vst-jornada" style="margin-bottom:10px"><h3>Chegada ao local</h3>
+    <div class="chips" style="margin:4px 0 8px">${passos.map(([k, rot]) => `<span class="chip ${c.tempos[k] ? 'sel' : ''}">${c.tempos[k] ? '✔ ' + rot + ' ' + SN.hora(c.tempos[k]) : rot}</span>`).join('')}</div>
+    <p class="small muted" style="margin:0 0 8px">Marque cada etapa: a gestão acompanha na hora (aceite, a caminho com a previsão de chegada e quando chegou).</p>
+    ${SN.htmlJornada(c, VR.ehProg(r) ? 'atividade' : 'rota')}</div>`;
+};
+SN.vst.ligarJornada = (r, repintar) => {
+  const c = SN.vst.chamadoTitular(r); if (!c || !SN.ligarJornada || !SN.vst.emJornada(r)) return;
+  SN.ligarJornada(c, { repintar, aoChegar: async () => {
+    if (r.status !== 'DESPACHADA') return;
+    try { const x = await SN.vst.exec('VST_ROTA_STATUS', { id_rota: r.id_rota, para: 'EM_CAMPO' }); if (x && x.rota) Object.assign(r, x.rota); }
+    catch (e) { /* sem sinal: a rota entra em campo no 1º envio */ }
+  } });
+};
+// Etapa em campo para a gestão (Planejamento, Esteira): o que o chamado da rota já registrou.
+SN.vst.etapaCampo = r => {
+  if (!r || !['DESPACHADA', 'EM_CAMPO'].includes(r.status) || !r.id_chamado) return '';
+  const c = (SN.db.chamados || []).find(x => x.id === r.id_chamado); if (!c) return '';
+  const t = c.tempos || {}, pi = c.status === 'EM_DESLOCAMENTO' && SN.previsaoInfo ? SN.previsaoInfo(c) : null;
+  const b = c.status === 'ATRIBUIDO' ? ['alerta', 'Aguardando aceite']
+    : c.status === 'ACEITO' ? ['info', 'Aceita ' + SN.hora(t.aceite)]
+    : c.status === 'EM_DESLOCAMENTO' ? ['info', '🚗 A caminho desde ' + SN.hora(t.deslocamento) + (pi && !pi.semPrevisao ? ' · ' + pi.txt : '')]
+    : ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) && t.chegada ? ['verde', '📍 No local desde ' + SN.hora(t.chegada)] : null;
+  return b ? `<div style="margin-top:4px"><span class="badge badge-quebra ${b[0]}">${SN.esc(b[1])}</span></div>` : '';
+};
 SN.vst.STATUS_LOCAL = {
   rascunho: { rot: 'Rascunho', cls: '' }, fila: { rot: 'Enviando…', cls: 'info' }, enviando: { rot: 'Enviando…', cls: 'info' },
   enviada: { rot: 'Enviada', cls: 'ok' }, erro: { rot: 'Erro no envio', cls: 'erro' }

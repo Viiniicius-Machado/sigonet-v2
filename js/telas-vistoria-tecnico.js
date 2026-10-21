@@ -224,6 +224,7 @@
           ${r.observacao ? `<tr><td class="muted">Obs.</td><td>${esc(r.observacao)}</td></tr>` : ''}
         </tbody></table>
       </div>
+      ${SN.vst.htmlJornada(r)}
       ${htmlOs(r, T.slots)}
       ${T.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: trabalhando com os dados salvos no aparelho. Tudo fica guardado e é enviado quando a conexão voltar.</div>' : ''}
       <div id="vstFaixa"></div>
@@ -232,7 +233,7 @@
         <button class="btn sm" id="vQtdMenos">−</button><b id="vQtd">${T.qtd}</b><button class="btn sm" id="vQtdMais">+</button></div>
       <div class="vst-abas" id="vstAbas"></div>
       <div id="vstCs"></div>
-      ${r.status === 'DESPACHADA' ? '<button class="btn bloco" id="vIniciar" style="margin-top:12px">▶ Iniciar rota</button>' : ''}
+      ${r.status === 'DESPACHADA' && !SN.vst.emJornada(r) ? '<button class="btn bloco" id="vIniciar" style="margin-top:12px">▶ Iniciar rota</button>' : ''}
       ${r.status === 'EM_CAMPO' ? '<button class="btn ok lg bloco" id="vConcluir" style="margin-top:12px">✔ Concluir rota</button><p class="small muted center">Só conclui com todas as CS planejadas enviadas e nenhuma rejeitada.</p>' : ''}`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => { flush(); SN.navegar(el.dataset.os); });
     if (SN.conversa && r.id_chamado) SN.conversa.flutuante(r.id_chamado);
@@ -240,6 +241,7 @@
     SN.$('#vQtdMais').onclick = () => mudarQtd(1);
     SN.$('#vQtdMenos').onclick = () => mudarQtd(-1);
     if (SN.$('#vIniciar')) SN.$('#vIniciar').onclick = () => mudarStatusRota('EM_CAMPO');
+    SN.vst.ligarJornada(r, pintarRota);
     if (SN.$('#vConcluir')) SN.$('#vConcluir').onclick = () => {
       flush();
       const abertas = Object.values(T.slots).filter(s => s.servidor && statusServidor(s) && editavel(s)).map(s => 'CS ' + s.ordem);
