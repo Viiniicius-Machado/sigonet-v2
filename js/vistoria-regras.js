@@ -1116,7 +1116,7 @@ var VR = (function () {
       var r = rm[a.id_rota] || {};
       var soma = function (x) { R.CAMPOS_PRODUCAO.forEach(function (k) { x[k] += n0(a[k]); }); x.sobra += n0(a.caixas); x.rotas[a.id_rota] = true; };
       soma(tot); if (a.status_revisao === 'APROVADA') soma(aprovado);
-      [['equipe', r.prestador], ['regiao', r.regiao], ['motivo', r.motivo], ['solicitante', r.solicitante], ['cidade', r.cidade]].forEach(function (p) {
+      [['equipe', r.prestador], ['regiao', r.regiao], ['motivo', r.motivo], ['solicitante', r.solicitante], ['cidade', R.normCidade(r.cidade)]].forEach(function (p) {
         var k = p[1] || '(sem ' + p[0] + ')'; soma(por[p[0]][k] = por[p[0]][k] || novo());
       });
       if (n0(a.metros) > 0) dias[diaDe(a.data)] = true;

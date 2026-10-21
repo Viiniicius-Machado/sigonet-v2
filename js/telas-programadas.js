@@ -228,7 +228,7 @@
     SN.$('#pCorpo').innerHTML = `<div class="card">
       <div class="aviso info small" style="margin-bottom:10px">Conta contábil do chamado: <b>${esc(SN.contaTxt(P().conta))}</b> · classificação ${esc([VR.CHAMADO_PROG[seg].tipo, VR.CHAMADO_PROG[seg].cat1, VR.CHAMADO_PROG[seg].cat2].join(' › '))} · prazo pela data (atividade planejada).</div>
       <div class="linha-form">
-        <div class="campo"><label>Cidade *</label><input class="inp" data-f="cidade" list="lCid" value="${esc(f.cidade)}"><datalist id="lCid">${cidades.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+        <div class="campo"><label>Cidade *</label><input class="inp" data-f="cidade" data-cidade list="lCid" value="${esc(f.cidade)}"><datalist id="lCid">${cidades.map(x => `<option value="${esc(x)}">`).join('')}</datalist>
           ${f.cidade ? `<div class="small muted">Região: <b>${esc(VR.regiaoDaCidade(f.cidade, c))}</b></div>` : '<div class="small muted">A região sai da cidade (Preventiva → Configurações).</div>'}</div>
         ${retirada() ? '' : `<div class="campo"><label>POP *</label><input class="inp" data-f="pop" list="lPop" value="${esc(f.pop)}" placeholder="ex.: POP CENTRO"><datalist id="lPop">${conhecidos('pop').map(x => `<option value="${esc(x)}">`).join('')}</datalist></div>`}
         <div class="campo" style="flex:2"><label>Endereço / local *</label><input class="inp" data-f="endereco" value="${esc(f.endereco)}" placeholder="rua, número, referência ou trecho"></div>
@@ -416,7 +416,7 @@
       <div class="card card-filtros">${SN.htmlPeriodo(e.dash)}</div>
       <div class="kpis-fin" style="margin:12px 0">
         ${retirada() ? kpi('Cabo retirado', SN.num(Math.round(tot.metros)) + ' m', 'aprovado na revisão') + kpi('CEO/CTO retiradas', SN.num(tot.ceo), 'aprovadas na revisão')
-          : kpi('Cabo lançado', SN.num(Math.round(tot.cabo)) + ' m', 'itens de lançamento aprovados') + kpi('POPs atendidos', SN.num(grupos(r => r.pop).filter(x => x.k !== '(sem)').length), SN.num(grupos(r => r.cidade).length) + ' cidade(s)')}
+          : kpi('Cabo lançado', SN.num(Math.round(tot.cabo)) + ' m', 'itens de lançamento aprovados') + kpi('POPs atendidos', SN.num(grupos(r => r.pop).filter(x => x.k !== '(sem)').length), SN.num(grupos(r => SN.normCidade(r.cidade)).length) + ' cidade(s)')}
         ${kpi('Atividades com produção', SN.num(tot.ativ.size), `${SN.num(tot.concl.size)} concluída(s)${emRev ? ' · ' + emRev + ' apontamento(s) em revisão' : ''}`)}
         ${kpi('Valor atingido na conta', SN.brl(lanc), `aprovado ${SN.brl(aprovado)}${budget ? ` · budget ${SN.brl(budget)}${pctMes != null ? ' (' + SN.num(pctMes) + '%)' : ''}` : ''}`)}
       </div>
@@ -432,14 +432,14 @@
           grupos(r => r.regiao).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.cidades].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.metros))}</td><td class="num">${SN.num(o.ceo)}</td>${valorTd(o)}</tr>`))}</div>
       <div class="card"><h3>Por cidade</h3>
         ${tabela([['Cidade'], ['Região'], ['Atividades', 1], ['Cabo retirado (m)', 1], ['CEO/CTO', 1], ['Valor LPU', 1], ['Estimado', 1]],
-          grupos(r => r.cidade).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.metros))}</td><td class="num">${SN.num(o.ceo)}</td>${valorTd(o)}</tr>`))}</div>`
+          grupos(r => SN.normCidade(r.cidade)).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.metros))}</td><td class="num">${SN.num(o.ceo)}</td>${valorTd(o)}</tr>`))}</div>`
       : `
       <div class="card" style="margin-bottom:12px"><h3>Por POP</h3>
         ${tabela([['POP'], ['Cidade'], ['Região'], ['Atividades', 1], ['Cabo lançado (m)', 1], ['Valor LPU', 1], ['Estimado', 1]],
           grupos(r => r.pop).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.cidades].filter(Boolean).map(esc).join(', ')}</td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.cabo))}</td>${valorTd(o)}</tr>`))}</div>
       <div class="card" style="margin-bottom:12px"><h3>Por cidade</h3>
         ${tabela([['Cidade'], ['Região'], ['POPs'], ['Atividades', 1], ['Cabo lançado (m)', 1], ['Valor LPU', 1], ['Estimado', 1]],
-          grupos(r => r.cidade).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="small">${esc([...new Set(aprov.filter(a => rm[a.id_rota].cidade === o.k).map(a => rm[a.id_rota].pop))].filter(Boolean).join(', '))}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.cabo))}</td>${valorTd(o)}</tr>`))}</div>
+          grupos(r => SN.normCidade(r.cidade)).map(o => `<tr><td><b>${esc(o.k)}</b></td><td class="small">${[...o.regioes].filter(Boolean).map(esc).join(', ')}</td><td class="small">${esc([...new Set(aprov.filter(a => SN.normCidade(rm[a.id_rota].cidade) === o.k).map(a => rm[a.id_rota].pop))].filter(Boolean).join(', '))}</td><td class="num">${o.ativ.size}</td><td class="num">${SN.num(Math.round(o.cabo))}</td>${valorTd(o)}</tr>`))}</div>
       <div class="card"><h3>Serviços aprovados</h3>
         ${tabela([['Item'], ['Serviço'], ['Quantidade', 1], ['Estimado', 1]],
           Object.entries(tot.itens).sort((a, b) => b[1] - a[1]).map(([cod, q]) => { const it = SN.itemLpu(cod) || {};

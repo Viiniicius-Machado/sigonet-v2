@@ -191,7 +191,7 @@ SN.rota('/portal', () => {
       ${f.tipo ? `<div class="card"><h3>Por categoria · ${SN.esc(f.tipo)}</h3>${SN.barras(SN.contar(abertos, c => c.cat2 || 'Sem classificação').slice(0, 10))}</div>`
         : `<div class="card"><h3>Por segmento</h3>${SN.barras(SN.contar(abertos, c => c.tipo || 'Sem classificação'))}</div>`}
       <div class="card"><h3>Ocorrências mais comuns</h3>${SN.barras(SN.contar(concl, c => c.cat3 || c.cat2).slice(0, 10))}</div>
-      <div class="card"><h3>Cidades com mais chamados</h3>${SN.barras(SN.contar(abertos, c => (c.cidade || '').toUpperCase()).slice(0, 10))}</div>
+      <div class="card"><h3>Cidades com mais chamados</h3>${SN.barras(SN.contar(abertos, c => SN.normCidade(c.cidade)).slice(0, 10))}</div>
     </div>
     <div class="card-tit" style="margin-top:22px"><h2 style="margin:0">Financeiro da LPU · ${SN.mesNome(f.mes)}</h2>
       <span class="muted small">LPU de prestador no ciclo (data da conclusão do chamado) · reprovadas não entram · projeção = ritmo até hoje × dias do mês</span></div>

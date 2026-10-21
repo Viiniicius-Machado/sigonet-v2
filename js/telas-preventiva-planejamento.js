@@ -170,7 +170,7 @@
       ${f.vincular_chamado ? `<div class="aviso info" style="margin-bottom:10px">Esta rota será <b>ligada ao chamado ${esc(f.vincular_chamado)}</b> aberto pelo NOC (não abre outro chamado).</div>` : ''}
       <div class="campo"><label>Segmento *</label><div class="chips">${L.segmentos.map(([k, r]) => `<button type="button" class="chip ${f.segmento === k ? 'sel' : ''}" data-seg="${k}" ${editando || f.vincular_chamado ? 'disabled' : ''}>${k === 'AEREA' ? '🗼' : '🕳️'} ${r}</button>`).join('')}</div></div>
       <div class="linha-form">
-        <div class="campo"><label>Cidade *</label><input class="inp" data-f="cidade" list="lCid" value="${esc(f.cidade)}"><datalist id="lCid">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
+        <div class="campo"><label>Cidade *</label><input class="inp" data-f="cidade" data-cidade list="lCid" value="${esc(f.cidade)}"><datalist id="lCid">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist>
           ${aerea && f.cidade ? `<div class="small muted">Região: <b>${esc(VR.regiaoDaCidade(f.cidade, c))}</b></div>` : ''}</div>
         <div class="campo"><label>Prestador (equipe) *</label><select class="inp" data-f="prestador">${opcoes(empresas(), f.prestador, 'Escolha…')}</select></div>
         <div class="campo"><label>Técnico</label><select class="inp" data-f="tecnico">${opcoes(tecnicosDe(f.prestador), f.tecnico, f.prestador ? 'Qualquer técnico do prestador' : 'Escolha o prestador')}</select></div>
@@ -434,7 +434,7 @@
       <div class="card"><h3>Importar base (KMZ, KML, CSV ou XLSX)</h3>
         <p class="small muted">CSV ou XLSX com colunas de ID da CS, cluster, latitude e longitude (cidade e endereço opcionais). Os nomes das colunas são reconhecidos sozinhos ou pelo mapeamento em Configurações. KMZ/KML: o nome do ponto vira o ID e a pasta vira o cluster.</p>
         <div class="linha-form"><div class="campo"><label>Versão da base *</label><input class="inp" id="bVer" placeholder="ex.: Tom v1 (out/2026)"></div>
-          <div class="campo"><label>Cidade (se o arquivo não tiver)</label><input class="inp" id="bCid" list="lCid2"><datalist id="lCid2">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div>
+          <div class="campo"><label>Cidade (se o arquivo não tiver)</label><input class="inp" id="bCid" data-cidade list="lCid2"><datalist id="lCid2">${cidadesConhecidas().map(x => `<option value="${esc(x)}">`).join('')}</datalist></div></div>
         <label class="btn">📂 Escolher arquivo (CSV, XLSX, KMZ, KML)<input type="file" id="bArq" accept=".csv,.xlsx,.xls,.kmz,.kml" hidden></label>
         <div id="bPrevia" style="margin-top:10px"></div></div>
       <div class="card"><h3>Base atual</h3><p><b>${SN.num(b.total)}</b> ponto(s) em <b>${Object.keys(b.clusters).length}</b> cluster(s)</p>
@@ -746,7 +746,7 @@
       const el = SN.$('#tCampos', f);
       if (seg === 'SUBTERRANEA') { el.innerHTML = `<div class="aviso info small">Na subterrânea é preciso escolher as CS da base. Vou abrir o Planejamento já com este chamado para você escolher o cluster e as CS; a rota fica ligada a este chamado.</div>`; return; }
       el.innerHTML = `<div class="linha-form">
-        <div class="campo"><label>Cidade *</label><input class="inp" data-t="cidade" value="${esc(r.cidade)}"></div>
+        <div class="campo"><label>Cidade *</label><input class="inp" data-t="cidade" data-cidade value="${esc(r.cidade)}"></div>
         <div class="campo"><label>Motivo *</label><select class="inp" data-t="motivo">${opcoes(cf.motivos_aerea, r.motivo, 'Escolha…')}</select></div>
         <div class="campo"><label>Solicitante *</label><select class="inp" data-t="solicitante">${opcoes(cf.solicitantes, r.solicitante, 'Escolha…')}</select></div>
         <div class="campo"><label>Metros previstos *</label><input class="inp" type="number" min="0" data-t="metros_previstos" value="${esc(r.metros_previstos)}"></div>

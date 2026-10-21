@@ -94,6 +94,11 @@ SN.media = arr => { const v = arr.filter(x => x != null && !isNaN(x)); return v.
 SN.mesChave = iso => (iso || '').slice(0, 7);
 SN.mesNome = chave => { if (!chave) return ''; const [a, m] = chave.split('-'); return new Date(+a, +m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); };
 SN.normal = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+// Cidade sempre no mesmo formato (CAIXA ALTA, sem acento, como VR.normCidade e o servidor): "São Paulo" e
+// "SAO PAULO" são a mesma cidade (pedido de 21/10/2026). Campo marcado com data-cidade se ajusta ao sair dele,
+// antes do onchange da tela (fase de captura), e os relatórios agrupam por SN.normCidade.
+SN.normCidade = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+document.addEventListener('change', ev => { const i = ev.target; if (i && i.matches && i.matches('input[data-cidade]')) i.value = SN.normCidade(i.value); }, true);
 SN.debounce = (fn, ms = 250) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 // Redesenha sem atrapalhar quem está digitando (erro relatado em 2026-10-15: parar de digitar na busca embaralhava
 // o texto). O campo em foco é recriado pelo redesenho; focar um campo novo põe o cursor no INÍCIO e a tela pode

@@ -299,7 +299,7 @@ SN.novaOS = (pre) => {
     </div>
     <div class="linha-form">
       <div class="campo"><label>Endereço</label><input class="inp" id="nEnd" value="${SN.esc(pre.endereco || '')}"></div>
-      <div class="campo"><label>Cidade</label><input class="inp" id="nCid" value="${SN.esc(pre.cidade || '')}"></div>
+      <div class="campo"><label>Cidade</label><input class="inp" id="nCid" data-cidade value="${SN.esc(pre.cidade || '')}"></div>
       <div class="campo"><label>Localização (link do mapa)</label><input class="inp" id="nGps" value="${SN.esc(pre.gps || '')}"></div>
     </div>
     <div class="linha-form">

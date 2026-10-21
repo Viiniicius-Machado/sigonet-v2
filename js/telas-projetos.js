@@ -137,7 +137,7 @@
           <div class="campo"><label>Nome do projeto *</label><input class="inp" data-pf="nome" value="${esc(p.nome)}" placeholder="ex.: Rede Jd. América — atendimento Cliente X" ${dis}></div>
           <div class="campo"><label>Cliente / finalidade</label><input class="inp" data-pf="cliente" value="${esc(p.cliente)}" ${dis}></div>
           <div class="linha-form">
-            <div class="campo"><label>Cidade *</label><input class="inp" data-pf="cidade" list="prjCid" value="${esc(p.cidade)}" ${dis}><datalist id="prjCid">${cidades.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+            <div class="campo"><label>Cidade *</label><input class="inp" data-pf="cidade" data-cidade list="prjCid" value="${esc(p.cidade)}" ${dis}><datalist id="prjCid">${cidades.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
             <div class="campo"><label>POP</label><input class="inp" data-pf="pop" value="${esc(p.pop)}" ${dis}></div></div>
           <div class="campo"><label>Conta contábil</label><div class="inp" style="background:var(--bg-2)">${esc(SN.contaTxt(p.conta || CONTA))}</div></div>
           <div class="campo"><label>Solicitante</label><input class="inp" data-pf="solicitante" value="${esc(p.solicitante)}" ${dis}></div>
