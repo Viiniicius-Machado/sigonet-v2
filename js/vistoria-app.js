@@ -17,6 +17,7 @@ Object.assign(SN.TELAS || (SN.TELAS = {}), {
 SN.vst.MENU = [
   { grupo: 'Preventiva' },
   { tela: 'vst_planejamento', rot: 'Planejamento', ico: '🗺️', href: '#/vst/planejamento' },
+  { id: 'vst_esteira', tela: 'vst_esteira', rot: 'Esteira', ico: '📞', href: '#/vst/esteira' },
   { tela: 'vst_revisao', rot: 'Revisão', ico: '🔎', href: '#/vst/revisao' },
   { tela: 'vst_dashboard', rot: 'Dashboard', ico: '📈', href: '#/vst/dashboard' }
 ];

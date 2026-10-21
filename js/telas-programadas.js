@@ -26,7 +26,10 @@
   const hrefVista = v => base() + '/' + VISTAS[v][0];
   const idMenuDe = (p, v) => v === 'PLAN' ? p.tela : p.tela.replace('planejamento', VISTAS[v][0]);
   const idMenu = v => idMenuDe(P(), v);
-  const E = () => est[seg] || (est[seg] = { aba: 'LISTA', form: null, filtro: { status: '', q: '' }, periodo: { per: 'mes', ref: '' }, dash: { per: 'mes', ref: '' }, revQ: '' });
+  const Es = s => est[s] || (est[s] = { aba: 'LISTA', form: null, filtro: { status: '', q: '' }, periodo: { per: 'mes', ref: '' }, dash: { per: 'mes', ref: '' }, revQ: '' });
+  const E = () => Es(seg);
+  // Vindo da Esteira do programa: abre a revisão já filtrada na atividade.
+  SN.vst.revisarProg = (s, id_rota) => { Es(s).revQ = id_rota; SN.navegar(L.programas[s].href.replace('planejamento', 'revisao')); };
   const hoje = () => SN.dataIsoLocal(new Date());
   const empresas = () => SN.db.empresas.filter(e => e.ativo !== false).map(e => e.nome).sort();
   const tecnicosDe = emp => SN.db.tecnicos.filter(t => t.ativo !== false && t.empresa === emp).map(t => t.nome).sort();
@@ -450,6 +453,7 @@
     SN.MENU.push({ grupo: p.rot });
     if (s === 'MELHORIA') SN.MENU.push({ id: 'prj_projetos', tela: p.tela, rot: 'Projetos', ico: '📐', href: '#/prj/projetos' });
     SN.MENU.push({ tela: p.tela, rot: 'Planejamento', ico: '🗺️', href: p.href },
+      { id: p.tela.replace('planejamento', 'esteira'), tela: p.tela.replace('planejamento', 'esteira'), rot: 'Esteira', ico: '📞', href: p.href.replace('planejamento', 'esteira') },
       { id: p.tela.replace('planejamento', 'revisao'), tela: p.tela.replace('planejamento', 'revisao'), rot: 'Revisão', ico: '🔎', href: p.href.replace('planejamento', 'revisao') },
       { id: p.tela.replace('planejamento', 'dashboard'), tela: p.tela, rot: 'Dashboard', ico: '📈', href: p.href.replace('planejamento', 'dashboard') }); });
 })();

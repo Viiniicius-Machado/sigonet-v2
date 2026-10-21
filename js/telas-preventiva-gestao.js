@@ -31,6 +31,8 @@
   // Filtros da fila "Aguardando revisão" (o revisor escolhe o que validar primeiro).
   const fr = { q: '', prest: '', rota: '', alerta: '', ordem: 'antigas' };
   // Vezes que foi refeita depois de rejeitada (dados antigos: pelo histórico).
+  // Vindo da Esteira da Preventiva: abre a revisão já filtrada na rota (fila e revisadas).
+  SN.vst.revisarRota = id_rota => { filtroSeg = 'TODOS'; Object.assign(fr, { q: '', prest: '', alerta: '', rota: id_rota }); buscaRev = id_rota; SN.navegar('#/vst/revisao'); };
   const refeitas = a => a.refeitas != null ? Number(a.refeitas) || 0 : (a.historico || []).filter(h => h.acao === 'MOTIVO_ANTERIOR').length;
   SN.rota('/vst/revisao', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_revisao', SN.vst.semServidorHtml);

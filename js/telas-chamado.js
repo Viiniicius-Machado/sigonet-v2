@@ -85,7 +85,7 @@ SN.rota('/inicio', () => {
   const d = SN.db, hoje = SN.agora().slice(0, 10);
   const abertos = d.chamados.filter(c => SN.STATUS[c.status].aberto);
   const cont = {
-    chamados: d.chamados.filter(c => c.status === 'NAO_ATRIBUIDO').length,
+    chamados: SN.chamadosDaEsteira().filter(c => c.status === 'NAO_ATRIBUIDO').length,
     lpu: d.lpus.filter(l => l.status === 'AGUARDANDO_LIDER').length,
     servicedesk: d.lpus.filter(l => l.status === 'NO_SERVICE_DESK').length + d.pagamentos.filter(p => p.status !== 'PAGO' && p.status !== 'DESFEITO').length,
     materiais: d.materiais.filter(m => ['REGISTRADO', 'CONFERIDO', 'DIVERGENTE'].includes(m.status)).length,
@@ -169,10 +169,23 @@ SN.lerMascara = txt => {
 // ═══════════════════════════ Chamados (kanban NOC) ═══════════════════════════
 SN.filtroTipoChamados = 'Todos';
 SN.visaoChamados = (() => { try { return localStorage.getItem('sigonet_v2_visao_chamados') || 'quadro'; } catch (e) { return 'quadro'; } })();
+// Esteiras separadas (pedido de 21/10/2026): Preventiva, Melhoria de rede e Retirada de cabo têm a
+// esteira própria no grupo de cada uma (telas-esteira-programas.js). A Esteira daqui fica só com o que
+// nasce na operação (NOC, O&M, Elleven, CPFL…). Chamado do NOC classificado como Preventiva/Melhoria/
+// Retirada vai para a esteira do programa (lá vira rota/atividade).
+SN.programaDoChamado = c => {
+  const p = c.preventiva || {};
+  if (p.segmento === 'RETIRADA') return 'RETIRADA';
+  if (p.segmento === 'MELHORIA' || p.segmento === 'PROJETO') return 'MELHORIA';
+  if (p.id_rota) return 'PREVENTIVA';
+  return { Preventiva: 'PREVENTIVA', Melhoria: 'MELHORIA', Retirada: 'RETIRADA' }[c.tipo] || '';
+};
+SN.chamadosDaEsteira = () => SN.db.chamados.filter(c => !SN.programaDoChamado(c));
 SN.rota('/chamados', () => {
-  const tipos = ['Todos', ...new Set(MATRIZ_SLA.map(m => m.tipo))];
-  const hoje = SN.agora().slice(0, 10);
-  const lista = SN.db.chamados.filter(c => SN.filtroTipoChamados === 'Todos' || c.tipo === SN.filtroTipoChamados || (!c.tipo && SN.filtroTipoChamados === 'Todos'));
+  const tipos = ['Todos', ...new Set(MATRIZ_SLA.map(m => m.tipo).filter(t => !SN.programaDoChamado({ tipo: t })))];
+  if (!tipos.includes(SN.filtroTipoChamados)) SN.filtroTipoChamados = 'Todos';
+  const hoje = SN.agora().slice(0, 10), daEsteira = SN.chamadosDaEsteira();
+  const lista = daEsteira.filter(c => SN.filtroTipoChamados === 'Todos' || c.tipo === SN.filtroTipoChamados || (!c.tipo && SN.filtroTipoChamados === 'Todos'));
   const cols = [
     ['Não atribuídas', c => c.status === 'NAO_ATRIBUIDO'],
     ['Despachadas', c => ['ATRIBUIDO', 'ACEITO', 'EM_DESLOCAMENTO'].includes(c.status)],
@@ -194,11 +207,12 @@ SN.rota('/chamados', () => {
       ${c.status === 'EM_DESLOCAMENTO' && SN.previsaoInfo(c) ? (pi => `<div class="l3" style="margin-top:4px"><span class="badge badge-quebra ${pi.semPrevisao ? 'alerta' : pi.cls}" title="${SN.esc(pi.txt)}">🚗 ${pi.semPrevisao ? 'Sem previsão de chegada' : SN.esc(pi.txt)}${pi.atrasado ? ' · atrasado' : ''}</span>${pi.km ? ` <span class="muted">${pi.km}</span>` : ''}</div>`)(SN.previsaoInfo(c)) : ''}
       ${c.validacao && ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status) ? `<div class="l3" style="margin-top:4px"><span class="badge ${SN.VALIDACAO_ST[c.validacao.status].cls}">🛎 ${SN.VALIDACAO_ST[c.validacao.status].rot}${c.validacao.status === 'PEDIDA' ? ' · ' + SN.esc(SN.nomeValidador(c)) : ''}</span></div>` : ''}</div>`;
   };
-  const cont = t => SN.db.chamados.filter(c => SN.STATUS[c.status].aberto && (t === 'Todos' || c.tipo === t)).length;
+  const cont = t => daEsteira.filter(c => SN.STATUS[c.status].aberto && (t === 'Todos' || c.tipo === t)).length;
   const despachaveis = SN.tecnicosDespacho();
   SN.casca('chamados', `
     <div class="cab-pagina"><div><h1>Chamados · fluxo operacional</h1>
-      <p>O chamado conta a história do atendimento. Fecha quando a parte técnica termina — LPU, materiais e fibra seguem seus próprios fluxos.</p></div>
+      <p>O chamado conta a história do atendimento. Fecha quando a parte técnica termina — LPU, materiais e fibra seguem seus próprios fluxos.${(() => { const ls = [['vst_esteira', '#/vst/esteira', 'Preventiva'], ['mel_esteira', '#/mel/esteira', 'Melhoria de rede'], ['ret_esteira', '#/ret/esteira', 'Retirada de cabo']].filter(x => SN.temTela(x[0]) && SN.rotas[x[1].slice(1)]);
+        return ls.length ? ` Preventiva, Melhoria e Retirada têm esteira própria: ${ls.map(x => `<a href="${x[1]}">${x[2]}</a>`).join(' · ')}.` : ''; })()}</p></div>
       <div class="acoes"><button class="btn" id="btnElleven" title="Simula uma OS recebida do ERP Elleven via webhook">⤓ Receber OS do Elleven</button>
         <button class="btn prim" id="btnNova">+ Nova OS</button></div></div>
     ${SN.htmlFilaValidacao('NOC', true)}${SN.htmlFilaValidacao('OEM', true)}

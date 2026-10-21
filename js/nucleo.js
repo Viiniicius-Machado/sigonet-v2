@@ -822,7 +822,8 @@ SN.usuario = () => {
 SN.temTela = tela => { const u = SN.usuario(); return !!u && u.tipo === 'lideranca' && (u.telas.includes('*') || u.telas.includes(tela)
   || (/^mel_(planejamento|revisao)$/.test(tela) && u.telas.includes('prj_planejamento')) // Novos projetos virou parte da Melhoria (15/10/2026)
   || (u.cargo === 'Encarregado' && SN.TELAS_ENCARREGADO.includes(tela)) // encarregado revisa as obras pelo cargo
-  || (/^(mel|ret|prj)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento')))); }; // quem planeja o programa também revisa
+  || (/^(mel|ret|prj)_revisao$/.test(tela) && u.telas.includes(tela.replace('revisao', 'planejamento'))) // quem planeja o programa também revisa
+  || (/^(vst|mel|ret)_esteira$/.test(tela) && (SN.temTela(tela.replace('esteira', 'planejamento')) || SN.temTela(tela.replace('esteira', 'revisao'))))); }; // esteira do programa: quem planeja ou revisa
 // Revisão das obras (Preventiva, Melhoria, Retirada): todo Encarregado tem, sem marcar no Portal.
 SN.TELAS_ENCARREGADO = ['vst_revisao', 'mel_revisao', 'ret_revisao', 'prj_revisao'];
 SN.podeAprovar = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor', 'Encarregado'].includes(u.cargo); };
