@@ -233,9 +233,10 @@
     const tiposItem = L.producao_aerea.map(c => c.foto);
     L.producao_aerea.forEach(c => {
       const el = SN.$(`[data-fotos="${c.k}"]`); if (!el) return;
+      const fase = c.foto === 'aerea_metros' ? '' : ' data-fase'; // Rota percorrida não pergunta ANTES/DEPOIS (pedido de 21/10/2026)
       el.innerHTML = (A.form.fotos || []).filter(f => VR.fotoDoItem(f, c)).map(thumb).join('')
-        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}" data-fase hidden><span>＋<br>Tirar foto</span></label>`
-        + `<label class="vst-cap" title="Escolher uma ou várias fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.foto}" data-galeria="1" data-fase hidden><span>＋<br>Galeria</span></label>`;
+        + `<label class="vst-cap"><input type="file" accept="image/*" capture="environment" data-cam="${c.foto}"${fase} hidden><span>＋<br>Tirar foto</span></label>`
+        + `<label class="vst-cap" title="Escolher uma ou várias fotos já tiradas"><input type="file" accept="image/*" multiple data-cam="${c.foto}" data-galeria="1"${fase} hidden><span>＋<br>Galeria</span></label>`;
     });
     // Fotos genéricas de um envio anterior (tipo "producao"): continuam no apontamento, mas não contam para nenhum item.
     const outras = (A.form.fotos || []).filter(f => !tiposItem.includes(f.tipo_foto));

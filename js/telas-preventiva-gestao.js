@@ -344,6 +344,7 @@
       if (!val.ok) { SN.toast(val.erros[0], 'erro'); return false; }
       if (decisao === 'APROVADA' && x.seg === 'AEREA') { const cr = VR.criteriosApontamento(a, r); if (!cr.ok) { SN.toast('Não dá para aprovar: ' + cr.erros[0], 'erro'); return false; } }
       try { await SN.vst.exec('VST_REVISAR', dados); } catch (e) { SN.toast(e.message, 'erro'); return false; }
+      if (SN.sincronizar) SN.sincronizar().catch(() => { }); // o chamado conclui no servidor: traz o status novo (Esteira, Início)
       SN.toast(decisao === 'APROVADA' ? 'Aprovado.' : 'Rejeitado: o prestador vai ver o motivo e refazer.', 'ok');
       setTimeout(() => SN.render(), 50); return true;
     };
