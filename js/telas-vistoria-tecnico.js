@@ -229,17 +229,16 @@
       ${T.dados.offline ? '<div class="aviso alerta" style="margin-bottom:8px">Sem sinal: trabalhando com os dados salvos no aparelho. Tudo fica guardado e é enviado quando a conexão voltar.</div>' : ''}
       <div id="vstFaixa"></div>
       ${T.cfg && VR.pendenciasConfig(T.cfg).length ? `<details class="small muted" style="margin:6px 0"><summary>Configurações ainda a definir (${VR.pendenciasConfig(T.cfg).length})</summary><ul>${VR.pendenciasConfig(T.cfg).map(p => `<li>${esc(p)}</li>`).join('')}</ul></details>` : ''}
-      <div class="vst-qtd"><span>Quantidade de CS nesta rota</span>
+      ${SN.vst.aguardaChegada(r) ? SN.vst.avisoTrava(r) : `<div class="vst-qtd"><span>Quantidade de CS nesta rota</span>
         <button class="btn sm" id="vQtdMenos">−</button><b id="vQtd">${T.qtd}</b><button class="btn sm" id="vQtdMais">+</button></div>
       <div class="vst-abas" id="vstAbas"></div>
-      <div id="vstCs"></div>
-      ${r.status === 'DESPACHADA' && !SN.vst.emJornada(r) ? '<button class="btn bloco" id="vIniciar" style="margin-top:12px">▶ Iniciar rota</button>' : ''}
-      ${r.status === 'EM_CAMPO' ? '<button class="btn ok lg bloco" id="vConcluir" style="margin-top:12px">✔ Concluir rota</button><p class="small muted center">Só conclui com todas as CS planejadas enviadas e nenhuma rejeitada.</p>' : ''}`);
+      <div id="vstCs"></div>`}
+      ${r.status === 'DESPACHADA' && !SN.vst.emJornada(r) && !SN.vst.aguardaChegada(r) ? '<button class="btn bloco" id="vIniciar" style="margin-top:12px">▶ Iniciar rota</button>' : ''}
+      ${r.status === 'EM_CAMPO' && !SN.vst.aguardaChegada(r) ? '<button class="btn ok lg bloco" id="vConcluir" style="margin-top:12px">✔ Concluir rota</button><p class="small muted center">Só conclui com todas as CS planejadas enviadas e nenhuma rejeitada.</p>' : ''}`);
     SN.$$('[data-os]').forEach(el => el.onclick = () => { flush(); SN.navegar(el.dataset.os); });
     if (SN.conversa && r.id_chamado) SN.conversa.flutuante(r.id_chamado);
     SN.vst.publicarVivo(r.id_rota);
-    SN.$('#vQtdMais').onclick = () => mudarQtd(1);
-    SN.$('#vQtdMenos').onclick = () => mudarQtd(-1);
+    if (SN.$('#vQtdMais')) { SN.$('#vQtdMais').onclick = () => mudarQtd(1); SN.$('#vQtdMenos').onclick = () => mudarQtd(-1); }
     if (SN.$('#vIniciar')) SN.$('#vIniciar').onclick = () => mudarStatusRota('EM_CAMPO');
     SN.vst.ligarJornada(r, pintarRota);
     if (SN.$('#vConcluir')) SN.$('#vConcluir').onclick = () => {

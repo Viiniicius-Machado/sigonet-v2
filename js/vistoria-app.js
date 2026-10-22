@@ -178,6 +178,18 @@ SN.vst.htmlJornada = r => {
     <p class="small muted" style="margin:0 0 8px">Marque cada etapa: a gestão acompanha na hora (aceite, a caminho com a previsão de chegada e quando chegou).</p>
     ${SN.htmlJornada(c, VR.ehProg(r) ? 'atividade' : 'rota')}</div>`;
 };
+// Trava (pedido de 22/10/2026): fotos, CS e apontamentos só liberam depois do "Cheguei no local".
+// Vale para titular e apoio; quem marca as etapas é o titular. Rota sem chamado não trava.
+SN.vst.aguardaChegada = r => { const c = r && r.id_chamado && (SN.db.chamados || []).find(x => x.id === r.id_chamado);
+  return !!c && ['DESPACHADA', 'EM_CAMPO'].includes(r.status) && ['ATRIBUIDO', 'ACEITO', 'EM_DESLOCAMENTO'].includes(c.status); };
+SN.vst.avisoTrava = r => {
+  if (!SN.vst.aguardaChegada(r)) return '';
+  const c = SN.db.chamados.find(x => x.id === r.id_chamado), oque = VR.ehProg(r) ? 'atividade' : 'rota';
+  const falta = { ATRIBUIDO: 'Aceitar', ACEITO: 'Iniciar deslocamento', EM_DESLOCAMENTO: 'Cheguei no local' }[c.status];
+  return `<div class="aviso alerta" style="margin-bottom:10px"><b>Fotos e apontamentos bloqueados até a chegada ao local.</b><br>
+    ${SN.vst.chamadoTitular(r) ? `Siga as etapas acima, na ordem: Aceitar → Iniciar deslocamento → Cheguei no local. Próxima etapa: <b>${falta}</b>.`
+      : `Aguardando o titular da ${oque} (${SN.esc(c.tecnico || '')}) marcar a chegada. Próxima etapa dele: <b>${falta}</b>.`}</div>`;
+};
 SN.vst.ligarJornada = (r, repintar) => {
   const c = SN.vst.chamadoTitular(r); if (!c || !SN.ligarJornada || !SN.vst.emJornada(r)) return;
   SN.ligarJornada(c, { repintar, aoChegar: async () => {

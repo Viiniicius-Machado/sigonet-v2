@@ -421,6 +421,7 @@ SN.htmlCabecalho = h => `<div class="faixa small" style="margin-bottom:12px">
 SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
   const c = SN.db.chamados.find(x => x.id === id);
   if (!c || !SN.podeLpu(c, papel)) { SN.toast('Sem acesso à LPU deste chamado.', 'erro'); return SN.navegar('#/tec'); }
+  if (!SN.faseModulos(c)) { SN.toast('Marque "Cheguei no local" na OS antes de apontar.', 'erro'); return SN.navegar('#/tec/os/' + id); } // jornada obrigatória (22/10/2026)
   let l = SN.db.lpus.find(x => x.chamadoId === id && x.papel === papel);
   // Preventiva: só depois que todas as CS da rota forem aprovadas (só aprovada é paga).
   const prev = c.preventiva && c.preventiva.id_rota ? c.preventiva : null;
@@ -557,6 +558,7 @@ SN.rota('/tec/lpu/:id/:papel', (id, papel) => {
 SN.rota('/tec/mat/:id/:papel', (id, papel) => {
   const c = SN.db.chamados.find(x => x.id === id);
   if (!c || SN.papelNo(c) !== papel) { SN.toast('Sem acesso.', 'erro'); return SN.navegar('#/tec'); }
+  if (!SN.faseModulos(c)) { SN.toast('Marque "Cheguei no local" na OS antes de apontar.', 'erro'); return SN.navegar('#/tec/os/' + id); } // jornada obrigatória (22/10/2026)
   let reg = SN.db.materiais.find(x => x.chamadoId === id && x.papel === papel);
   const h = reg ? reg.cab : SN.cabecalhoDe(c, papel);
   const editavel = !reg || ['REGISTRADO', 'DIVERGENTE', 'SEM_MATERIAL'].includes(reg.status);
@@ -704,6 +706,7 @@ SN.ligarPontos = (ceo, p, q) => {
 SN.rota('/tec/fibra/:id', id => {
   const c = SN.db.chamados.find(x => x.id === id);
   if (!c || !SN.papelNo(c)) { SN.toast('Sem acesso.', 'erro'); return SN.navegar('#/tec'); }
+  if (!SN.faseModulos(c)) { SN.toast('Marque "Cheguei no local" na OS antes de apontar.', 'erro'); return SN.navegar('#/tec/os/' + id); } // jornada obrigatória (22/10/2026)
   let reg = SN.db.fibras.find(x => x.chamadoId === id);
   const h = reg ? reg.cab : SN.cabecalhoDe(c, SN.papelNo(c));
   const editavel = !reg || ['AGUARDANDO_VALIDACAO', 'CORRECAO', 'SEM_FIBRA'].includes(reg.status);

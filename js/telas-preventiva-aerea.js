@@ -190,6 +190,7 @@
 
   const pintarForm = () => {
     const el = SN.$('#aForm'); if (!el) return;
+    if (SN.vst.aguardaChegada(A.rota)) { el.innerHTML = SN.vst.avisoTrava(A.rota); return; } // só depois do "Cheguei no local"
     const rejeitadoEmAberto = lista().some(x => (x.servidor || {}).status_revisao === 'REJEITADA');
     const temFinal = lista().some(x => x.dados.tipo === 'final' && (x.servidor || {}).status_revisao !== 'REJEITADA'); // mesmo ainda na fila
     if ((!podeApontar() || temFinal) && !(A.form && A.form.refazendo)) {

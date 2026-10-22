@@ -113,12 +113,14 @@
         ${SN.htmlLinhaTempo ? `<div class="chips" style="margin-bottom:8px"><button class="chip ${linha ? '' : 'sel'}" data-pevisao="quadro">Quadro</button><button class="chip ${linha ? 'sel' : ''}" data-pevisao="linha">Linha do tempo</button></div>` : ''}</div>
       ${linha ? SN.htmlLinhaTempo(chamadosProg, SN.tecnicosDespacho()) : `<div class="kanban pe-kanban">${cols.map((nome, i) => { const l = vis.filter(x => x.col === i)
         .sort((a, b) => i === 4 ? String(b.quando).localeCompare(String(a.quando)) : (b.pend - a.pend) || String(a.r.data_limite || a.r.data_planejada || 'z').localeCompare(String(b.r.data_limite || b.r.data_planejada || 'z')));
-        return `<div class="coluna"><h4>${nome}<span class="badge">${l.length}</span></h4>${l.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>`}`);
+        return `<div class="coluna"><h4>${nome}<span class="badge">${l.length}</span></h4>${l.map(card).join('') || '<p class="muted small center">Vazio</p>'}</div>`; }).join('')}</div>`}
+      ${SN.htmlMaoDeObra ? SN.htmlMaoDeObra(SN.tecnicosDespacho()) : ''}`); // mesma M.O. da Esteira principal (pedido de 22/10/2026)
     SN.$('#peAtualizar').onclick = async ev => { ev.target.disabled = true; try { pintar(k, await SN.vst.carregar(true)); } catch (er) { SN.toast(er.message, 'erro'); ev.target.disabled = false; } };
     SN.$$('[data-peseg]').forEach(b => b.onclick = () => { e.seg = b.dataset.peseg; pintar(k, d); });
     SN.$$('[data-pevisao]').forEach(b => b.onclick = () => { SN.visaoProg = b.dataset.pevisao; pintar(k, d); });
     const qi = SN.$('#peQ'); if (qi) qi.oninput = SN.debounce(() => { e.q = qi.value.trim(); SN.redesenharDigitando(() => pintar(k, d)); }, 300);
     if (linha && SN.ligarLinhaTempo) SN.ligarLinhaTempo();
+    if (SN.ligarMaoDeObra) SN.ligarMaoDeObra();
     SN.$$('.os[data-ch]').forEach(o => o.onclick = () => SN.navegar('#/chamado/' + o.dataset.ch));
     SN.$$('.os[data-plan]').forEach(o => o.onclick = () => { if (podePlan) SN.navegar(P.plan); });
     SN.$$('[data-vivo]').forEach(b => b.onclick = ev => { ev.stopPropagation();
