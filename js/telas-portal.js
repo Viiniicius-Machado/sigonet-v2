@@ -493,8 +493,12 @@ SN.celulaAcesso = (tipo, x) => x.ativo ? `<button type="button" class="btn sm pe
 SN.editarEmpresa = e => {
   const novo = !e; e = e || { nome: '', razao: '', cnpj: '', vinculo: 'PRESTADOR', responsavelLpu: '', ativo: true };
   const tecs = SN.db.tecnicos.filter(t => t.empresa === e.nome);
+  // O nome é a chave do cadastro: só pode ser corrigido enquanto nada está ligado à empresa
+  // (erro de digitação logo depois de criar). O servidor confere de novo (EMPRESA_RENOMEAR).
+  const nomeLivre = novo || (SN.remoto && !empresaTemVinculo(e.nome));
   SN.modal({ titulo: novo ? 'Nova empresa' : e.nome, corpo: `<div class="linha-form">
-    <div class="campo"><label>Nome</label><input class="inp" id="mNome" value="${SN.esc(e.nome)}" ${novo ? '' : 'readonly'}></div>
+    <div class="campo"><label>Nome</label><input class="inp" id="mNome" value="${SN.esc(e.nome)}" ${nomeLivre ? '' : 'readonly'}>
+      ${!novo ? `<div class="small muted">${nomeLivre ? 'Ainda sem técnicos, chamados ou LPU: o nome pode ser corrigido.' : 'Empresa com histórico: o nome não pode mais ser trocado.'}</div>` : ''}</div>
     <div class="campo"><label>Razão social</label><input class="inp" id="mRaz" value="${SN.esc(e.razao || '')}"></div>
     <div class="campo"><label>CNPJ</label><input class="inp" id="mCnpj" value="${SN.esc(e.cnpj)}" placeholder="00.000.000/0000-00"></div></div>
     <div class="linha-form"><div class="campo"><label>Vínculo</label><select class="inp" id="mVin">${[['PRESTADOR', 'Prestador (LPU com valor)'], ['CLT', 'CLT (hora-homem)'], ['CONTRATO_FIXO', 'Contrato fixo']].map(([k, r]) => `<option value="${k}" ${k === e.vinculo ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
@@ -502,11 +506,31 @@ SN.editarEmpresa = e => {
     <label class="small"><input type="checkbox" id="mAt" ${e.ativo !== false ? 'checked' : ''}> Ativa</label>`,
     botoes: [{ rot: 'Cancelar' }, { rot: 'Salvar', cls: 'prim', acao: () => {
       const nome = SN.$('#mNome').value.trim().toUpperCase(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
-      if (novo && SN.db.empresas.some(x => x.nome === nome)) { SN.toast('Empresa já existe.', 'erro'); return false; }
+      if ((novo || nome !== e.nome) && SN.db.empresas.some(x => x.nome === nome)) { SN.toast('Empresa já existe.', 'erro'); return false; }
+      if (!novo && nome !== e.nome) { renomearEmpresa(e, nome); return; }
       const antes = { ...e };
       Object.assign(e, { nome, razao: SN.$('#mRaz').value.trim(), cnpj: SN.$('#mCnpj').value.trim(), vinculo: SN.$('#mVin').value, responsavelLpu: SN.$('#mResp').value, ativo: SN.$('#mAt').checked });
       if (novo) SN.db.empresas.push(e);
       SN.log(novo ? 'CRIAR_EMPRESA' : 'EDITAR_EMPRESA', e.nome, SN.diff(antes, e)); SN.salvar(); SN.render(); } }] });
+};
+const empresaTemVinculo = nome => SN.db.tecnicos.some(t => t.empresa === nome)
+  || SN.db.chamados.some(c => c.empresa === nome || (c.apoio && c.apoio.empresa === nome))
+  || ['lpus', 'materiais', 'fibras'].some(c => (SN.db[c] || []).some(d => d.cab && d.cab.empresa === nome))
+  || (SN.db.pagamentos || []).some(d => d.empresa === nome)
+  || (SN.db.estoques || []).some(d => (d.tecnicos || []).some(k => String(k).startsWith(nome + '|')));
+// Troca o nome no servidor (registro novo com o nome certo, o antigo sai) e acerta a cópia local
+// sem gerar um pedido de exclusão (cadastro não se exclui pelo SALVAR).
+const renomearEmpresa = async (e, nome) => {
+  const de = e.nome;
+  try {
+    const r = await SN.api('EMPRESA_RENOMEAR', { de, para: nome, doc: { ...e, razao: SN.$('#mRaz').value.trim(), cnpj: SN.$('#mCnpj').value.trim(),
+      vinculo: SN.$('#mVin').value, responsavelLpu: SN.$('#mResp').value, ativo: SN.$('#mAt').checked } });
+    const nova = r.empresa || { ...e, nome }, v = nova._v; delete nova._v;
+    SN.db.empresas = SN.db.empresas.filter(x => x.nome !== de && x.nome !== nome).concat([nova]);
+    const snap = SN._snap.empresas = SN._snap.empresas || {}, ver = SN._ver.empresas = SN._ver.empresas || {};
+    delete snap[de]; delete ver[de]; snap[nome] = JSON.stringify(nova); if (v != null) ver[nome] = v;
+    SN.guardarLocal(); SN.toast('Nome corrigido: ' + de + ' → ' + nome + '.', 'ok'); SN.render();
+  } catch (err) { SN.toast(err.message, 'erro'); }
 };
 SN.editarLider = l => {
   const novo = !l; l = l || { id: SN.uid(), nome: '', nomeCompleto: '', cargo: 'Encarregado', telas: ['chamados'], pin: PIN_INICIAL, complementoHash: '', ativo: true };
