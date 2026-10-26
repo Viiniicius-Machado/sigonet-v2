@@ -54,6 +54,34 @@ SN.api = async (acao, dados, tentativa = 1) => {
   return j;
 };
 
+// ─────────── Leitura pelo Supabase (fase 2 da migração) ───────────
+// Carga e atualização automática vêm direto do banco (Postgres), bem mais rápido que a planilha.
+// O login (Apps Script) entrega url + chave pública + token da sessão de leitura. Login e
+// gravações continuam no Apps Script, que manda cada gravação na hora para o banco.
+// Qualquer falha aqui (sem sessão de leitura, banco fora, sessão vencida) → lê pelo Apps Script,
+// que é quem decide de verdade se a sessão ainda vale.
+SN.SUPA_LEITURA = true;
+const RPC_LEITURA = { CARREGAR: d => ['sn_carregar', {}], SINCRONIZAR: d => ['sn_sincronizar', { p_desde: d.desde || '' }] };
+SN.ler = async (acao, dados) => {
+  const s = SN.sessao(), sp = s && s.supa;
+  if (SN.SUPA_LEITURA && sp && sp.url && sp.token && RPC_LEITURA[acao]) {
+    try {
+      const [fn, args] = RPC_LEITURA[acao](dados || {});
+      const r = await fetch(sp.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: sp.chave, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_token: sp.token, ...args }), signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
+      if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()).slice(0, 200));
+      const j = await r.json();
+      if (j && j.ok) { SN._fonteLeitura = 'supabase'; return j; }
+      throw new Error('resposta inesperada');
+    } catch (e) {
+      console.warn('[SigoNet] leitura pelo Supabase falhou, usando o servidor do Google:', e && e.message);
+      if (/SESSAO_INVALIDA/.test(e && e.message || '')) { const a = SN.sessao(); if (a && a.supa) { delete a.supa; SN.gravarSessao(a); } } // não insiste nesta sessão
+    }
+  }
+  SN._fonteLeitura = 'planilha';
+  return SN.api(acao, dados);
+};
+
 // Estado de sincronização
 SN._snap = {};   // coleção → chave → JSON do que o servidor já tem
 SN._ver = {};    // coleção → chave → versão
@@ -91,7 +119,7 @@ SN.conferirLimpeza = async ts => {
   return true;
 };
 SN.carregarRemoto = async () => {
-  const r = await SN.api('CARREGAR');
+  const r = await SN.ler('CARREGAR');
   await SN.conferirLimpeza(r.db.config && r.db.config.limpeza);
   const db = SN.baseVazia();
   SN._ver = {};
@@ -334,7 +362,7 @@ SN.sincronizar = async () => {
   if (!SN.sessao() || enviando || pendente || !SN._ultimaSync || sincronizando) return;
   sincronizando = true;
   try {
-    const r = await SN.api('SINCRONIZAR', { desde: SN._ultimaSync });
+    const r = await SN.ler('SINCRONIZAR', { desde: SN._ultimaSync });
     if (r.config && await SN.conferirLimpeza(r.config.limpeza)) { // dados de teste apagados: recarrega tudo
       await SN.carregarRemoto(); SN.aoMudarBase(); return;
     }
@@ -374,7 +402,7 @@ if (SN.remoto) {
   SN.login = async dados => {
     const r = await SN.api('LOGIN', dados);
     if (r.primeiroAcesso) return { primeiroAcesso: true };
-    SN.gravarSessao({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 16 * 3600e3 });
+    SN.gravarSessao({ tipo: dados.tipo, nome: dados.nome, empresa: dados.empresa || '', token: r.token, expira: Date.now() + 16 * 3600e3, supa: r.supa || null });
     // Se a base não carregar, não deixa a pessoa "meio logada": desfaz e mostra o erro.
     try { await SN.carregarRemoto(); } catch (e) { SN.encerrarSessao(); throw e; }
     await SN.recuperarPendentes(); // o que ficou sem subir na sessão anterior neste aparelho
