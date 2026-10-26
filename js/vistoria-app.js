@@ -33,6 +33,36 @@ SN.vst.registrarMenu = () => {
 SN.vst.disponivel = () => !!SN.remoto;
 SN.vst.semServidorHtml = '<div class="aviso alerta">A Preventiva precisa do servidor (Apps Script) configurado em <span class="mono">js/config.js</span>. No modo teste local ela não funciona.</div>';
 
+// ─────────── Leitura pelo Supabase (fase 3 da migração) ───────────
+// Carga da Preventiva/Melhoria/Retirada e Conversa (avisos a cada 12 s, conversa aberta a cada 5 s)
+// direto do banco. O que é regra em JavaScript (VR) o app aplica aqui, como o servidor fazia.
+// null = não deu (sem sessão de leitura, banco fora…): quem chamou segue pelo Apps Script.
+const LEITURA_BANCO = {
+  VST_CARREGAR: () => ['sn_vst_carregar', {}],
+  CONV_AVISOS: () => ['sn_conv_avisos', {}],
+  CONV_LER: d => ['sn_conv_ler', { p_ref: d.ref || '', p_desde: d.desde || '' }]
+};
+SN.vst.lerBanco = async (acao, dados, s) => {
+  const sp = s.supa;
+  try {
+    const [fn, args] = LEITURA_BANCO[acao](dados || {});
+    const r = await fetch(sp.url + '/rest/v1/rpc/' + fn, { method: 'POST', headers: { apikey: sp.chave, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_token: sp.token, ...args }), signal: AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined });
+    if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()).slice(0, 200));
+    const j = await r.json();
+    if (!j || typeof j.ok !== 'boolean') throw new Error('resposta inesperada');
+    if (acao === 'VST_CARREGAR' && j.ok) { // o que o servidor fazia na leitura
+      j.config = VR.normalizarConfig(j.config || {});
+      (j.producao || []).forEach(VR.fundirCaixas);
+    }
+    return j;
+  } catch (e) {
+    console.warn('[SigoNet] ' + acao + ' pelo Supabase falhou, usando o servidor do Google:', e && e.message);
+    if (/SESSAO_INVALIDA/.test(e && e.message || '')) { const a = SN.sessao(); if (a && a.supa) { delete a.supa; SN.gravarSessao(a); } }
+    return null;
+  }
+};
+
 // Chamada ao servidor. Diferente de SN.api: devolve a resposta inteira quando o
 // servidor recusa (ok:false com erros/fotos_pendentes). Só lança erro quando
 // não houve resposta (sem sinal, servidor ocupado) — err.rede = true.
@@ -41,6 +71,11 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
   // Ninguém logado (ex.: saiu enquanto uma busca estava agendada): nem vai ao servidor.
   if (!s || !s.token) { const e = new Error('Sem sessão.'); e.sessao = true; throw e; }
   if (grava) { SN.vst.cargaTs = 0; SN.vst.gravacoes++; }
+  // Leituras que já vêm do banco (Supabase), com volta automática ao Apps Script se falhar.
+  if (SN.SUPA_LEITURA && LEITURA_BANCO[acao] && s.supa && s.supa.token) {
+    const j = await SN.vst.lerBanco(acao, dados, s);
+    if (j) return j;
+  }
   let j;
   try {
     const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }),
