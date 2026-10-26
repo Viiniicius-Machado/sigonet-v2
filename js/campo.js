@@ -77,7 +77,8 @@
   // Coordenada do cliente: lat,lng dentro do link do mapa (q=, @, /place/, ll=, texto) ou do endereço.
   SN.coordsDoLink = txt => {
     const s = decodeURIComponent(String(txt || ''));
-    const m = s.match(/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/) || s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    // separador: vírgula, "+" ou espaço (".../place/-22.76325667+-47.25689113")
+    const m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/) || s.match(/(-?\d{1,2}\.\d{3,})\s*(?:,|\+|\s)\s*(-?\d{1,3}\.\d{3,})/);
     if (!m) return null;
     const lat = Number(m[1]), lng = Number(m[2]);
     return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
@@ -160,7 +161,10 @@
     return d;
   };
   SN.linkNavegar = (c, app) => {
-    const d = (c.deslocamento && c.deslocamento.destino) || SN.coordsDoLink(c.gps);
+    // Link do mapa vem primeiro; destino "aproximado" (bairro/centro da cidade) não serve para navegar:
+    // aí o Maps/Waze recebem o endereço em texto e acham a rua sozinhos.
+    const calc = c.deslocamento && c.deslocamento.destino;
+    const d = SN.coordsDoLink(c.gps) || (calc && !/aproximada/.test(calc.fonte || '') ? calc : null);
     if (app === 'waze') return d ? `https://waze.com/ul?ll=${d.lat},${d.lng}&navigate=yes` : `https://waze.com/ul?q=${encodeURIComponent([c.endereco, c.cidade].filter(Boolean).join(', '))}&navigate=yes`;
     return `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${d ? d.lat + ',' + d.lng : encodeURIComponent([c.endereco, c.cidade].filter(Boolean).join(', '))}`;
   };
