@@ -323,16 +323,32 @@ SN.rota('/portal', () => {
 SN.TELAS = { chamados: 'Esteira', lpu: 'Gestão de LPU', servicedesk: 'Service Desk', materiais: 'Controle de Materiais', fibra: 'Cadastro de Fibra',
   base: 'Base OEM', portal: 'Portal de Gestão', cadastros: 'Cadastros e Acessos', auditoria: 'Auditoria' };
 SN.abaCad = 'tecnicos';
-// Com servidor, PIN/complemento ficam só na planilha; a tela recebe apenas "configurado sim/não".
+// Com servidor, senha e código ficam só no banco; a tela recebe apenas "senha criada sim/não".
 SN.acessoOk = x => SN.remoto ? !!(SN._acessos[x.id] && SN._acessos[x.id].configurado) : !!x.complementoHash;
 SN.ultimoAcesso = x => SN.remoto ? (SN._acessos[x.id] && SN._acessos[x.id].ultimo) : x.ultimoAcesso;
-// Grava PIN / reseta complemento. Local: no próprio registro. Servidor: ação ACESSO (só quem tem Cadastros).
-SN.gravarAcesso = async (tipo, reg, { pin, reset, revogar }) => {
-  if (!SN.remoto) { if (pin) reg.pin = pin; if (reset || revogar) reg.complementoHash = ''; if (revogar) reg.pin = SN.uid(); SN.salvar(); return; }
+// Reseta a senha (gera o código de liberação) ou retira o acesso. Local: no próprio registro.
+// Servidor: ação ACESSO (só quem tem Cadastros). Devolve o código de liberação quando há reset.
+SN.gravarAcesso = async (tipo, reg, { reset, revogar }) => {
+  if (!SN.remoto) {
+    let codigo = '';
+    if (reset) { codigo = String(100000 + Math.floor(Math.random() * 900000)); reg.complementoHash = ''; reg.pin = codigo + '@' + (Date.now() + 24 * 3600e3); }
+    if (revogar) { reg.complementoHash = ''; reg.pin = SN.uid(); }
+    SN.salvar(); return codigo;
+  }
   await SN.salvarAgora(); // garante que o registro já existe no servidor
-  const r = await SN.api('ACESSO', { tipo, id: reg.id, pin: pin || undefined, resetComplemento: !!reset, revogar });
+  const r = await SN.api('ACESSO', { tipo, id: reg.id, resetComplemento: !!reset, revogar });
   if (r && r.ok === false) throw new Error(r.erro);
   await SN.carregarStatusAcessos();
+  return r && r.codigo || '';
+};
+// Mostra o código de liberação para a gestão passar à pessoa (WhatsApp/ligação). Não fica guardado na tela.
+SN.mostrarCodigo = (nome, codigo) => {
+  if (!codigo) return;
+  const msg = 'Seu código de liberação do SigoNet: ' + codigo + ' (vale 24 horas, uma vez só). Abra o SigoNet, escolha seu nome, toque em Entrar sem senha e crie sua senha nova.';
+  SN.modal({ titulo: 'Código de liberação · ' + nome, corpo: `<p class="small">Passe este código para <b>${SN.esc(nome)}</b>. Com ele, no próximo acesso, a pessoa cria a senha nova.</p>
+    <div style="font-size:2.2rem;font-weight:700;letter-spacing:.3em;text-align:center;margin:14px 0" class="mono">${SN.esc(codigo)}</div>
+    <p class="small muted">Vale por <b>24 horas</b> e serve <b>uma vez só</b>. Se vencer, é só resetar a senha de novo.</p>`,
+    botoes: [{ rot: 'Copiar mensagem', acao: () => { try { navigator.clipboard.writeText(msg); SN.toast('Mensagem copiada.', 'ok'); } catch (e) { } return false; } }, { rot: 'Fechar', cls: 'prim' }] });
 };
 // Consulta da LPU de uma conta: cada serviço com o descritivo técnico (o que o item cobre) e a legenda das classes.
 SN.htmlLpuDaConta = cod => {
@@ -358,10 +374,10 @@ SN.rota('/cadastros', () => {
   if (aba === 'tecnicos') { const sem = d.tecnicos.filter(t => !t.ativo).length, ver = SN.cadTecVer === 'sem' && sem ? 'sem' : 'com';
     html = `<div class="card"><div class="card-tit"><h3>Técnicos (${d.tecnicos.length - sem} com acesso)</h3><button class="btn prim" data-novo="tec">+ Técnico</button></div>
     ${sem ? `<div class="chips" style="margin-bottom:10px"><button type="button" class="chip ${ver === 'com' ? 'sel' : ''}" data-tecver="com">Com acesso (${d.tecnicos.length - sem})</button><button type="button" class="chip ${ver === 'sem' ? 'sel' : ''}" data-tecver="sem">Acesso retirado (${sem})</button></div>` : ''}
-    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Empresa</th><th>Nome</th><th>Equipe</th><th>Titular</th><th>Frente</th><th>Vínculo</th><th>1º acesso</th><th>Acesso</th></tr></thead><tbody>
+    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Empresa</th><th>Nome</th><th>Equipe</th><th>Titular</th><th>Frente</th><th>Vínculo</th><th>Senha</th><th>Acesso</th></tr></thead><tbody>
     ${d.tecnicos.filter(t => ver === 'sem' ? !t.ativo : t.ativo).sort((a, b) => a.empresa.localeCompare(b.empresa) || a.nome.localeCompare(b.nome)).map(t => `<tr class="clic" data-tec="${t.id}"><td>${SN.esc(t.empresa)}</td><td>${SN.esc(t.nome)}</td>
       <td>${SN.esc(t.equipe || '—')}</td><td>${t.equipe ? (t.titular ? '✔' : '') : '—'}</td><td>${SN.esc(t.frente || '')}</td><td class="small">${SN.empresa(t.empresa).vinculo}</td>
-      <td>${t.ativo ? (SN.acessoOk(t) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>') : '—'}</td>
+      <td>${t.ativo ? (SN.acessoOk(t) ? '<span class="badge ok">criada</span>' : '<span class="badge">pendente</span>') : '—'}</td>
       <td class="nowrap">${SN.celulaAcesso('tecnico', t)}</td></tr>`).join('')
       || `<tr><td colspan="8" class="muted center">Nenhum técnico.</td></tr>`}
     </tbody></table></div></div>`; }
@@ -373,12 +389,12 @@ SN.rota('/cadastros', () => {
   if (aba === 'lideranca') { const semL = d.lideranca.filter(l => !l.ativo).length, verL = SN.cadLidVer === 'sem' && semL ? 'sem' : 'com';
     html = `<div class="card"><div class="card-tit"><h3>Liderança e operação</h3><button class="btn prim" data-novo="lid">+ Pessoa</button></div>
     ${semL ? `<div class="chips" style="margin-bottom:10px"><button type="button" class="chip ${verL === 'com' ? 'sel' : ''}" data-lidver="com">Com acesso (${d.lideranca.length - semL})</button><button type="button" class="chip ${verL === 'sem' ? 'sel' : ''}" data-lidver="sem">Acesso retirado (${semL})</button></div>` : ''}
-    <div class="aviso info small" style="margin-bottom:10px">Modelo de acesso: <b>Nome + PIN</b> (definido aqui) <b>+ Complemento</b> pessoal criado no 1º acesso (guardado só como hash).
+    <div class="aviso info small" style="margin-bottom:10px">Modelo de acesso: <b>Nome + senha</b> pessoal (guardada só como hash; a gestão não vê). No 1º acesso ou quando esquecer: <b>Resetar senha</b> gera um código de liberação (24 h, uso único) que você passa para a pessoa criar a senha nova.
       As <b>telas</b> definem o que cada um abre; o <b>cargo</b> libera ações: Gerente/Gestor tudo · Encarregado aprova LPU, valida fibra e chamados e revisa as obras (Preventiva, Melhoria, Retirada) sem precisar marcar telas · OEM atua na sala técnica (GEOGRID/materiais/service desk).</div>
-    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Nome</th><th>Cargo</th><th>Telas liberadas</th><th>1º acesso</th><th>Último acesso</th><th>Acesso</th></tr></thead><tbody>
+    <div class="tabela-wrap"><table class="tab"><thead><tr><th>Nome</th><th>Cargo</th><th>Telas liberadas</th><th>Senha</th><th>Último acesso</th><th>Acesso</th></tr></thead><tbody>
     ${d.lideranca.filter(l => verL === 'sem' ? !l.ativo : l.ativo).map(l => `<tr class="clic" data-lid="${l.id}"><td><b>${SN.esc(l.nome)}</b>${l.nomeCompleto ? `<div class="small muted">${SN.esc(l.nomeCompleto)}</div>` : ''}</td><td>${SN.esc(l.cargo)}</td>
       <td class="small">${l.telas.includes('*') ? '<span class="badge verde">Todas</span>' : l.telas.map(t => SN.TELAS[t] || t).join(', ')}</td>
-      <td>${SN.acessoOk(l) ? '<span class="badge ok">configurado</span>' : '<span class="badge">pendente</span>'}</td><td class="nowrap">${SN.dt(SN.ultimoAcesso(l))}</td><td class="nowrap">${SN.celulaAcesso('lideranca', l)}</td></tr>`).join('')}</tbody></table></div></div>`; }
+      <td>${SN.acessoOk(l) ? '<span class="badge ok">criada</span>' : '<span class="badge">pendente</span>'}</td><td class="nowrap">${SN.dt(SN.ultimoAcesso(l))}</td><td class="nowrap">${SN.celulaAcesso('lideranca', l)}</td></tr>`).join('')}</tbody></table></div></div>`; }
   if (aba === 'disp') html = `<div class="card"><div class="card-tit"><h3>Disponibilidade da mão de obra</h3><button class="btn prim" data-novo="disp">+ Registrar período</button></div>
     <p class="small muted">Técnico com período cobrindo o dia fica bloqueado no despacho (férias, atestado, folga compensada…).</p>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>Técnico</th><th>Empresa</th><th>Motivo</th><th>Início</th><th>Fim</th><th>Registrado por</th><th></th></tr></thead><tbody>
@@ -435,27 +451,27 @@ SN.editarTecnico = t => {
     <div class="campo"><label>Empresa</label><select class="inp" id="eEmp">${SN.opcoesEmpresas(t.empresa)}</select></div>
     <div class="campo"><label>Nome completo</label><input class="inp" id="eNome" value="${SN.esc(t.nome)}"></div></div>
     <div class="linha-form"><div class="campo"><label>Equipe (dupla)</label><input class="inp" id="eEq" value="${SN.esc(t.equipe)}" placeholder="ex.: Equipe 01"></div>
-    <div class="campo"><label>Frente</label><input class="inp" id="eFr" value="${SN.esc(t.frente)}" placeholder="Manutenção, GTD…"></div>
-    <div class="campo"><label>PIN</label><input class="inp" id="ePin" value="${SN.remoto ? '' : SN.esc(t.pin)}" placeholder="${SN.remoto ? (novo ? PIN_INICIAL + ' (padrão)' : 'em branco = mantém o atual') : ''}"></div></div>
+    <div class="campo"><label>Frente</label><input class="inp" id="eFr" value="${SN.esc(t.frente)}" placeholder="Manutenção, GTD…"></div></div>
+    ${novo ? '<p class="small muted">Ao salvar, o sistema gera o código de liberação para o técnico criar a senha no 1º acesso.</p>' : ''}
     <label class="small"><input type="checkbox" id="eTit" ${t.titular ? 'checked' : ''}> Titular da dupla (recebe despacho)</label>
     ${!novo && !t.ativo ? '<div class="aviso alerta small" style="margin-top:8px">Acesso retirado. Use "Devolver acesso" na lista de técnicos para liberar de novo.</div>' : ''}`,
-    botoes: [{ rot: 'Cancelar' }, ...(novo || !t.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcessoTecnico(t), 0); } }]), ...(novo || !t.ativo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
-        try { await SN.gravarAcesso('tecnico', t, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
-        SN.log('RESET_COMPLEMENTO', t.nome); SN.salvar(); SN.toast('No próximo acesso ele cria um novo complemento.'); SN.render(); } }]),
+    botoes: [{ rot: 'Cancelar' }, ...(novo || !t.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcessoTecnico(t), 0); } }]), ...(novo || !t.ativo ? [] : [{ rot: 'Resetar senha', acao: async () => {
+        let cod; try { cod = await SN.gravarAcesso('tecnico', t, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
+        SN.log('RESET_SENHA', t.nome); SN.salvar(); SN.render(); setTimeout(() => SN.mostrarCodigo(t.nome, cod), 0); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
         const nome = SN.$('#eNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
-        const pinNovo = SN.$('#ePin').value.trim();
         const antes = { ...t, pin: 0, complementoHash: 0 };
         Object.assign(t, { empresa: SN.$('#eEmp').value, nome, equipe: SN.$('#eEq').value.trim(), frente: SN.$('#eFr').value.trim(),
           titular: SN.$('#eTit').checked });
-        if (SN.remoto) delete t.pin; else t.pin = pinNovo || t.pin || PIN_INICIAL;
+        if (SN.remoto) delete t.pin;
         if (novo) SN.db.tecnicos.push(t);
-        SN.log(novo ? 'CRIAR_TECNICO' : 'EDITAR_TECNICO', t.nome, novo ? t.empresa : SN.diff(antes, { ...t, pin: 0, complementoHash: 0 }) + (pinNovo ? '; PIN alterado' : '')); SN.salvar();
-        if (SN.remoto && (novo || pinNovo)) { try { await SN.gravarAcesso('tecnico', t, { pin: pinNovo || PIN_INICIAL }); } catch (e) { SN.toast('Cadastro salvo, mas o PIN não: ' + e.message, 'erro'); } }
-        SN.render(); } }] });
+        SN.log(novo ? 'CRIAR_TECNICO' : 'EDITAR_TECNICO', t.nome, novo ? t.empresa : SN.diff(antes, { ...t, pin: 0, complementoHash: 0 })); SN.salvar();
+        let cod = '';
+        if (novo) { try { cod = await SN.gravarAcesso('tecnico', t, { reset: true }); } catch (e) { SN.toast('Cadastro salvo, mas o código de liberação não: ' + e.message + '. Use "Resetar senha".', 'erro'); } }
+        SN.render(); if (cod) setTimeout(() => SN.mostrarCodigo(t.nome, cod), 0); } }] });
 };
 // Pessoa que não vai mais usar o SigoNet (técnico ou liderança): sai da lista de login (e do
-// despacho), o PIN é trocado e a sessão aberta cai na hora (servidor). O cadastro e o histórico ficam.
+// despacho), a senha é apagada e a sessão aberta cai na hora (servidor). O cadastro e o histórico ficam.
 const gerenciaCadastros = l => l.ativo && (l.telas || []).some(x => x === '*' || x === 'cadastros');
 SN.tirarAcesso = async (tipo, x) => {
   if (!x) return;
@@ -474,22 +490,22 @@ SN.tirarAcesso = async (tipo, x) => {
   x.ativo = false; x.acessoRetirado = { em: SN.agora(), por: eu.nome || '', motivo: mot };
   SN.log('TIRAR_ACESSO', x.nome, `${lid ? 'liderança' : x.empresa} · ${mot}`); SN.salvar();
   try { await SN.gravarAcesso(lid ? 'lideranca' : 'tecnico', x, { revogar: true }); SN.toast(x.nome + ' não acessa mais o SigoNet.', 'ok'); }
-  catch (e) { SN.toast('Cadastro desativado, mas o servidor não confirmou a troca do PIN: ' + e.message, 'erro'); }
+  catch (e) { SN.toast('Cadastro desativado, mas o servidor não confirmou a retirada do acesso: ' + e.message, 'erro'); }
   SN.render();
 };
 SN.devolverAcesso = async (tipo, x) => {
   if (!x) return;
   const lid = tipo === 'lideranca';
-  const pin = await SN.modal({ titulo: 'Devolver acesso · ' + x.nome, corpo: `${x.acessoRetirado ? `<p class="small muted">Retirado em ${SN.dt(x.acessoRetirado.em)} por ${SN.esc(x.acessoRetirado.por)}: ${SN.esc(x.acessoRetirado.motivo)}</p>` : ''}
-      <div class="campo"><label>PIN novo *</label><input class="inp" id="daPin" value="${SN.esc(PIN_INICIAL)}"></div>
-      <p class="small muted">No primeiro acesso cria um complemento novo.${lid ? ' As telas liberadas continuam as de antes.' : ''}</p>`,
-    botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Devolver acesso', cls: 'prim', acao: f => { const v = SN.$('#daPin', f).value.trim(); if (v.length < 4) { SN.toast('PIN com pelo menos 4 caracteres.', 'erro'); return false; } return v; } }] });
-  if (!pin) return;
+  const ok = await SN.modal({ titulo: 'Devolver acesso · ' + x.nome, corpo: `${x.acessoRetirado ? `<p class="small muted">Retirado em ${SN.dt(x.acessoRetirado.em)} por ${SN.esc(x.acessoRetirado.por)}: ${SN.esc(x.acessoRetirado.motivo)}</p>` : ''}
+      <p class="small">O sistema gera um código de liberação (24 h, uso único) para a pessoa criar a senha nova.${lid ? ' As telas liberadas continuam as de antes.' : ''}</p>`,
+    botoes: [{ rot: 'Cancelar', valor: null }, { rot: 'Devolver acesso', cls: 'prim', valor: true }] });
+  if (!ok) return;
   x.ativo = true; delete x.acessoRetirado;
   SN.log('DEVOLVER_ACESSO', x.nome, lid ? 'liderança' : x.empresa); SN.salvar();
-  try { await SN.gravarAcesso(lid ? 'lideranca' : 'tecnico', x, { pin, reset: true, revogar: false }); SN.toast(x.nome + ' pode entrar de novo.', 'ok'); }
-  catch (e) { SN.toast('Cadastro ativado, mas o PIN não foi gravado: ' + e.message, 'erro'); }
-  SN.render();
+  let cod = '';
+  try { cod = await SN.gravarAcesso(lid ? 'lideranca' : 'tecnico', x, { reset: true, revogar: false }); SN.toast(x.nome + ' pode entrar de novo.', 'ok'); }
+  catch (e) { SN.toast('Cadastro ativado, mas o código de liberação não foi gerado: ' + e.message + '. Use "Resetar senha".', 'erro'); }
+  SN.render(); if (cod) setTimeout(() => SN.mostrarCodigo(x.nome, cod), 0);
 };
 SN.tirarAcessoTecnico = t => SN.tirarAcesso('tecnico', t);
 SN.devolverAcessoTecnico = t => SN.devolverAcesso('tecnico', t);
@@ -544,26 +560,26 @@ SN.editarLider = l => {
     <div class="campo"><label>Nome (login)</label><input class="inp" id="lNome" value="${SN.esc(l.nome)}"></div>
     <div class="campo"><label>Nome completo (assinaturas)</label><input class="inp" id="lComp" value="${SN.esc(l.nomeCompleto || '')}"></div></div>
     <div class="linha-form"><div class="campo"><label>Cargo</label><select class="inp" id="lCargo">${['Gerente', 'Gestor', 'Encarregado', 'OEM'].map(c => `<option ${c === l.cargo ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
-    <div class="campo"><label>PIN</label><input class="inp" id="lPin" value="${SN.remoto ? '' : SN.esc(l.pin)}" placeholder="${SN.remoto ? (novo ? PIN_INICIAL + ' (padrão)' : 'em branco = mantém o atual') : ''}"></div></div>
+</div>${novo ? '<p class="small muted">Ao salvar, o sistema gera o código de liberação para a pessoa criar a senha no 1º acesso.</p>' : ''}
     <div class="campo"><label>Telas liberadas</label><div class="chips">
       <label class="chip"><input type="checkbox" data-tela="*" ${l.telas.includes('*') ? 'checked' : ''}> Todas</label>
       ${Object.entries(SN.TELAS).map(([k, r]) => `<label class="chip"><input type="checkbox" data-tela="${k}" ${l.telas.includes(k) ? 'checked' : ''}> ${r}</label>`).join('')}</div></div>
     ${!novo && !l.ativo ? '<div class="aviso alerta small">Acesso retirado. Use "Devolver acesso" na lista para liberar de novo.</div>' : ''}`,
-    botoes: [{ rot: 'Cancelar' }, ...(novo || !l.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcesso('lideranca', l), 0); } }]), ...(novo || !l.ativo ? [] : [{ rot: 'Resetar complemento', acao: async () => {
-        try { await SN.gravarAcesso('lideranca', l, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
-        SN.log('RESET_COMPLEMENTO', l.nome); SN.salvar(); SN.toast('Complemento resetado.'); SN.render(); } }]),
+    botoes: [{ rot: 'Cancelar' }, ...(novo || !l.ativo ? [] : [{ rot: 'Tirar acesso', cls: 'perigo', acao: () => { setTimeout(() => SN.tirarAcesso('lideranca', l), 0); } }]), ...(novo || !l.ativo ? [] : [{ rot: 'Resetar senha', acao: async () => {
+        let cod; try { cod = await SN.gravarAcesso('lideranca', l, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
+        SN.log('RESET_SENHA', l.nome); SN.salvar(); SN.render(); setTimeout(() => SN.mostrarCodigo(l.nome, cod), 0); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
         const nome = SN.$('#lNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
         const telas = SN.$$('[data-tela]').filter(x => x.checked).map(x => x.dataset.tela);
-        const pinNovo = SN.$('#lPin').value.trim();
         const antes = { ...l, pin: 0, complementoHash: 0 };
         Object.assign(l, { nome, nomeCompleto: SN.$('#lComp').value.trim(), cargo: SN.$('#lCargo').value,
           telas: telas.includes('*') ? ['*'] : telas });
-        if (SN.remoto) delete l.pin; else l.pin = pinNovo || l.pin || PIN_INICIAL;
+        if (SN.remoto) delete l.pin;
         if (novo) SN.db.lideranca.push(l);
-        SN.log(novo ? 'CRIAR_LIDERANCA' : 'EDITAR_LIDERANCA', l.nome, SN.diff(antes, { ...l, pin: 0, complementoHash: 0 }) + (pinNovo ? '; PIN alterado' : '')); SN.salvar();
-        if (SN.remoto && (novo || pinNovo)) { try { await SN.gravarAcesso('lideranca', l, { pin: pinNovo || PIN_INICIAL }); } catch (e) { SN.toast('Cadastro salvo, mas o PIN não: ' + e.message, 'erro'); } }
-        SN.render(); } }] });
+        SN.log(novo ? 'CRIAR_LIDERANCA' : 'EDITAR_LIDERANCA', l.nome, SN.diff(antes, { ...l, pin: 0, complementoHash: 0 })); SN.salvar();
+        let cod = '';
+        if (novo) { try { cod = await SN.gravarAcesso('lideranca', l, { reset: true }); } catch (e) { SN.toast('Cadastro salvo, mas o código de liberação não: ' + e.message + '. Use "Resetar senha".', 'erro'); } }
+        SN.render(); if (cod) setTimeout(() => SN.mostrarCodigo(l.nome, cod), 0); } }] });
 };
 // Chamado da Esteira (Mão de obra hoje): tec já vem escolhido quando é "Marcar indisponível" na linha.
 SN.novaDisp = tec => {

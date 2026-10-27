@@ -23,7 +23,7 @@ SN.rota('/login', () => {
         <button class="aba" data-t="tecnico">Técnico de campo</button>
       </div>
       <h2 id="lgTit">Acesso ao painel de gestão</h2>
-      <p class="muted small" id="lgSub">Entre com seu nome, PIN e complemento pessoal.</p>
+      <p class="muted small" id="lgSub">Entre com seu nome e sua senha.</p>
       <form id="fLogin" autocomplete="off">
         <div id="blocoLid">
           <div class="campo"><label>Nome</label><select class="inp" id="lgNome"><option value="">Selecione…</option>
@@ -34,15 +34,15 @@ SN.rota('/login', () => {
             ${emps.map(e => `<option>${SN.esc(e)}</option>`).join('')}</select></div>
           <div class="campo"><label>Técnico</label><select class="inp" id="lgTec"><option value="">Selecione a empresa</option></select></div>
         </div>
-        <div class="campo"><label>PIN</label><input class="inp" id="lgPin" type="password" inputmode="text" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="PIN fornecido pela gestão"></div>
-        <div class="campo" id="cpComp"><label>Complemento</label><input class="inp" id="lgComp" type="password" placeholder="Sua senha pessoal"></div>
+        <div class="campo" id="cpSenha"><label>Senha</label><input class="inp" id="lgSenha" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Sua senha pessoal"></div>
         <div id="cpNovo" class="oculto">
-          <div class="aviso info small" style="margin-bottom:10px">Primeiro acesso: crie seu complemento pessoal (mín. 4 caracteres). Só você sabe — a gestão não vê.</div>
-          <div class="campo"><label>Novo complemento</label><input class="inp" id="lgNovo" type="password"></div>
-          <div class="campo"><label>Repita o complemento</label><input class="inp" id="lgNovo2" type="password"></div>
+          <div class="aviso info small" style="margin-bottom:10px">Crie sua senha (mín. 6 caracteres). Use o <b>código de liberação</b> que a gestão te passou. Só você sabe a senha — a gestão não vê.</div>
+          <div class="campo"><label>Código de liberação</label><input class="inp" id="lgCodigo" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="6 números"></div>
+          <div class="campo"><label>Nova senha</label><input class="inp" id="lgNovo" type="password"></div>
+          <div class="campo"><label>Repita a senha</label><input class="inp" id="lgNovo2" type="password"></div>
         </div>
         <button class="btn prim lg bloco" type="submit">Entrar</button>
-        <p class="muted small" style="margin-top:12px">Esqueceu o complemento? Peça à gestão para resetar em Cadastros e Acessos.</p>
+        <p class="muted small" style="margin-top:12px">Primeiro acesso ou esqueceu a senha? Peça à gestão um <b>código de liberação</b> (Cadastros e Acessos → Resetar senha), escolha seu nome e toque em Entrar sem senha.</p>
       </form>
       <div data-instalar></div>
     </div>
@@ -52,9 +52,9 @@ SN.rota('/login', () => {
   SN.$$('#abasLogin .aba').forEach(b => b.onclick = () => {
     SN.$$('#abasLogin .aba').forEach(x => x.classList.toggle('ativa', x === b)); tipo = b.dataset.t; primeiro = false;
     SN.$('#blocoLid').classList.toggle('oculto', tipo !== 'lideranca'); SN.$('#blocoTec').classList.toggle('oculto', tipo !== 'tecnico');
-    SN.$('#cpNovo').classList.add('oculto'); SN.$('#cpComp').classList.remove('oculto');
+    SN.$('#cpNovo').classList.add('oculto'); SN.$('#cpSenha').classList.remove('oculto');
     SN.$('#lgTit').textContent = tipo === 'lideranca' ? 'Acesso ao painel de gestão' : 'Acesso do técnico';
-    SN.$('#lgSub').textContent = tipo === 'lideranca' ? 'Entre com seu nome, PIN e complemento pessoal.' : 'Escolha sua empresa e seu nome.';
+    SN.$('#lgSub').textContent = tipo === 'lideranca' ? 'Entre com seu nome e sua senha.' : 'Escolha sua empresa e seu nome.';
   });
   SN.$('#lgEmp').onchange = e => {
     const lista = SN.db.tecnicos.filter(t => t.ativo && t.empresa === e.target.value).sort((a, b) => a.nome.localeCompare(b.nome));
@@ -62,19 +62,22 @@ SN.rota('/login', () => {
   };
   SN.$('#fLogin').onsubmit = async ev => {
     ev.preventDefault();
-    const dados = { tipo, pin: SN.$('#lgPin').value.trim(), complemento: SN.$('#lgComp').value,
+    const dados = { tipo, senha: SN.$('#lgSenha').value,
       nome: tipo === 'lideranca' ? SN.$('#lgNome').value : SN.$('#lgTec').value, empresa: tipo === 'tecnico' ? SN.$('#lgEmp').value : '' };
-    if (!dados.nome || !dados.pin) return SN.toast('Preencha nome e PIN.', 'erro');
+    if (!dados.nome) return SN.toast('Escolha seu nome.', 'erro');
     if (primeiro) {
       const a = SN.$('#lgNovo').value, b = SN.$('#lgNovo2').value;
-      if (a !== b) return SN.toast('Os complementos não conferem.', 'erro');
-      dados.novoComplemento = a;
+      dados.codigo = SN.$('#lgCodigo').value.trim();
+      if (!dados.codigo) return SN.toast('Informe o código de liberação que a gestão te passou.', 'erro');
+      if (a.length < 6) return SN.toast('A senha precisa ter pelo menos 6 caracteres.', 'erro');
+      if (a !== b) return SN.toast('As senhas não conferem.', 'erro');
+      dados.novaSenha = a; delete dados.senha;
     }
     const fim = SN.cobrirCarregando(tipo === 'tecnico' ? 'Entrando e buscando suas OS…' : 'Entrando e carregando o painel…');
     try {
       const r = await SN.login(dados);
       fim();
-      if (r.primeiroAcesso) { primeiro = true; SN.$('#cpNovo').classList.remove('oculto'); SN.$('#cpComp').classList.add('oculto'); SN.$('#lgNovo').focus(); return; }
+      if (r.primeiroAcesso) { primeiro = true; SN.$('#cpNovo').classList.remove('oculto'); SN.$('#cpSenha').classList.add('oculto'); SN.$('#lgCodigo').focus(); return; }
       location.hash = tipo === 'tecnico' ? '#/tec' : '#/inicio';
     } catch (e) { fim(); SN.toast(e.message, 'erro'); }
   };

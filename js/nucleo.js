@@ -835,7 +835,10 @@ SN.podeAprovar = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gest
 SN.ehGestor = () => { const u = SN.usuario(); return !!u && ['Gerente', 'Gestor'].includes(u.cargo); };
 
 const tentativas = {};
-SN.login = async ({ tipo, nome, empresa, pin, complemento, novoComplemento }) => {
+// Login por senha (27/10/2026), mesma regra do servidor: sem senha, entra com o código de
+// liberação ("pin": "123456@expiraMs", uso único; PIN antigo sem validade vale uma vez) e cria a senha.
+SN.SENHA_MIN = 6;
+SN.login = async ({ tipo, nome, empresa, senha, codigo, novaSenha }) => {
   const chave = tipo + '|' + empresa + '|' + nome;
   const tt = tentativas[chave] || { n: 0, ate: 0 };
   if (tt.ate > Date.now()) throw new Error('Muitas tentativas. Aguarde 15 minutos.');
@@ -843,12 +846,17 @@ SN.login = async ({ tipo, nome, empresa, pin, complemento, novoComplemento }) =>
   const reg = lista.find(x => x.nome === nome && x.ativo && (tipo === 'lideranca' || x.empresa === empresa));
   const falha = msg => { tt.n++; if (tt.n >= 5) { tt.ate = Date.now() + 15 * 60000; tt.n = 0; } tentativas[chave] = tt; throw new Error(msg); };
   if (!reg) falha('Usuário não encontrado ou inativo.');
-  if (String(reg.pin).trim().toUpperCase() !== String(pin).trim().toUpperCase()) falha('PIN incorreto.');
-  if (!reg.complementoHash) {
-    if (!novoComplemento) return { primeiroAcesso: true };
-    if (novoComplemento.length < 4) throw new Error('O complemento precisa ter pelo menos 4 caracteres.');
-    reg.complementoHash = await SN.sha256(reg.nome + '|' + novoComplemento);
-  } else if (reg.complementoHash !== await SN.sha256(reg.nome + '|' + complemento)) falha('Complemento incorreto.');
+  if (reg.complementoHash) {
+    if (!senha) throw new Error('Informe a senha.');
+    if (reg.complementoHash !== await SN.sha256(reg.nome + '|' + senha)) falha('Senha incorreta.');
+  } else {
+    if (!novaSenha) return { primeiroAcesso: true };
+    const [cod, vence] = String(reg.pin || '').split('@');
+    if (!cod || cod.trim().toUpperCase() !== String(codigo || '').trim().toUpperCase()) falha('Código de liberação incorreto.');
+    if (vence && Date.now() > Number(vence)) throw new Error('Código de liberação vencido. Peça à gestão um novo reset de senha.');
+    if (novaSenha.length < SN.SENHA_MIN) throw new Error('A senha precisa ter pelo menos ' + SN.SENHA_MIN + ' caracteres.');
+    reg.complementoHash = await SN.sha256(reg.nome + '|' + novaSenha); reg.pin = '';
+  }
   delete tentativas[chave];
   SN.gravarSessao({ tipo, nome, empresa: empresa || '', expira: Date.now() + 16 * 3600e3 });
   reg.ultimoAcesso = SN.agora();
