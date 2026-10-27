@@ -11,7 +11,7 @@ SN.barras = (pares, fmt) => {
 SN.contar = (lista, chave) => { const o = {}; lista.forEach(x => { const k = chave(x); if (k) o[k] = (o[k] || 0) + 1; }); return Object.entries(o).sort((a, b) => b[1] - a[1]); };
 
 // ═══════════════════════════ Portal de Gestão ═══════════════════════════
-SN.fPortal = { mes: SN.agora().slice(0, 7), tipo: '', emp: '', natureza: '' };
+SN.fPortal = { mes: SN.agora().slice(0, 7), tipo: '', emp: '', natureza: '', visao: '', desempEmp: '' };
 // Visões por natureza da ocorrência (Categoria 2 da matriz de SLA).
 // Improdutivas: qualquer classificação improdutiva, em todos os segmentos (combine com o filtro de segmento).
 SN.ehImprodutiva = c => /improdutiva/i.test([c.cat1, c.cat2, c.cat3].join('|'));
@@ -128,6 +128,7 @@ SN.rota('/portal', () => {
   };
   const porNatureza = f.natureza || !temNatureza ? [] : SN.NATUREZAS.filter(n => n[2]).map(n => [n[0], n[2]]).concat([['Demais ocorrências', c => !SN.NATUREZAS.some(n => n[2] && n[2](c))]]).map(([n, p]) => [n, resumoDe(p)]);
   const corIrr = v => v > .1 ? 'var(--erro)' : v > .05 ? 'var(--alerta)' : 'inherit';
+  const desemp = f.visao === 'desemp' && SN.htmlDesempenho ? SN.htmlDesempenho({ concl, lpusMes }, f.desempEmp) : null;
   SN.casca('portal', `
     <div class="cab-pagina"><div><h1>Portal de Gestão</h1><p>Visão do ciclo completo: chamados, LPU, materiais e fibra — com relatórios do período e assinatura do fechamento.</p></div>
       <div class="acoes"><button class="btn" id="bRelCh">Relatório de chamados</button><button class="btn" id="bRelTec">Eficiência por técnico</button></div></div>
@@ -141,10 +142,12 @@ SN.rota('/portal', () => {
       <a href="javascript:void 0" data-seg="">Ver todos os segmentos</a></div>` : ''}
     ${temNatureza ? `<div class="abas" style="align-items:center"><span class="small muted" style="margin-right:4px">Visão:</span>${SN.NATUREZAS.map(([k, r]) => `<button class="aba ${f.natureza === k ? 'ativa' : ''}" data-nat="${k}">${r}</button>`).join('')}
       ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>` : ''}
+    <div class="abas" style="margin:0 0 12px">${[['', 'Visão geral'], ['desemp', 'Desempenho por prestador']].map(([k, r]) => `<button class="aba ${(f.visao || '') === k ? 'ativa' : ''}" data-visao="${k}">${r}</button>`).join('')}</div>
+    ${desemp ? desemp.html : `
     <div class="kpis7">
       <div class="kpi destaque"><div class="rot">Volume</div><div class="val">${abertos.length}</div><div class="sub">chamados abertos no mês</div></div>
-      <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho. Tempo entre abrir o chamado e despachar para a equipe. Menos de 1 minuto aparece como 0min (o NOC abre e já despacha). Preventiva, Melhoria e Retirada ficam fora: já nascem despachadas.</div></div>
-      <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo. Tempo entre despachar e o técnico tocar em "Cheguei" no local; média dos chamados do período. Preventiva, Melhoria e Retirada ficam fora: valem o prazo da rota e o tempo em campo.</div></div>
+      <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">Tempo entre abrir o chamado e despachar para a equipe.</div></div>
+      <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">Tempo entre despachar e o técnico estar no local.</div></div>
       <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → fim do atendimento</div></div>
       <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(tCampo)}</div><div class="sub">chegada → pedido de validação aceito · ${comVal.length} chamado(s)</div></div>
       <div class="kpi"><div class="rot">Espera de validação</div><div class="val">${SN.dur(tEspera)}</div><div class="sub">tempo ocioso até o NOC/O&amp;M responder · ${comEsp.length} chamado(s)</div></div>
@@ -260,11 +263,13 @@ SN.rota('/portal', () => {
           <li><b>IRR</b>: % dos chamados ${SN.IRR.tipos.join('/')} abertos no mês cujo circuito (etiqueta) teve outro chamado encerrado nos ${SN.IRR.dias} dias anteriores.</li>
           <li>Aprovação de LPU, baixa de materiais, cadastro de fibra e fechamento pelo NOC <b>não</b> entram no tempo operacional.</li>
         </ul></div>
-    </div>`);
+    </div>`}`);
   SN.$('#pMes').onchange = e => { f.mes = e.target.value; SN.render(); };
   SN.$$('[data-seg]').forEach(b => b.onclick = () => { f.tipo = b.dataset.seg; if (f.tipo !== SN.SEGMENTO_NATUREZA) f.natureza = ''; SN.render(); });
   SN.$('#pEmp').onchange = e => { f.emp = e.target.value; SN.render(); };
   SN.$$('[data-nat]').forEach(b => b.onclick = () => { f.natureza = b.dataset.nat; SN.render(); });
+  SN.$$('[data-visao]').forEach(b => b.onclick = () => { f.visao = b.dataset.visao; SN.render(); });
+  if (desemp) { desemp.ligar(e => { f.desempEmp = e; SN.render(); }, f.mes); return; }
   SN.$('#kIrr').onclick = () => { const c = SN.$('#cardIrr'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   SN.$('#bRelCh').onclick = () => SN.exportar('chamados_' + f.mes + (f.natureza ? '_' + f.natureza : ''), abertos.concat(concl.filter(c => !abertos.includes(c))).map(c => { const m = SN.metricas(c), ant = SN.reincidencia(c);
     return { Chamado: c.id, Origem: c.origem, ProtocoloNOC: c.protocoloNoc, ProtocoloOEM: c.protocoloOem, Cliente: c.cliente, Etiqueta: c.etiqueta, Cidade: c.cidade,

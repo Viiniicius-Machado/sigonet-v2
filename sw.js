@@ -3,7 +3,7 @@
 // sem rede, usa a última cópia guardada no aparelho. Só arquivos do site e das
 // bibliotecas (jsPDF, SheetJS, fonte). O servidor de dados (Apps Script) nunca
 // passa por aqui: POST e script.google.com seguem direto.
-const CACHE = 'sigonet-v2-app'; // versão do site 7dd1bc19e3
+const CACHE = 'sigonet-v2-app'; // versão do site 4df25f35ae
 const BIBLIOTECAS = /^https:\/\/(cdnjs\.cloudflare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)\//;
 
 self.addEventListener('install', () => self.skipWaiting());
