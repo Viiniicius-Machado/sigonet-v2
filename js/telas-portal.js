@@ -369,8 +369,9 @@ SN.rota('/cadastros', () => {
   if (SN.remoto && Date.now() - SN._acessosTs > 30000) SN.carregarStatusAcessos().then(() => { if (location.hash.startsWith('#/cadastros')) SN.render(); });
   if (SN.abaCad === 'disp') SN.abaCad = 'tecnicos'; // a disponibilidade da M.O. foi para a Esteira (Mão de obra hoje), 18/10/2026
   const d = SN.db, aba = SN.abaCad;
-  const abas = [['tecnicos', 'Técnicos'], ['empresas', 'Prestadores / CNPJ'], ['lideranca', 'Liderança e acessos'], ['contas', 'Contas e budget'], ['sistema', 'Sistema']];
+  const abas = [['tecnicos', 'Técnicos'], ['empresas', 'Prestadores / CNPJ'], ['fixos', 'Contratos fixos'], ['lideranca', 'Liderança e acessos'], ['contas', 'Contas e budget'], ['sistema', 'Sistema']];
   let html = '';
+  if (aba === 'fixos') html = SN.htmlCadContratosFixos ? SN.htmlCadContratosFixos() : '';
   if (aba === 'tecnicos') { const sem = d.tecnicos.filter(t => !t.ativo).length, ver = SN.cadTecVer === 'sem' && sem ? 'sem' : 'com';
     html = `<div class="card"><div class="card-tit"><h3>Técnicos (${d.tecnicos.length - sem} com acesso)</h3><button class="btn prim" data-novo="tec">+ Técnico</button></div>
     ${sem ? `<div class="chips" style="margin-bottom:10px"><button type="button" class="chip ${ver === 'com' ? 'sel' : ''}" data-tecver="com">Com acesso (${d.tecnicos.length - sem})</button><button type="button" class="chip ${ver === 'sem' ? 'sel' : ''}" data-tecver="sem">Acesso retirado (${sem})</button></div>` : ''}
@@ -428,7 +429,8 @@ SN.rota('/cadastros', () => {
   SN.$$('[data-devolveracesso]').forEach(b => b.onclick = e => { e.stopPropagation(); SN.devolverAcesso(...regDe(b.dataset.devolveracesso)); });
   SN.$$('[data-emp]').forEach(tr => tr.onclick = () => SN.editarEmpresa(SN.db.empresas[+tr.dataset.emp]));
   SN.$$('[data-lid]').forEach(tr => tr.onclick = () => SN.editarLider(SN.db.lideranca.find(t => t.id === tr.dataset.lid)));
-  SN.$$('[data-novo]').forEach(b => b.onclick = () => ({ tec: () => SN.editarTecnico(null), emp: () => SN.editarEmpresa(null), lid: () => SN.editarLider(null), disp: SN.novaDisp })[b.dataset.novo]());
+  SN.$$('[data-novo]').forEach(b => b.onclick = () => ({ tec: () => SN.editarTecnico(null), emp: () => SN.editarEmpresa(null), lid: () => SN.editarLider(null), disp: SN.novaDisp, cf: () => SN.editarContratoFixo(null) })[b.dataset.novo]());
+  SN.$$('[data-cfdef]').forEach(tr => tr.onclick = () => SN.editarContratoFixo(SN.cfDefs().find(d => d.id === tr.dataset.cfdef)));
   SN.$$('[data-deldisp]').forEach(b => b.onclick = () => { SN.db.disponibilidade = SN.db.disponibilidade.filter(x => x.id !== b.dataset.deldisp); SN.log('EXCLUIR_DISPONIBILIDADE', b.dataset.deldisp); SN.salvar(); SN.render(); });
   SN.$$('[data-budget]').forEach(inp => inp.onchange = () => { const c = SN.db.contas[+inp.dataset.budget]; const antes = c.budget; c.budget = +inp.value || 0;
     SN.log('ALTERAR_BUDGET', c.codigo, `${antes} → ${c.budget}`); SN.salvar(); SN.toast('Budget atualizado.', 'ok'); });

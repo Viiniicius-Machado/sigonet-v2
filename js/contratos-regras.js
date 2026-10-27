@@ -90,6 +90,47 @@
     };
   };
 
+  // ── Contratos cadastrados na plataforma (Cadastros e Acessos → Contratos fixos, 27/10/2026) ──
+  // Cada empresa guarda os seus em empresa.contratosFixos: [{ id, nome, empresa, conta, versoes: [
+  //   { desde: 'AAAA-MM' (ciclo), equipes: [..] | null, valorMensal, metaAtividades, valorExcedente,
+  //     variaveis: [{desc, valor}], observacao, encerrado } ] }].
+  // Uma mudança vale do ciclo "desde" em diante; os ciclos anteriores seguem com a versão antiga.
+  // Contrato ainda não cadastrado na plataforma vem do padrão (dados.js), com uma versão só.
+  var CAMPOS_VERSAO = ['equipes', 'valorMensal', 'metaAtividades', 'valorExcedente', 'variaveis', 'observacao', 'pendente', 'encerrado'];
+  R.doPadrao = function (k) {
+    var v = { desde: k.inicio || '2000-01' }; CAMPOS_VERSAO.forEach(function (c) { if (k[c] !== undefined) v[c] = k[c]; });
+    return { id: k.id, nome: k.nome, empresa: k.empresa, conta: k.conta, ciclo: k.ciclo, padrao: true, versoes: [v] };
+  };
+  R.definicoes = function (empresas, padrao) {
+    var out = [], vistos = {};
+    (empresas || []).forEach(function (e) { (e.contratosFixos || []).forEach(function (d) {
+      if (!d || !d.id || vistos[d.id]) return; vistos[d.id] = true; out.push(Object.assign({}, d, { empresa: d.empresa || e.nome })); }); });
+    (padrao || []).forEach(function (k) { if (!vistos[k.id]) { vistos[k.id] = true; out.push(R.doPadrao(k)); } });
+    return out;
+  };
+  // Versão que vale no ciclo (a de "desde" mais recente que já começou). null = ainda não começou ou encerrado.
+  R.versaoNoCiclo = function (d, ciclo) {
+    var vs = (d.versoes || []).filter(function (v) { return v.desde && v.desde <= ciclo; })
+      .sort(function (a, b) { return a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0; });
+    return vs.length ? vs[vs.length - 1] : null;
+  };
+  // Contrato "resolvido" para o ciclo, no formato que o resto das regras usa.
+  R.noCiclo = function (d, ciclo) {
+    var v = R.versaoNoCiclo(d, ciclo); if (!v || v.encerrado) return null;
+    var primeiro = (d.versoes || []).map(function (x) { return x.desde; }).sort()[0];
+    var k = { id: d.id, nome: d.nome, empresa: d.empresa, conta: d.conta, ciclo: d.ciclo || 'Dia 21 ao dia 20 · pagamento dia 28', inicio: primeiro, desde: v.desde };
+    CAMPOS_VERSAO.forEach(function (c) { if (v[c] !== undefined) k[c] = v[c]; });
+    if (k.equipes && !k.equipes.length) k.equipes = null;
+    return k;
+  };
+  R.vigentes = function (defs, ciclo) { return (defs || []).map(function (d) { return R.noCiclo(d, ciclo); }).filter(Boolean); };
+  // Ciclos do ano (até "ate") em que o contrato conta atividade.
+  R.ciclosAtivosDoAno = function (d, ano, ate) {
+    var out = [];
+    for (var i = 1; i <= 12; i++) { var c = ano + '-' + pad(i), k = c <= ate ? R.noCiclo(d, c) : null; if (k && R.ativo(k)) out.push(c); }
+    return out;
+  };
+
   if (typeof module !== 'undefined' && module.exports) module.exports = R;
   else raiz.CFR = R;
 })(typeof window !== 'undefined' ? window : this);

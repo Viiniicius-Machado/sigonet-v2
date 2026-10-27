@@ -8,11 +8,17 @@
 // Registro de cada ciclo: coleção "contratos" (aba CONTRATOS), id "<contrato>|<AAAA-MM>".
 
 SN.cf = { ciclo: '', ano: '' };
-SN.cfAtivos = () => CONTRATOS_FIXOS.filter(CFR.ativo);
+// Contratos: os cadastrados em Cadastros e Acessos (empresa.contratosFixos) e, enquanto não cadastrados, os
+// de dados.js. Cada ciclo usa a versão que valia nele (CFR.noCiclo).
+SN.cfDefs = () => CFR.definicoes(SN.db.empresas, CONTRATOS_FIXOS);
+SN.cfDoCiclo = ciclo => CFR.vigentes(SN.cfDefs(), ciclo || CFR.cicloDe(SN.agora()));
+SN.cfAtivos = ciclo => SN.cfDoCiclo(ciclo).filter(CFR.ativo);
 SN.cfEquipeDe = nome => (SN.tecnico(nome) || {}).equipe || '';
-// Vínculo da LPU: equipe de contrato fixo (com meta) = só contagem, sem valor por item.
-SN.contratoDoTecnico = (empresa, tecnico) => CFR.contratoDo(CONTRATOS_FIXOS, empresa, SN.cfEquipeDe(tecnico));
-SN.vinculoLpu = h => SN.contratoDoTecnico(h.empresa, h.tecnico) ? 'CONTRATO_FIXO' : SN.empresa(h.empresa).vinculo;
+// Vínculo da LPU: equipe de contrato fixo (com meta) no ciclo da OS = só contagem, sem valor por item.
+SN.contratoDoTecnico = (empresa, tecnico, ciclo) => CFR.contratoDo(SN.cfDoCiclo(ciclo), empresa, SN.cfEquipeDe(tecnico));
+SN.vinculoLpu = h => { const c = h.chamadoId && SN.db.chamados.find(x => x.id === h.chamadoId);
+  const ciclo = CFR.cicloDe((c && c.tempos && c.tempos.conclusaoTecnica) || SN.agora());
+  return SN.contratoDoTecnico(h.empresa, h.tecnico, ciclo) ? 'CONTRATO_FIXO' : SN.empresa(h.empresa).vinculo; };
 
 SN.cfRegistro = (k, ciclo) => (SN.db.contratos || []).find(x => x.id === k.id + '|' + ciclo);
 // Números do ciclo: fechado = o que foi congelado; aberto = calculado dos chamados carregados.
@@ -35,12 +41,15 @@ SN.htmlContratosFixos = () => {
   const f = SN.cf, hoje = CFR.cicloDe(SN.agora());
   if (!f.ciclo) f.ciclo = hoje;
   if (!f.ano) f.ano = f.ciclo.slice(0, 4);
-  const ciclosAno = [...new Set(SN.cfAtivos().flatMap(k => CFR.ciclosDoAno(k, f.ano, hoje)))];
+  const defs = SN.cfDefs(), ciclosAno = [...new Set(defs.flatMap(d => CFR.ciclosAtivosDoAno(d, f.ano, hoje)))];
   const meses = CFR.mesesDoCiclo(f.ciclo).concat(...ciclosAno.map(CFR.mesesDoCiclo));
   if (SN.cfGarantir(meses, () => SN.render())) return SN.carregando('Buscando os chamados dos ciclos anteriores no servidor…');
   const fim = CFR.intervalo(f.ciclo)[1];
   const pagto = new Date(fim.getFullYear(), fim.getMonth(), 28);
-  const cartao = k => {
+  const cartao = d => {
+    const k = CFR.noCiclo(d, f.ciclo);
+    if (!k) { const prox = (d.versoes || []).map(v => v.desde).filter(c => c > f.ciclo).sort()[0];
+      return `<div class="card"><div class="card-tit"><h3>${SN.esc(d.nome)}</h3></div><p class="muted small">${prox ? 'O contrato começa a contar no ciclo ' + CFR.rotulo(prox) + '.' : 'Contrato encerrado neste ciclo.'}</p></div>`; }
     if (!CFR.ativo(k)) return `<div class="card"><div class="card-tit"><h3>${SN.esc(k.nome)}</h3><span class="badge alerta">${SN.esc(k.pendente || 'Sem meta definida')}</span></div>
       <p class="small muted">${SN.esc(SN.contaTxt(k.conta))} · ${SN.esc(k.ciclo)}${k.valorMensal ? ' · fixo ' + SN.brl(k.valorMensal) : ''}</p>
       ${(k.variaveis || []).length ? `<ul class="small" style="margin:6px 0 0;padding-left:18px">${k.variaveis.map(v => `<li>${SN.esc(v.desc)} — ${SN.brl(v.valor)}</li>`).join('')}</ul>` : ''}
@@ -65,8 +74,9 @@ SN.htmlContratosFixos = () => {
         ${futuro ? '' : fechado ? `<button class="btn sm" data-cfreabrir="${SN.esc(k.id)}">Reabrir ciclo</button>` : `<button class="btn sm prim" data-cffechar="${SN.esc(k.id)}">Fechar ciclo</button>`}</div></div>`;
   };
   // Histórico do ano: um quadro por contrato, uma linha por ciclo.
-  const hist = k => {
-    const linhas = CFR.ciclosDoAno(k, f.ano, hoje).map(c => ({ c, n: SN.cfNumeros(k, c) }));
+  const hist = d => {
+    const k = CFR.noCiclo(d, hoje) || CFR.noCiclo(d, f.ciclo) || CFR.noCiclo(d, (d.versoes || []).map(v => v.desde).sort().pop());
+    const linhas = CFR.ciclosAtivosDoAno(d, f.ano, hoje).map(c => ({ c, n: SN.cfNumeros(CFR.noCiclo(d, c), c) }));
     const soma = key => linhas.reduce((s, x) => s + (x.n[key] || 0), 0);
     return `<div class="card"><div class="card-tit"><h3>${SN.esc(k.nome)} · ${f.ano}</h3><span class="small muted">meta ${k.metaAtividades}/ciclo · fixo ${SN.brl(k.valorMensal)}</span></div>
       <div class="tabela-wrap"><table class="tab small"><thead><tr><th>Ciclo</th><th class="num">Meta</th><th class="num">Feitas</th><th class="num">Faltou</th><th class="num">Improdutivo</th><th class="num">Excedente</th><th class="num">Excedente R$</th><th class="num">Variáveis R$</th><th class="num">Total a pagar</th><th>Situação</th></tr></thead><tbody>
@@ -81,10 +91,10 @@ SN.htmlContratosFixos = () => {
       <div class="nav-data"><button class="btn" id="cfAnt" title="Ciclo anterior">◀</button><span class="rotulo-periodo">${CFR.rotulo(f.ciclo)}</span><button class="btn" id="cfProx" title="Próximo ciclo">▶</button><button class="btn" id="cfHoje">Ciclo atual</button></div>
       <span class="small muted">pagamento em ${SN.data(pagto.toISOString())}</span></div>
       <p class="small muted" style="margin:6px 0 0">As OS concluídas pelas equipes do contrato somam sozinhas (conclusão técnica entre os dias 21 e 20). Abaixo da meta, o improdutivo é só informativo e o fixo é pago cheio. Acima, cada atividade a mais paga o valor de excedente do contrato.</p></div>
-    <div class="grid g2">${CONTRATOS_FIXOS.map(cartao).join('')}</div>
+    <div class="grid g2">${defs.map(cartao).join('')}</div>
     <div class="cab-pagina" style="margin-top:18px"><div><h2 style="margin:0">Histórico dos contratos fixos</h2><p>Ciclo a ciclo no ano. Os ciclos fechados ficam congelados com os números do fechamento.</p></div>
       <div class="acoes"><div class="nav-data"><button class="btn" id="cfAnoAnt">◀</button><span class="rotulo-periodo">${f.ano}</span><button class="btn" id="cfAnoProx">▶</button></div><button class="btn" id="cfExp">Exportar Excel</button></div></div>
-    ${SN.cfAtivos().map(hist).join('')}`;
+    ${defs.filter(d => CFR.ciclosAtivosDoAno(d, f.ano, hoje).length).map(hist).join('')}`;
 };
 
 SN.ligarContratosFixos = () => {
@@ -96,7 +106,7 @@ SN.ligarContratosFixos = () => {
   b('cfHoje').onclick = () => { f.ciclo = CFR.cicloDe(SN.agora()); de(); };
   b('cfAnoAnt').onclick = () => { f.ano = String(+f.ano - 1); de(); };
   b('cfAnoProx').onclick = () => { f.ano = String(+f.ano + 1); de(); };
-  const contrato = id => CONTRATOS_FIXOS.find(k => k.id === id);
+  const contrato = id => SN.cfDoCiclo(f.ciclo).find(k => k.id === id);
   const registro = k => {
     let r = SN.cfRegistro(k, f.ciclo);
     if (!r) { r = { id: k.id + '|' + f.ciclo, contrato: k.id, empresa: k.empresa, ciclo: f.ciclo, cumpridas: {}, fechado: null, historico: [] }; SN.db.contratos.push(r); }
@@ -129,8 +139,8 @@ SN.ligarContratosFixos = () => {
   });
   b('cfExp').onclick = () => {
     const hoje = CFR.cicloDe(SN.agora());
-    SN.exportar('contratos_fixos_' + f.ano, SN.cfAtivos().flatMap(k => CFR.ciclosDoAno(k, f.ano, hoje).map(c => {
-      const n = SN.cfNumeros(k, c);
+    SN.exportar('contratos_fixos_' + f.ano, SN.cfDefs().flatMap(d => CFR.ciclosAtivosDoAno(d, f.ano, hoje).map(c => {
+      const k = CFR.noCiclo(d, c), n = SN.cfNumeros(k, c);
       return { Contrato: k.nome, Empresa: k.empresa, Equipes: k.equipes ? k.equipes.join(', ') : 'Todas', 'Conta contábil': k.conta, Ciclo: CFR.rotulo(c),
         'Valor fixo': n.fixo, Meta: n.meta, Feitas: n.feitas, Faltou: n.falta, 'Valor por atividade': n.valorAtividade, 'Improdutivo (R$)': n.improdutivo,
         Excedente: n.excedente, 'Excedente (R$)': n.valorExcedente, ...Object.fromEntries(n.vars.map(v => ['Variável: ' + v.desc, v.cumprido ? v.valor : 0])),
