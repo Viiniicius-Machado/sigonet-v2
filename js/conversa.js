@@ -133,8 +133,6 @@ SN.conversa = (() => {
   };
 
   // Respostas rápidas (agilidade em campo: um toque, sem digitar).
-  C.RAPIDAS_GESTAO = ['Pode seguir ✅', 'Pule e volte depois', 'Aguarde, vou verificar', 'Mande uma foto', 'Me ligue 📞'];
-  C.RAPIDAS_TECNICO = ['Tenho uma dúvida nesta CS', 'Acesso bloqueado', 'Preciso de apoio', 'Ok, entendido 👍'];
 
   // ─────────── Painel ───────────
   // Monta a conversa dentro de "el". Devolve { parar } para desligar a atualização.
@@ -152,7 +150,6 @@ SN.conversa = (() => {
       ${'Notification' in window && Notification.permission === 'default' ? `<div class="conv-notif small" data-conv-notif>Avisar no ${'ontouchstart' in window ? 'celular' : 'computador'} quando chegar mensagem, mesmo com o SigoNet em segundo plano? <button type="button" class="btn sm" data-conv-notif-sim>Ativar avisos</button></div>` : ''}
       <div class="conv-lista" data-conv-lista>${SN.carregando('Abrindo a conversa…')}</div>
       <div class="conv-envio">
-        <div class="conv-rapidas">${(souGestao() ? C.RAPIDAS_GESTAO : C.RAPIDAS_TECNICO).map(t => `<button type="button" class="chip" data-rapida="${esc(t)}">${esc(t)}</button>`).join('')}</div>
         <div class="conv-anexo oculto" data-conv-anexo></div>
         <textarea class="inp" rows="1" placeholder="${'ontouchstart' in window ? 'Escreva uma mensagem…' : 'Escreva, arraste um arquivo ou cole um print (Ctrl+V)…'}" data-conv-txt></textarea>
         <div class="conv-acoes">
@@ -285,7 +282,6 @@ SN.conversa = (() => {
     };
     SN.$('[data-conv-enviar]', el).onclick = enviar;
     // Resposta rápida: um toque envia (com o anexo, se houver).
-    SN.$$('[data-rapida]', el).forEach(b => b.onclick = () => { txt.value = (txt.value.trim() ? txt.value.trim() + ' ' : '') + b.dataset.rapida; enviar(); });
     txt.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) { e.preventDefault(); enviar(); } };
     txt.oninput = () => { txt.style.height = ''; txt.style.height = Math.min(140, txt.scrollHeight) + 'px'; };
     const anexar = async files => {
