@@ -63,6 +63,33 @@ SN.vst.lerBanco = async (acao, dados, s) => {
   }
 };
 
+// Ações que a função "sigonet" do Supabase roda (o motor: o mesmo código do Apps Script sobre o banco),
+// bem mais rápido que o Google. Ela responde USE_GOOGLE no que precisa do Google (nada gravado) e
+// aí o pedido vai ao Apps Script. Mesma lista de ACOES_MOTOR (servidor/supabase/funcoes/sigonet/motor.mjs).
+SN.SUPA_MOTOR = true;
+const ACOES_FUNCAO = new Set(['VST_ROTA_SALVAR', 'VST_VINCULAR_CHAMADO', 'VST_ROTA_EXCLUIR', 'VST_ROTA_EDITAR_CS', 'VST_ROTA_CONCLUIR_GESTAO',
+  'VST_ROTA_CANCELAR', 'VST_ROTA_STATUS', 'VST_ENVIAR_CS', 'VST_APONTAR', 'VST_REVISAR', 'VST_REABRIR', 'VST_CORRIGIR', 'VST_CORRIGIR_POSICAO']);
+SN.vst.pelaFuncao = async (acao, dados, s, timeoutMs) => {
+  const sp = s.supa;
+  let r, j;
+  try {
+    r = await fetch(sp.url + '/functions/v1/sigonet', { method: 'POST', headers: { apikey: sp.chave, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...(dados || {}), acao, token: sp.token }), signal: AbortSignal.timeout ? AbortSignal.timeout(Math.min(timeoutMs, 45000)) : undefined });
+  } catch (e) {
+    // Demorou demais: pode ter gravado — igual ao Google (o app tenta de novo; as ações VST_* são seguras para repetir).
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') { const err = new Error('Sem conexão com o servidor.'); err.rede = true; throw err; }
+    console.warn('[SigoNet] função sigonet fora do ar, usando o servidor do Google:', e && e.message); return null; // nem chegou: vai ao Google
+  }
+  try { j = await r.json(); } catch (e) { // a função caiu sem responder (limite do plano, erro do Supabase): vai ao Google
+    console.warn('[SigoNet] função sigonet respondeu ' + r.status + ' sem JSON, usando o servidor do Google'); return null;
+  }
+  if (j && j.useGoogle) return null;
+  if (j && j.erro === 'SESSAO_INVALIDA') { const a = SN.sessao(); if (a && a.supa) { delete a.supa; SN.gravarSessao(a); } return null; }
+  if (!j || typeof j.ok !== 'boolean') return null;
+  SN._fonteVst = 'supabase';
+  return j;
+};
+
 // Chamada ao servidor. Diferente de SN.api: devolve a resposta inteira quando o
 // servidor recusa (ok:false com erros/fotos_pendentes). Só lança erro quando
 // não houve resposta (sem sinal, servidor ocupado) — err.rede = true.
@@ -76,6 +103,11 @@ SN.vst.api = async (acao, dados, timeoutMs = 60000) => {
     const j = await SN.vst.lerBanco(acao, dados, s);
     if (j) return j;
   }
+  if (SN.SUPA_MOTOR && ACOES_FUNCAO.has(acao) && s.supa && s.supa.token) {
+    const j = await SN.vst.pelaFuncao(acao, dados, s, timeoutMs);
+    if (j) { if (grava) SN.vst.cargaTs = 0; return j; }
+  }
+  SN._fonteVst = 'planilha';
   let j;
   try {
     const r = await fetch(SIGONET_SERVIDOR, { method: 'POST', body: JSON.stringify({ acao, token: s && s.token, ...(dados || {}) }),
