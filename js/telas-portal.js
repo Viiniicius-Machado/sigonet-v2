@@ -151,7 +151,8 @@ SN.rota('/portal', () => {
       <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → fim do atendimento</div></div>
       <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(tCampo)}</div><div class="sub">chegada → pedido de validação aceito · ${comVal.length} chamado(s)</div></div>
       <div class="kpi"><div class="rot">Espera de validação</div><div class="val">${SN.dur(tEspera)}</div><div class="sub">tempo ocioso até o NOC/O&amp;M responder · ${comEsp.length} chamado(s)</div></div>
-      <div class="kpi"><div class="rot">SLA</div><div class="val">${sla == null ? '—' : SN.num(sla * 100) + '%'}</div><div class="sub">${dentro} dentro · ${fora} fora (${concl.length} concluídos)</div></div>
+      <div class="kpi"><div class="rot">SLA</div><div class="val" style="font-size:1.1rem;line-height:1.25"><div style="color:var(--ok)" title="Com SLA: concluídos dentro do prazo">C/SLA ${dentro}</div><div style="color:${fora ? 'var(--erro)' : 'inherit'}" title="Sem SLA: concluídos fora do prazo">S/SLA ${fora}</div></div>
+        <div class="sub">${sla == null ? 'nenhum concluído no mês' : SN.num(sla * 100) + '% dentro do prazo'} · ${concl.length} concluídos</div></div>
       <div class="kpi"><div class="rot">Eficiência</div><div class="val">${ef == null ? '—' : SN.num(ef * 100) + '%'}</div><div class="sub">${noPrazo} de ${abertos.length} chamados do mês resolvidos no prazo</div></div>
       <a class="kpi" href="javascript:void 0" id="kIrr" title="Ver o detalhe do IRR" style="color:inherit;text-decoration:none"><div class="rot">IRR ↓</div>
         <div class="val" style="color:${irrForaDoFiltro ? 'inherit' : corIrr(irr.pct)}">${irrForaDoFiltro ? '—' : pctTxt(irr.pct)}</div>
