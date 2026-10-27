@@ -212,7 +212,6 @@ SN.rota('/tec/os/:id', id => {
           <div style="display:flex;gap:6px"><input class="inp" id="rLocal" style="flex:1;min-width:0" placeholder="Escreva o endereço ou use o GPS" value="${SN.esc(c.rfo.localFalha || '')}">
             <button type="button" class="btn" id="bGpsFalha" title="Pegar a localização atual pelo GPS do celular">📍 Usar GPS</button></div>
           <div class="small muted" id="gpsFalhaInfo"></div></div>
-        <div class="campo"><label>Observações</label><textarea class="inp" id="rObs">${SN.esc(c.rfo.obs || '')}</textarea></div>
         <h4>Fotos e evidências</h4><div class="fotos" id="tecFotos"></div>
         <div class="grid g2" style="margin-top:8px;gap:8px">
           <label class="btn prim" title="Câmera do SigoNet: sai com data, hora, endereço e lat/lng (como o Timemark)">📷 Tirar foto<input type="file" id="inCam" accept="image/*" capture="environment" data-fase hidden></label>
@@ -284,8 +283,9 @@ SN.rota('/tec/os/:id', id => {
       Object.assign(c, { cat2: cl.cat2 || '', cat3: cl.cat3 || '', cat4: cl.cat4 || '' });
     }
     c.rfo = { causa: SN.$('#rCausa').value.trim(), acao: c.rfo.acao || '', solucao: SN.$('#rSol').value.trim(), // "Ação realizada" saiu do formulário (06/10/2026)
-      localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: SN.$('#rObs').value.trim(), ceo: ceo.trabalhou ? { ...ceo } : undefined };
+      localFalha: SN.$('#rLocal').value.trim(), gpsFalha: gpsFalha, obs: c.rfo.obs || '', ceo: ceo.trabalhou ? { ...ceo } : undefined }; // "Observações" saiu do formulário (27/10/2026)
     if (!c.rfo.ceo) delete c.rfo.ceo;
+    if (!c.rfo.obs) delete c.rfo.obs;
     if (!c.rfo.acao) delete c.rfo.acao;
     if (!c.tempos.diagnostico && c.rfo.causa) c.tempos.diagnostico = SN.agora();
     return cl;

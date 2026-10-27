@@ -143,8 +143,8 @@ SN.rota('/portal', () => {
       ${f.natureza ? `<span class="small muted">${SN.naturezaDe(f.natureza)[3]}</span>` : ''}</div>` : ''}
     <div class="kpis7">
       <div class="kpi destaque"><div class="rot">Volume</div><div class="val">${abertos.length}</div><div class="sub">chamados abertos no mês</div></div>
-      <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho</div></div>
-      <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo</div></div>
+      <div class="kpi"><div class="rot">MTTD</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttd)))}</div><div class="sub">detecção · abertura → despacho. Tempo entre abrir o chamado e despachar para a equipe. Menos de 1 minuto aparece como 0min (o NOC abre e já despacha). Preventiva, Melhoria e Retirada ficam fora: já nascem despachadas.</div></div>
+      <div class="kpi"><div class="rot">MTTA</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mtta)))}</div><div class="sub">atendimento · despacho → campo. Tempo entre despachar e o técnico tocar em "Cheguei" no local; média dos chamados do período. Preventiva, Melhoria e Retirada ficam fora: valem o prazo da rota e o tempo em campo.</div></div>
       <div class="kpi"><div class="rot">MTTR</div><div class="val">${SN.dur(SN.media(ms.map(x => x.m.mttr)))}</div><div class="sub">resolução · abertura → fim do atendimento</div></div>
       <div class="kpi"><div class="rot">Tempo em campo</div><div class="val">${SN.dur(tCampo)}</div><div class="sub">chegada → pedido de validação aceito · ${comVal.length} chamado(s)</div></div>
       <div class="kpi"><div class="rot">Espera de validação</div><div class="val">${SN.dur(tEspera)}</div><div class="sub">tempo ocioso até o NOC/O&amp;M responder · ${comEsp.length} chamado(s)</div></div>
