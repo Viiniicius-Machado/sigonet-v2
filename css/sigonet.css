@@ -751,3 +751,4 @@ body.vercomo .app-tec{max-width:420px;box-shadow:0 0 0 1px var(--borda),0 10px 3
 body.vercomo .app-tec .topbar{top:44px}
 body.vercomo .tabbar{max-width:420px}
 body.vercomo .app-tec input,body.vercomo .app-tec textarea,body.vercomo .app-tec select{pointer-events:none}
+.fotos-soltas{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}.foto-solta{display:flex;flex-direction:column;gap:2px;cursor:pointer}.foto-solta img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;border:1px solid #ddd}.foto-solta input{align-self:flex-start}

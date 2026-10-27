@@ -290,7 +290,7 @@ SN.enviarMudancas = async () => {
     // Chamado vai com a base (o que este aparelho tinha do servidor) para o servidor juntar mudanças em partes diferentes.
     const r = await SN.gravar('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o.colecao === 'chamados' && _ant && !o.excluir ? { ...o, base: _ant } : o), assinaturas: Object.keys(assin).length ? assin : undefined });
     Object.assign(SN._assinEnviadas, assin); SN.offline = false;
-    let conflitos = 0, mesclados = 0;
+    let conflitos = 0, mesclados = 0, fotosMantidas = 0;
     r.resultados.forEach(x => {
       if (SN._semResposta[x.colecao]) delete SN._semResposta[x.colecao][x.id]; // teve resposta
       SN._errosEnvio[x.colecao + '|' + x.id] = x.erro || '';
@@ -300,6 +300,12 @@ SN.enviarMudancas = async () => {
         const k = SN.CHAVES[x.colecao], lista = SN.db[x.colecao], i = lista.findIndex(d => String(d[k]) === String(x.id));
         if (i >= 0) lista[i] = x.atual; else lista.push(x.atual);
         ver[x.id] = x.v; SN._snap[x.colecao][x.id] = snapDoc(x.colecao, x.atual);
+        // Fotos e anexos deste aparelho não se perdem no conflito (CH-00093, 27/10/2026): voltam para a
+        // versão nova do chamado e sobem de novo. O resto da alteração o técnico refaz (aviso abaixo).
+        const op = ops.find(o => o.colecao === x.colecao && String(o.id) === String(x.id));
+        const novas = x.colecao === 'chamados' && op && op.doc ? (op.doc.fotos || []).filter(f => f && f.id &&
+          !(x.atual.fotos || []).some(a => a.id === f.id || (a.nome === f.nome && a.ts === f.ts))) : [];
+        if (novas.length) { x.atual.fotos = (x.atual.fotos || []).concat(novas); SN.hist(x.atual, 'Fotos mantidas após conflito', novas.length + ' anexo(s) deste aparelho'); fotosMantidas += novas.length; }
       } else if (x.erro) {
         SN.toast(`Não gravado (${x.colecao} ${x.id}): ${x.erro}`, 'erro');
         // Recusado por permissão: a tela volta ao que está no servidor (não fica parecendo gravado).
@@ -319,7 +325,11 @@ SN.enviarMudancas = async () => {
       else ver[x.id] = x.v;
     });
     loteOk = true;
-    if (conflitos) { SN.toast(`${conflitos} registro(s) tinham sido alterados por outra pessoa — a tela foi atualizada com a versão mais nova. Refaça sua alteração se precisar.`, 'erro'); SN.aoMudarBase(); }
+    if (conflitos) {
+      SN.toast(`${conflitos} registro(s) tinham sido alterados por outra pessoa — a tela foi atualizada com a versão mais nova.${fotosMantidas ? ` Suas ${fotosMantidas} foto(s)/anexo(s) foram mantidas.` : ''} Confira e refaça o restante se precisar.`, 'erro');
+      if (fotosMantidas) { pendente = true; clearTimeout(filaTimer); filaTimer = setTimeout(SN.enviarMudancas, 300); setTimeout(SN.subirAnexos, 400); }
+      SN.aoMudarBase();
+    }
     else if (mesclados) SN.aoMudarBase();
   } catch (e) {
     ops.forEach(o => { if (!o.excluir) { delete SN._snap[o.colecao][o.id]; (SN._semResposta[o.colecao] = SN._semResposta[o.colecao] || {})[o.id] = o._s; } }); // volta a ser "pendente"

@@ -186,6 +186,7 @@ SN.anexos = (() => {
     put: (id, dataUrl) => tx('readwrite', s => s.put(dataUrl, id)),
     get: id => tx('readonly', s => s.get(id)),
     del: id => tx('readwrite', s => s.delete(id)),
+    chaves: () => tx('readonly', s => s.getAllKeys()),
     limpar: () => tx('readwrite', s => s.clear())
   };
 })();
@@ -401,6 +402,37 @@ SN.subirAnexos = async () => {
       SN.salvar();
     }
   } finally { SN._subindoAnexos = 0; }
+};
+// Fotos "soltas": guardadas neste aparelho (ax_…) que nenhum registro aponta mais e por isso nunca
+// subiriam — ex.: um conflito de gravação trocou o chamado pela versão do servidor (27/10/2026).
+// Só sai do aparelho depois de subir; aqui o técnico anexa de novo ao chamado certo ou descarta.
+SN.fotosSoltas = async () => {
+  if (!SN.remoto || !SN.anexos.chaves) return [];
+  let chaves = []; try { chaves = await SN.anexos.chaves(); } catch (e) { return []; }
+  const usados = new Set(); const marcar = (o, prof = 0) => {
+    if (!o || typeof o !== 'object' || prof > 8) return;
+    if (Array.isArray(o)) { o.forEach(x => marcar(x, prof + 1)); return; }
+    if (typeof o.id === 'string' && o.id.startsWith('ax_')) usados.add(o.id);
+    Object.keys(o).forEach(k => { if (k !== 'historico') marcar(o[k], prof + 1); });
+  };
+  COLS_COM_ANEXO.forEach(c => marcar(SN.db[c]));
+  // Rascunhos (LPU em preenchimento etc.) também seguram fotos ainda não gravadas no registro.
+  try { Object.keys(localStorage).forEach(k => { (String(localStorage.getItem(k) || '').match(/ax_[a-z0-9]+/gi) || []).forEach(x => usados.add(x)); }); } catch (e) { }
+  const recente = id => Date.now() - parseInt(id.slice(3, 11), 36) < 10 * 60000; // acabou de ser tirada: ainda entrando no registro
+  const out = [];
+  for (const id of chaves.filter(k => typeof k === 'string' && k.startsWith('ax_') && !usados.has(k) && !recente(k))) {
+    const d = await SN.anexos.get(id).catch(() => null);
+    if (typeof d === 'string' && d.startsWith('data:image')) out.push({ id, dataUrl: d, ts: parseInt(id.slice(3, 11), 36) });
+  }
+  return out.sort((a, b) => a.ts - b.ts);
+};
+// Anexa as fotos soltas escolhidas ao chamado (sobem para a pasta dele como qualquer foto nova).
+SN.anexarSoltas = (c, ids) => {
+  if (!c || !ids.length) return;
+  ids.forEach(id => { const ts = new Date(parseInt(id.slice(3, 11), 36) || Date.now()).toISOString(); // hora em que a foto foi tirada
+    (c.fotos = c.fotos || []).push({ id, nome: 'foto_recuperada_' + ts.replace(/[-:T]/g, '').slice(0, 14) + '.jpg', tipo: 'imagem', ts, recuperada: true, pendente: true, pasta: c.id }); });
+  SN.hist(c, 'Fotos recuperadas do aparelho', ids.length + ' foto(s) que tinham ficado no celular');
+  SN.salvar(); setTimeout(SN.subirAnexos, 400);
 };
 // dataUrl de cada anexo da lista (para o PDF), na mesma ordem. Busca no servidor o que não está no aparelho.
 SN.dadosDasFotos = async lista => {

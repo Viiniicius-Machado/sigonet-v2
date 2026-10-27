@@ -82,7 +82,35 @@ SN.rota('/tec', () => {
         <span class="badge alerta">LPU pendente</span></div>`; }).join('')}` : ''}`);
   SN.$$('.tec-os[data-id]').forEach(el => el.onclick = () => SN.navegar('#/tec/os/' + el.dataset.id));
   SN.$$('.tec-os[data-lpu]').forEach(el => el.onclick = () => SN.navegar(`#/tec/lpu/${el.dataset.lpu}/${el.dataset.papel}`));
+  if (!SN.emVerComo || !SN.emVerComo()) SN.avisoFotosSoltas(minhas);
 }, { familia: 'tecnico' });
+
+// Fotos que ficaram no celular sem chamado (ex.: conflito de gravação): aviso no topo da fila
+// para o técnico anexar ao chamado certo ou descartar. Nada sai do aparelho sem ele escolher.
+SN.avisoFotosSoltas = async minhas => {
+  const soltas = await SN.fotosSoltas();
+  const fila = SN.$('.tec-corpo');
+  if (!soltas.length || !fila || !/^#\/tec\/?$/.test(location.hash) || SN.$('#avisoSoltas')) return;
+  const av = document.createElement('div'); av.id = 'avisoSoltas'; av.className = 'aviso alerta'; av.style.marginBottom = '10px';
+  av.innerHTML = `📷 <b>${soltas.length} foto(s) guardada(s) neste celular não foram enviadas.</b> Anexe ao chamado certo para não perder.
+    <button type="button" class="btn prim bloco" style="margin-top:8px">Ver e anexar</button>`;
+  const alvo = SN.$('h3', fila); if (alvo) alvo.parentNode.insertBefore(av, alvo); else fila.prepend(av);
+  SN.$('button', av).onclick = () => {
+    const chs = minhas.slice().sort((a, b) => (b.tempos.chegada || b.tempos.abertura || '').localeCompare(a.tempos.chegada || a.tempos.abertura || ''));
+    SN.modal({ titulo: 'Fotos que ficaram no celular', corpo: `<p class="small muted" style="margin-top:0">Marque as fotos e escolha o chamado. Elas sobem para a pasta do chamado como as outras.</p>
+      <div class="fotos-soltas">${soltas.map(s => `<label class="foto-solta"><input type="checkbox" value="${s.id}" checked><img src="${s.dataUrl}" alt=""><span class="small muted">${SN.dt(new Date(s.ts).toISOString())}</span></label>`).join('')}</div>
+      <div class="campo" style="margin-top:10px"><label>Chamado</label><select class="inp" id="fsCh">${chs.map(c => `<option value="${c.id}">${c.id} · ${SN.esc(c.cliente || '')}</option>`).join('')}</select></div>`,
+      botoes: [{ rot: 'Descartar marcadas', cls: 'perigo', acao: async f => {
+        const ids = SN.$$('input[type=checkbox]:checked', f).map(x => x.value); if (!ids.length) { SN.toast('Marque ao menos uma foto.', 'erro'); return false; }
+        if (!await SN.confirmar('Descartar fotos', `Apagar ${ids.length} foto(s) deste celular? Não dá para desfazer.`, 'Descartar', 'perigo')) return false;
+        for (const id of ids) await SN.anexos.del(id).catch(() => { });
+        SN.toast('Fotos descartadas.'); SN.render(); } },
+        { rot: 'Anexar ao chamado', cls: 'prim', acao: f => {
+        const ids = SN.$$('input[type=checkbox]:checked', f).map(x => x.value); if (!ids.length) { SN.toast('Marque ao menos uma foto.', 'erro'); return false; }
+        const c = SN.db.chamados.find(x => x.id === SN.$('#fsCh', f).value); if (!c) { SN.toast('Escolha o chamado.', 'erro'); return false; }
+        SN.anexarSoltas(c, ids); SN.toast(ids.length + ' foto(s) anexada(s) ao ' + c.id + '. Subindo…', 'ok'); SN.render(); } }] });
+  };
+};
 
 SN.pendenciasPos = c => {
   const papel = SN.papelNo(c); if (!papel || !SN.faseModulos(c)) return [];
