@@ -68,7 +68,8 @@ SN.vst.lerBanco = async (acao, dados, s) => {
 // aí o pedido vai ao Apps Script. Mesma lista de ACOES_MOTOR (servidor/supabase/funcoes/sigonet/motor.mjs).
 SN.SUPA_MOTOR = true;
 const ACOES_FUNCAO = new Set(['VST_ROTA_SALVAR', 'VST_VINCULAR_CHAMADO', 'VST_ROTA_EXCLUIR', 'VST_ROTA_EDITAR_CS', 'VST_ROTA_CONCLUIR_GESTAO',
-  'VST_ROTA_CANCELAR', 'VST_ROTA_STATUS', 'VST_ENVIAR_CS', 'VST_APONTAR', 'VST_REVISAR', 'VST_REABRIR', 'VST_CORRIGIR', 'VST_CORRIGIR_POSICAO']);
+  'VST_ROTA_CANCELAR', 'VST_ROTA_STATUS', 'VST_ENVIAR_CS', 'VST_APONTAR', 'VST_REVISAR', 'VST_REABRIR', 'VST_CORRIGIR', 'VST_CORRIGIR_POSICAO',
+  'CONV_ENVIAR', 'CONV_EDITAR', 'CONV_CONVIDAR', 'CONV_REGISTRAR']);
 SN.vst.pelaFuncao = async (acao, dados, s, timeoutMs) => {
   const sp = s.supa;
   let r, j;

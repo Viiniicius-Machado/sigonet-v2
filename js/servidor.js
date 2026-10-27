@@ -183,7 +183,7 @@ SN.prepararLogin = async () => {
 SN._acessos = {}; SN._acessosTs = 0;
 SN.carregarStatusAcessos = async () => {
   if (!SN.temTela('cadastros')) return;
-  try { SN._acessos = (await SN.api('STATUS_ACESSOS')).acessos || {}; SN._acessosTs = Date.now(); } catch (e) { }
+  try { SN._acessos = (await SN.gravar('STATUS_ACESSOS')).acessos || {}; SN._acessosTs = Date.now(); } catch (e) { }
 };
 
 // ─────────── Cópia no aparelho (IndexedDB) ───────────

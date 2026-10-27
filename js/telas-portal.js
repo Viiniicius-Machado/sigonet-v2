@@ -336,7 +336,7 @@ SN.gravarAcesso = async (tipo, reg, { reset, revogar }) => {
     SN.salvar(); return codigo;
   }
   await SN.salvarAgora(); // garante que o registro já existe no servidor
-  const r = await SN.api('ACESSO', { tipo, id: reg.id, resetComplemento: !!reset, revogar });
+  const r = await SN.gravar('ACESSO', { tipo, id: reg.id, resetComplemento: !!reset, revogar });
   if (r && r.ok === false) throw new Error(r.erro);
   await SN.carregarStatusAcessos();
   return r && r.codigo || '';
@@ -548,7 +548,7 @@ const empresaTemVinculo = nome => SN.db.tecnicos.some(t => t.empresa === nome)
 const renomearEmpresa = async (e, nome) => {
   const de = e.nome;
   try {
-    const r = await SN.api('EMPRESA_RENOMEAR', { de, para: nome, doc: { ...e, razao: SN.$('#mRaz').value.trim(), cnpj: SN.$('#mCnpj').value.trim(),
+    const r = await SN.gravar('EMPRESA_RENOMEAR', { de, para: nome, doc: { ...e, razao: SN.$('#mRaz').value.trim(), cnpj: SN.$('#mCnpj').value.trim(),
       vinculo: SN.$('#mVin').value, responsavelLpu: SN.$('#mResp').value, ativo: SN.$('#mAt').checked } });
     const nova = r.empresa || { ...e, nome }, v = nova._v; delete nova._v;
     SN.db.empresas = SN.db.empresas.filter(x => x.nome !== de && x.nome !== nome).concat([nova]);
