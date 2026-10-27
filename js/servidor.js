@@ -82,6 +82,29 @@ SN.ler = async (acao, dados) => {
   return SN.api(acao, dados);
 };
 
+// ─────────── Gravação direto no banco (fase 5) ───────────
+// SALVAR e PROX_ID vão para a função "sigonet" do Supabase (mesmas regras do Apps Script, com
+// conferência de versão no banco). Sem sessão de leitura, função fora ou erro inesperado → Apps Script.
+// Reenvio depois de falha de rede é seguro: o servidor reconhece o mesmo envio e não duplica.
+SN.SUPA_GRAVACAO = true;
+SN.gravar = async (acao, dados) => {
+  const s = SN.sessao(), sp = s && s.supa;
+  if (SN.SUPA_GRAVACAO && sp && sp.url && sp.token) {
+    try {
+      const r = await fetch(sp.url + '/functions/v1/sigonet', { method: 'POST', headers: { apikey: sp.chave, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(dados || {}), acao, token: sp.token }), signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
+      const j = await r.json();
+      if (j && j.ok) { SN._fonteGravacao = 'supabase'; return j; }
+      if (j && j.erro === 'SESSAO_INVALIDA') { const a = SN.sessao(); if (a && a.supa) { delete a.supa; SN.gravarSessao(a); } }
+      throw new Error((j && j.erro) || 'Supabase ' + r.status);
+    } catch (e) {
+      console.warn('[SigoNet] gravação pelo Supabase falhou, usando o servidor do Google:', e && e.message);
+    }
+  }
+  SN._fonteGravacao = 'planilha';
+  return SN.api(acao, dados);
+};
+
 // Estado de sincronização
 SN._snap = {};   // coleção → chave → JSON do que o servidor já tem
 SN._ver = {};    // coleção → chave → versão
@@ -265,7 +288,7 @@ SN.enviarMudancas = async () => {
   ops.forEach(o => { if (o.excluir) delete SN._snap[o.colecao][o.id]; else SN._snap[o.colecao][o.id] = o._s; });
   try {
     // Chamado vai com a base (o que este aparelho tinha do servidor) para o servidor juntar mudanças em partes diferentes.
-    const r = await SN.api('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o.colecao === 'chamados' && _ant && !o.excluir ? { ...o, base: _ant } : o), assinaturas: Object.keys(assin).length ? assin : undefined });
+    const r = await SN.gravar('SALVAR', { ops: ops.map(({ _s, _ant, ...o }) => o.colecao === 'chamados' && _ant && !o.excluir ? { ...o, base: _ant } : o), assinaturas: Object.keys(assin).length ? assin : undefined });
     Object.assign(SN._assinEnviadas, assin); SN.offline = false;
     let conflitos = 0, mesclados = 0;
     r.resultados.forEach(x => {
@@ -430,7 +453,7 @@ if (SN.remoto) {
     try {
       const faltam = RESERVA_PREFIXOS.filter(p => (lerReserva()[p] || []).length < 2);
       if (faltam.length) { // um pedido só para todos os tipos (uma trava no servidor)
-        const r = await SN.api('PROX_ID', { prefixo: faltam[0], prefixos: faltam, qtd: RESERVA_QTD });
+        const r = await SN.gravar('PROX_ID', { prefixo: faltam[0], prefixos: faltam, qtd: RESERVA_QTD });
         const res = lerReserva(), por = r.porPrefixo || { [faltam[0]]: r.ids || [r.id] };
         Object.keys(por).forEach(p => { res[p] = (res[p] || []).concat(por[p]); });
         gravarReserva(res);
@@ -441,7 +464,7 @@ if (SN.remoto) {
   SN.novoId = async pref => {
     const semSinal = SN.offline || navigator.onLine === false;
     if (semSinal) { const id = usarReserva(pref); if (id) return id; }
-    try { const r = await SN.api('PROX_ID', { prefixo: pref }); setTimeout(SN.reabastecerIds, 5000 + Math.random() * 20000); return r.id; }
+    try { const r = await SN.gravar('PROX_ID', { prefixo: pref }); setTimeout(SN.reabastecerIds, 5000 + Math.random() * 20000); return r.id; }
     catch (e) {
       if (!e.rede) throw e;
       SN.offline = true; SN.indicadorSync();
