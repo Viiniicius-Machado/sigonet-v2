@@ -459,7 +459,8 @@ SN.editarTecnico = t => {
         let cod; try { cod = await SN.gravarAcesso('tecnico', t, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
         SN.log('RESET_SENHA', t.nome); SN.salvar(); SN.render(); setTimeout(() => SN.mostrarCodigo(t.nome, cod), 0); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
-        const nome = SN.$('#eNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
+        // nome novo sem espaço duplo (o login compara o nome)
+        const nome = novo ? SN.$('#eNome').value.trim().replace(/\s+/g, ' ') : SN.$('#eNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
         const antes = { ...t, pin: 0, complementoHash: 0 };
         Object.assign(t, { empresa: SN.$('#eEmp').value, nome, equipe: SN.$('#eEq').value.trim(), frente: SN.$('#eFr').value.trim(),
           titular: SN.$('#eTit').checked });
@@ -569,7 +570,7 @@ SN.editarLider = l => {
         let cod; try { cod = await SN.gravarAcesso('lideranca', l, { reset: true }); } catch (e) { SN.toast(e.message, 'erro'); return false; }
         SN.log('RESET_SENHA', l.nome); SN.salvar(); SN.render(); setTimeout(() => SN.mostrarCodigo(l.nome, cod), 0); } }]),
       { rot: 'Salvar', cls: 'prim', acao: async () => {
-        const nome = SN.$('#lNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
+        const nome = novo ? SN.$('#lNome').value.trim().replace(/\s+/g, ' ') : SN.$('#lNome').value.trim(); if (!nome) { SN.toast('Informe o nome.', 'erro'); return false; }
         const telas = SN.$$('[data-tela]').filter(x => x.checked).map(x => x.dataset.tela);
         const antes = { ...l, pin: 0, complementoHash: 0 };
         Object.assign(l, { nome, nomeCompleto: SN.$('#lComp').value.trim(), cargo: SN.$('#lCargo').value,

@@ -27,11 +27,11 @@ SN.rota('/login', () => {
       <form id="fLogin" autocomplete="off">
         <div id="blocoLid">
           <div class="campo"><label>Nome</label><select class="inp" id="lgNome"><option value="">Selecione…</option>
-            ${lids.map(l => `<option>${SN.esc(l.nome)}</option>`).join('')}</select></div>
+            ${lids.map(l => `<option value="${SN.esc(l.nome)}">${SN.esc(l.nome)}</option>`).join('')}</select></div>
         </div>
         <div id="blocoTec" class="oculto">
           <div class="campo"><label>Empresa</label><select class="inp" id="lgEmp"><option value="">Selecione…</option>
-            ${emps.map(e => `<option>${SN.esc(e)}</option>`).join('')}</select></div>
+            ${emps.map(e => `<option value="${SN.esc(e)}">${SN.esc(e)}</option>`).join('')}</select></div>
           <div class="campo"><label>Técnico</label><select class="inp" id="lgTec"><option value="">Selecione a empresa</option></select></div>
         </div>
         <div class="campo" id="cpSenha"><label>Senha</label><input class="inp" id="lgSenha" type="password" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Sua senha pessoal"></div>
@@ -58,7 +58,7 @@ SN.rota('/login', () => {
   });
   SN.$('#lgEmp').onchange = e => {
     const lista = SN.db.tecnicos.filter(t => t.ativo && t.empresa === e.target.value).sort((a, b) => a.nome.localeCompare(b.nome));
-    SN.$('#lgTec').innerHTML = '<option value="">Selecione…</option>' + lista.map(t => `<option>${SN.esc(t.nome)}</option>`).join('');
+    SN.$('#lgTec').innerHTML = '<option value="">Selecione…</option>' + lista.map(t => `<option value="${SN.esc(t.nome)}">${SN.esc(t.nome)}</option>`).join('');
   };
   SN.$('#fLogin').onsubmit = async ev => {
     ev.preventDefault();
