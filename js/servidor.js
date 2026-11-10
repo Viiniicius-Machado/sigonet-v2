@@ -303,8 +303,12 @@ SN.enviarMudancas = async () => {
         // Fotos e anexos deste aparelho não se perdem no conflito (CH-00093, 27/10/2026): voltam para a
         // versão nova do chamado e sobem de novo. O resto da alteração o técnico refaz (aviso abaixo).
         const op = ops.find(o => o.colecao === x.colecao && String(o.id) === String(x.id));
+        const fotoAntesDoFim = (c, f) => { const t = c.tempos || {}, fim = t.conclusaoTecnica || t.fechamento; return !fim || !f.ts || String(f.ts) <= String(fim); };
         const novas = x.colecao === 'chamados' && op && op.doc ? (op.doc.fotos || []).filter(f => f && f.id &&
-          !(x.atual.fotos || []).some(a => a.id === f.id || (a.nome === f.nome && a.ts === f.ts))) : [];
+          !(x.atual.fotos || []).some(a => a.id === f.id || (a.nome === f.nome && a.ts === f.ts))
+          // Já concluído/validado pela gestão: só entra foto tirada ANTES da conclusão (a de depois fica no
+          // celular como "foto solta"; pedido do usuário de 10/11/2026).
+          && (['EM_CAMPO', 'DEVOLVIDO'].includes(x.atual.status) || fotoAntesDoFim(x.atual, f))) : [];
         if (novas.length) { x.atual.fotos = (x.atual.fotos || []).concat(novas); SN.hist(x.atual, 'Fotos mantidas após conflito', novas.length + ' anexo(s) deste aparelho'); fotosMantidas += novas.length; }
       } else if (x.erro) {
         SN.toast(`Não gravado (${x.colecao} ${x.id}): ${x.erro}`, 'erro');

@@ -96,10 +96,12 @@ SN.avisoFotosSoltas = async minhas => {
     <button type="button" class="btn prim bloco" style="margin-top:8px">Ver e anexar</button>`;
   const alvo = SN.$('h3', fila); if (alvo) alvo.parentNode.insertBefore(av, alvo); else fila.prepend(av);
   SN.$('button', av).onclick = () => {
-    const chs = minhas.slice().sort((a, b) => (b.tempos.chegada || b.tempos.abertura || '').localeCompare(a.tempos.chegada || a.tempos.abertura || ''));
+    // Só chamado ainda em campo recebe foto (concluído/validado pela gestão não aceita mais — pedido de 10/11/2026).
+    const chs = minhas.filter(c => ['EM_CAMPO', 'DEVOLVIDO'].includes(c.status)).sort((a, b) => (b.tempos.chegada || b.tempos.abertura || '').localeCompare(a.tempos.chegada || a.tempos.abertura || ''));
     SN.modal({ titulo: 'Fotos que ficaram no celular', corpo: `<p class="small muted" style="margin-top:0">Marque as fotos e escolha o chamado. Elas sobem para a pasta do chamado como as outras.</p>
       <div class="fotos-soltas">${soltas.map(s => `<label class="foto-solta"><input type="checkbox" value="${s.id}" checked><img src="${s.dataUrl}" alt=""><span class="small muted">${SN.dt(new Date(s.ts).toISOString())}</span></label>`).join('')}</div>
-      <div class="campo" style="margin-top:10px"><label>Chamado</label><select class="inp" id="fsCh">${chs.map(c => `<option value="${c.id}">${c.id} · ${SN.esc(c.cliente || '')}</option>`).join('')}</select></div>`,
+      ${chs.length ? `<div class="campo" style="margin-top:10px"><label>Chamado</label><select class="inp" id="fsCh">${chs.map(c => `<option value="${c.id}">${c.id} · ${SN.esc(c.cliente || '')}</option>`).join('')}</select></div>`
+        : '<div class="aviso info small" style="margin-top:10px">Nenhum chamado em campo agora. Chamado já concluído ou validado não recebe foto nova; se a foto for de um deles, fale com a gestão.</div>'}`,
       botoes: [{ rot: 'Descartar marcadas', cls: 'perigo', acao: async f => {
         const ids = SN.$$('input[type=checkbox]:checked', f).map(x => x.value); if (!ids.length) { SN.toast('Marque ao menos uma foto.', 'erro'); return false; }
         if (!await SN.confirmar('Descartar fotos', `Apagar ${ids.length} foto(s) deste celular? Não dá para desfazer.`, 'Descartar', 'perigo')) return false;
@@ -107,7 +109,8 @@ SN.avisoFotosSoltas = async minhas => {
         SN.toast('Fotos descartadas.'); SN.render(); } },
         { rot: 'Anexar ao chamado', cls: 'prim', acao: f => {
         const ids = SN.$$('input[type=checkbox]:checked', f).map(x => x.value); if (!ids.length) { SN.toast('Marque ao menos uma foto.', 'erro'); return false; }
-        const c = SN.db.chamados.find(x => x.id === SN.$('#fsCh', f).value); if (!c) { SN.toast('Escolha o chamado.', 'erro'); return false; }
+        const c = SN.$('#fsCh', f) && SN.db.chamados.find(x => x.id === SN.$('#fsCh', f).value); if (!c) { SN.toast('Escolha o chamado.', 'erro'); return false; }
+        if (!['EM_CAMPO', 'DEVOLVIDO'].includes(c.status)) { SN.toast('Esse chamado já foi concluído/validado: não aceita mais fotos.', 'erro'); return false; }
         SN.anexarSoltas(c, ids); SN.toast(ids.length + ' foto(s) anexada(s) ao ' + c.id + '. Subindo…', 'ok'); SN.render(); } }] });
   };
 };
@@ -379,7 +382,12 @@ SN.rota('/tec/os/:id', id => {
       document.addEventListener('visibilitychange', () => { if (document.hidden) sair(); });
       window.addEventListener('pagehide', sair);
     }
+    // Pedido do usuário (10/11/2026): validado/concluído pela gestão = sem foto nova, mesmo com a tela antiga aberta.
+    const fotoFechada = ev => { const at = SN.db.chamados.find(x => x.id === c.id) || c;
+      if (['EM_CAMPO', 'DEVOLVIDO'].includes(at.status)) return false;
+      ev.target.value = ''; SN.toast('Este chamado já foi concluído/validado: não aceita mais fotos.', 'erro'); SN.render(); return true; };
     SN.$('#inFoto').onchange = async ev => {
+      if (fotoFechada(ev)) return;
       salvarRfo();
       const arqs = [...ev.target.files], fase = SN.faseDe(ev.target); ev.target.value = '';
       for (const f of arqs) { try { const ax = await SN.fotoDaGaleria(f, c.id); if (fase && ax.tipo === 'imagem') ax.fase = fase; (c.fotos = c.fotos || []).push(ax); pintarRfo(); } catch (e) { SN.toast('Falha ao guardar ' + f.name + ': ' + (e.message || e), 'erro'); } }
@@ -387,7 +395,7 @@ SN.rota('/tec/os/:id', id => {
     };
     // Câmera do SigoNet: marca d'água estilo Timemark (hora, data, endereço, lat/lng, chamado), sem logo.
     SN.$('#inCam').onchange = async ev => {
-      const f = ev.target.files && ev.target.files[0]; if (!f) return;
+      const f = ev.target.files && ev.target.files[0]; if (!f || fotoFechada(ev)) return;
       salvarRfo(); SN.toast('Processando foto (GPS e endereço)…');
       try {
         const fase = SN.faseDe(ev.target);
@@ -925,14 +933,27 @@ SN.rota('/tec/financeiro', () => {
   const lpus = SN.db.lpus.filter(l => l.cab.empresa === u.empresa);
   const soma = st => lpus.filter(l => st.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
   const pags = SN.db.pagamentos.filter(p => p.empresa === u.empresa && p.status !== 'DESFEITO').sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+  // Pedido do usuário (10/11/2026): o prestador não vê só o total — tocando no saldo (ou em
+  // qualquer quadro) abre a lista de obras com quanto cada uma rendeu, e os serviços de cada uma.
+  const GRUPOS = {
+    TOTAL: { rot: 'Saldo total', st: ['AGUARDANDO_LIDER', 'NO_SERVICE_DESK', 'CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'] },
+    APROVACAO: { rot: 'Em aprovação', st: ['AGUARDANDO_LIDER', 'NO_SERVICE_DESK'] },
+    APROVADO: { rot: 'Aprovado (a faturar)', st: ['CONTABILIZADA'] },
+    PAGAMENTO: { rot: 'Em pagamento', st: ['EM_PAGAMENTO'] },
+    PAGO: { rot: 'Pago', st: ['PAGA'] },
+    REPROVADA: { rot: 'Reprovadas (corrigir)', st: ['REPROVADA'] }
+  };
+  const nReprov = lpus.filter(l => l.status === 'REPROVADA').length;
+  const quadro = (k, cls) => `<button type="button" class="kpi kpi-clic ${cls || ''}" data-grupo="${k}"><div class="rot">${GRUPOS[k].rot}</div>
+    <div class="val">${SN.brl(soma(GRUPOS[k].st))}</div><div class="sub">ver obras ›</div></button>`;
   SN.cascaTec('fin', `
     <p class="muted">${SN.esc(u.empresa)} · CNPJ ${SN.esc(emp.cnpj || '—')}</p>
-    <div class="grid g2">
-      <div class="kpi"><div class="rot">Em aprovação</div><div class="val">${SN.brl(soma(['AGUARDANDO_LIDER', 'NO_SERVICE_DESK']))}</div></div>
-      <div class="kpi destaque"><div class="rot">Aprovado (a faturar)</div><div class="val">${SN.brl(soma(['CONTABILIZADA']))}</div></div>
-      <div class="kpi"><div class="rot">Em pagamento</div><div class="val">${SN.brl(soma(['EM_PAGAMENTO']))}</div></div>
-      <div class="kpi"><div class="rot">Pago</div><div class="val">${SN.brl(soma(['PAGA']))}</div></div>
+    ${quadro('TOTAL', 'destaque bloco-kpi')}
+    <div class="grid g2" style="margin-top:10px">
+      ${quadro('APROVACAO')}${quadro('APROVADO', 'destaque')}${quadro('PAGAMENTO')}${quadro('PAGO')}
     </div>
+    ${nReprov ? `<button type="button" class="btn sm" data-grupo="REPROVADA" style="margin-top:8px">⚠ ${nReprov} LPU(s) reprovada(s) — ver quais</button>` : ''}
+    <p class="small muted" style="margin-top:6px">Toque em um quadro para ver cada obra e o valor dela.</p>
     <p class="small muted" style="margin-top:10px">Ciclo da LPU: produção do dia 01 ao último dia do mês. O Service Desk gera o lote; você anexa uma única NF com o valor total; pagamento no dia ${CICLO_LPU.diaPagamento} (útil).</p>
     <h3 style="margin-top:14px">Lotes de pagamento</h3>
     ${pags.map(p => `<div class="tec-os"><div style="display:flex;justify-content:space-between"><b>${p.id} · ${SN.mesNome(p.ciclo)}</b>${SN.badge(SN.PAG_STATUS, p.status)}</div>
@@ -947,7 +968,50 @@ SN.rota('/tec/financeiro', () => {
     SN.log('ANEXAR_NF', p.id, f.name); SN.salvar(); SN.toast('NF enviada ao Service Desk.', 'ok'); SN.render();
   });
   SN.$$('[data-ver]').forEach(b => b.onclick = () => SN.abrirAnexo(b.dataset.ver));
+  SN.$$('[data-grupo]').forEach(b => b.onclick = () => obrasDoGrupo(GRUPOS[b.dataset.grupo], lpus));
 }, { familia: 'tecnico' });
+
+// Lista de obras (uma por chamado) com o valor de cada uma; filtro por mês do ciclo e busca.
+const obrasDoGrupo = (g, todas) => {
+  const ciclo = l => (SN.cicloDe ? SN.cicloDe(l) : String(l.criadoEm || '').slice(0, 7)) || '';
+  const lpus = todas.filter(l => g.st.includes(l.status));
+  const meses = [...new Set(lpus.map(ciclo).filter(Boolean))].sort().reverse();
+  const f = { mes: '', q: '' };
+  const obras = () => {
+    const por = {};
+    lpus.filter(l => !f.mes || ciclo(l) === f.mes).forEach(l => {
+      const k = l.chamadoId || l.id, c = SN.db.chamados.find(x => x.id === l.chamadoId) || {};
+      const o = por[k] = por[k] || { id: k, cab: l.cab || {}, data: (c.tempos || {}).conclusaoTecnica || l.enviadoEm || l.criadoEm || '', valor: 0, lpus: [] };
+      o.valor += SN.valorLpu(l); o.lpus.push(l);
+    });
+    const q = SN.normal(f.q);
+    return Object.values(por).filter(o => !q || SN.normal([o.id, o.cab.cliente, o.cab.etiqueta, o.cab.endereco, o.cab.cidade, o.cab.protocoloNoc, o.cab.protocoloOem].join(' ')).includes(q))
+      .sort((a, b) => String(b.data).localeCompare(String(a.data)));
+  };
+  const linhaItem = it => { const cat = SN.itemLpu(it.cod) || {};
+    return `<tr><td class="mono">${SN.esc(it.cod)}</td><td>${SN.esc(cat.desc || '')}${it.fator === 'critico' ? ' <span class="badge erro">crítico</span>' : ''}</td><td class="num">${SN.num(Number(it.qtd) || 0, (Number(it.qtd) || 0) % 1 ? 2 : 0)}</td><td class="num">${SN.brl(SN.valorItem(it))}</td></tr>`; };
+  const pintar = el => {
+    const l = obras(), tot = l.reduce((s, o) => s + o.valor, 0);
+    SN.$('#finObras', el).innerHTML = `<div class="faixa small" style="margin-bottom:8px"><b>${l.length}</b> obra(s) · total <b>${SN.brl(tot)}</b>${l.length ? ` · média ${SN.brl(tot / l.length)} por obra` : ''}</div>
+      ${l.map(o => `<details class="tec-os" style="padding:10px 12px"><summary style="cursor:pointer;list-style:none">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div style="min-width:0"><b>${SN.esc(o.id)}</b> · ${SN.esc(o.cab.cliente || o.cab.etiqueta || '')}
+            <div class="small muted">${SN.esc([o.cab.endereco, o.cab.cidade].filter(Boolean).join(' - '))}</div>
+            <div class="small muted">${o.data ? SN.dt(o.data) : ''} ${o.lpus.map(x => SN.badgeLpu(x.status)).join(' ')}</div></div>
+          <b style="white-space:nowrap">${SN.brl(o.valor)}</b></div></summary>
+        ${o.lpus.map(x => `<div class="tabela-wrap" style="margin-top:8px"><table class="tab small"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Qtd</th><th class="num">Valor</th></tr></thead><tbody>
+          ${(x.itens || []).map(linhaItem).join('') || '<tr><td colspan="4" class="muted">Sem serviços</td></tr>'}
+          ${Number(x.reembolso) ? `<tr><td></td><td>Reembolso</td><td></td><td class="num">${SN.brl(Number(x.reembolso))}</td></tr>` : ''}
+          </tbody></table></div>${x.status === 'REPROVADA' && x.motivoReprovacao ? `<div class="aviso erro small" style="margin-top:6px">Motivo: ${SN.esc(x.motivoReprovacao)}</div>` : ''}`).join('')}
+      </details>`).join('') || '<p class="muted">Nenhuma obra aqui.</p>'}`;
+  };
+  SN.modal({ titulo: g.rot + ' · obras', largo: true,
+    corpo: `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <select class="inp" id="finMes" style="flex:1 1 140px"><option value="">Todos os meses</option>${meses.map(m => `<option value="${m}">${SN.esc(SN.mesNome(m))}</option>`).join('')}</select>
+        <input class="inp" id="finQ" placeholder="Buscar chamado, cliente, endereço…" style="flex:2 1 180px"></div><div id="finObras"></div>`,
+    aoAbrir: el => { pintar(el);
+      SN.$('#finMes', el).onchange = e => { f.mes = e.target.value; pintar(el); };
+      SN.$('#finQ', el).oninput = SN.debounce(e => { f.q = e.target.value; pintar(el); }, 200); } });
+};
 
 // ═══════════════════════════ Alerta de nova OS (técnico) ═══════════════════════════
 // Pedido do usuário (16/10/2026): ao despachar, o técnico precisa perceber que tem OS na fila.

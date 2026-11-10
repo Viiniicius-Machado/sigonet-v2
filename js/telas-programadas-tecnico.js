@@ -101,11 +101,11 @@
     const el = SN.$('#aLista'); if (!el) return;
     const itens = lista();
     el.innerHTML = itens.length ? itens.map(x => {
-      const a = x.dados, srv = x.servidor || {}, rej = x.status_local === 'enviada' && srv.status_revisao === 'REJEITADA';
+      const a = x.dados, srv = x.servidor || {}, rej = x.status_local === 'enviada' && srv.status_revisao === 'REJEITADA' && A.rota.status !== 'CONCLUIDA';
       return `<div class="vst-anomalia" style="background:#fff">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b>${SN.vst.dia(a.data)} · ${a.tipo === 'final' ? 'Finalizado' : 'Parcial'}</b>${statusDe(x)}</div>
         <div class="small">${resumo(a)}</div>
-        ${x.status_local === 'erro' ? `<div class="aviso erro small" style="margin-top:6px">Não aceito: ${esc(x.erro || '')}<br><button class="btn sm" data-corrigir="${esc(a.id_apontamento)}">Corrigir</button></div>` : ''}
+        ${x.status_local === 'erro' && A.rota.status !== 'CONCLUIDA' ? `<div class="aviso erro small" style="margin-top:6px">Não aceito: ${esc(x.erro || '')}<br><button class="btn sm" data-corrigir="${esc(a.id_apontamento)}">Corrigir</button></div>` : ''}
         ${rej ? `<div class="aviso erro small" style="margin-top:6px">Rejeitado por ${esc(srv.revisor || '')}: ${(srv.motivo_rejeicao || []).map(m => esc(L.rotulo('motivos_rejeicao', m))).join(', ')}${srv.motivo_rejeicao_texto ? ' — ' + esc(srv.motivo_rejeicao_texto) : ''}
           <br><button class="btn sm prim" data-refazer="${esc(a.id_apontamento)}" style="margin-top:6px">✏️ Refazer este apontamento</button></div>` : ''}</div>`;
     }).join('') : '<p class="muted small">Nenhum apontamento ainda.</p>';
@@ -134,11 +134,16 @@
   const pintarForm = () => {
     const el = SN.$('#aForm'); if (!el) return;
     if (SN.vst.aguardaChegada(A.rota)) { el.innerHTML = SN.vst.avisoTrava(A.rota); return; } // só depois do "Cheguei no local"
+    // Pedido do usuário (10/11/2026): aprovado na revisão ou rota concluída pela gestão = sem foto/edição nova,
+    // mesmo com um "Refazer" que tinha ficado aberto (rascunho antigo no celular).
+    if (A.form && A.form.refazendo) { const o = lista().find(x => x.dados.id_apontamento === A.form.id_apontamento && x.status_local === 'enviada');
+      const st = o && (o.servidor || {}).status_revisao;
+      if (A.rota.status === 'CONCLUIDA' || (st && st !== 'REJEITADA')) { A.form = null; SN.toast('Esse apontamento já foi aprovado ou a atividade foi concluída pela gestão: não dá mais para mudar nem pôr fotos.', 'erro'); } }
     const temFinal = lista().some(x => x.dados.tipo === 'final' && (x.servidor || {}).status_revisao !== 'REJEITADA');
     const rejeitado = lista().some(x => (x.servidor || {}).status_revisao === 'REJEITADA');
     if ((!podeApontar() || temFinal) && !(A.form && A.form.refazendo)) {
       el.innerHTML = A.rota.status === 'CONCLUIDA' || temFinal
-        ? `<div class="aviso ok">✓ Atividade finalizada.${rejeitado ? ' Há apontamento rejeitado: toque em "Refazer" acima.' : ' Aguardando a revisão; depois a LPU libera na OS.'}</div>` : '';
+        ? `<div class="aviso ok">✓ Atividade finalizada.${rejeitado && A.rota.status !== 'CONCLUIDA' ? ' Há apontamento rejeitado: toque em "Refazer" acima.' : ' Aguardando a revisão; depois a LPU libera na OS.'}</div>` : '';
       return;
     }
     const f = A.form || (A.form = novoForm());

@@ -367,7 +367,7 @@
   };
 
   // ═══════════════════════════ DASHBOARD ═══════════════════════════
-  let aba = 'AEREA', mesSel = null, expA = null, expS = null; // aba: AEREA | SUB | TODOS
+  let aba = 'AEREA', mesSel = null, mesSub = null, expA = null, expS = null; // aba: AEREA | SUB | TODOS · mesSub: 'AAAA-MM' ou 'TODOS'
   const mesAtual = () => new Date().toISOString().slice(0, 7);
   const nomeMes = m => SN.mesNome(m);
   // Barras horizontais de UMA série (cor da marca); valor e dica por barra.
@@ -378,6 +378,30 @@
   };
   const kpi = (rotulo, valor, sub, destaque) => `<div class="kpi ${destaque ? 'destaque' : ''}"><div class="rot">${rotulo}</div><div class="val">${valor}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const ordenar = (obj, k) => Object.keys(obj).map(n => [n, obj[n][k], obj[n]]).sort((a, b) => b[1] - a[1]);
+  // Filtros dentro do mês (pedido do usuário, 10/11/2026): período de/até, equipe e cidade.
+  // Cada aba tem o seu (Aérea e Subterrânea não se misturam); trocar de mês limpa o período.
+  const fA = { de: '', ate: '', equipe: '', cidade: '' }, fS = { de: '', ate: '', equipe: '', cidade: '' };
+  const fimDoMes = m => { const [a, n] = m.split('-').map(Number); return m + '-' + String(new Date(Date.UTC(a, n, 0)).getUTCDate()).padStart(2, '0'); };
+  const noPeriodo = (dia, f) => !!dia && (!f.de || dia >= f.de) && (!f.ate || dia <= f.ate);
+  const filtroAtivo = f => !!(f.de || f.ate || f.equipe || f.cidade);
+  const barraFiltros = (f, p, mes, equipes, cidades) => {
+    const lim = mes && mes !== 'TODOS' ? `min="${mes}-01" max="${fimDoMes(mes)}"` : '';
+    const sel = (id, rot, lista, v) => `<label class="small">${rot} <select class="inp" id="${p}${id}" style="width:auto;max-width:200px"><option value="">Todas</option>${lista.map(x => `<option ${x === v ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></label>`;
+    return `<div class="acoes" style="margin:-4px 0 12px;align-items:flex-end">
+      <label class="small">De <input class="inp" type="date" id="${p}De" ${lim} value="${f.de}" style="width:auto"></label>
+      <label class="small">Até <input class="inp" type="date" id="${p}Ate" ${lim} value="${f.ate}" style="width:auto"></label>
+      ${sel('Eq', 'Equipe', equipes, f.equipe)}${sel('Cid', 'Cidade', cidades, f.cidade)}
+      ${filtroAtivo(f) ? `<button class="btn sm" id="${p}Limpar">Limpar filtros</button>` : ''}</div>`;
+  };
+  const ligarFiltros = (f, p, repintar) => {
+    const ok = () => { if (f.de && f.ate && f.de > f.ate) { const t = f.de; f.de = f.ate; f.ate = t; } repintar(); };
+    SN.$('#' + p + 'De').onchange = e => { f.de = e.target.value; ok(); };
+    SN.$('#' + p + 'Ate').onchange = e => { f.ate = e.target.value; ok(); };
+    SN.$('#' + p + 'Eq').onchange = e => { f.equipe = e.target.value; repintar(); };
+    SN.$('#' + p + 'Cid').onchange = e => { f.cidade = e.target.value; repintar(); };
+    const l = SN.$('#' + p + 'Limpar'); if (l) l.onclick = () => { Object.assign(f, { de: '', ate: '', equipe: '', cidade: '' }); repintar(); };
+  };
+  const txtFiltro = f => [f.de || f.ate ? (f.de ? SN.vst.dia(f.de) : 'início') + ' a ' + (f.ate ? SN.vst.dia(f.ate) : 'fim') : '', f.equipe, f.cidade].filter(Boolean).join(' · ');
 
   SN.rota('/vst/dashboard', async () => {
     if (!SN.vst.disponivel()) return SN.casca('vst_dashboard', SN.vst.semServidorHtml);
@@ -406,14 +430,28 @@
   }, { tela: 'vst_dashboard' });
 
   const pintarAerea = (d, cfg, alvo = '#dCorpo') => {
-    const rotas = d.rotas.filter(r => r.segmento === 'AEREA'), aps = d.producao || [];
-    const meses = [...new Set(aps.map(a => String(a.data).slice(0, 7)).filter(Boolean).concat([mesAtual()]))].sort().reverse();
+    const rotas = d.rotas.filter(r => r.segmento === 'AEREA'), apsTodos = d.producao || [];
+    const meses = [...new Set(apsTodos.map(a => String(a.data).slice(0, 7)).filter(Boolean).concat([mesAtual()]))].sort().reverse();
     mesSel = mesSel && meses.includes(mesSel) ? mesSel : meses[0];
+    if ((fA.de && fA.de.slice(0, 7) !== mesSel) || (fA.ate && fA.ate.slice(0, 7) !== mesSel)) { fA.de = ''; fA.ate = ''; }
+    const rmA = {}; rotas.forEach(r => { rmA[r.id_rota] = r; });
+    const daRota = a => rmA[a.id_rota] || {};
+    const equipesA = [...new Set(rotas.map(r => r.prestador).filter(Boolean))].sort(), cidadesA = [...new Set(rotas.map(r => VR.normCidade(r.cidade)).filter(Boolean))].sort();
+    // Equipe/cidade valem para tudo (inclusive a série mensal); o período só para o mês escolhido.
+    const aps = apsTodos.filter(a => (!fA.equipe || daRota(a).prestador === fA.equipe) && (!fA.cidade || VR.normCidade(daRota(a).cidade) === fA.cidade));
+    const periodo = !!(fA.de || fA.ate);
+    const apsMes = periodo ? aps.filter(a => String(a.data).slice(0, 7) !== mesSel || noPeriodo(String(a.data).slice(0, 10), fA)) : aps;
     const hojeIso = SN.vst.dia ? new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) : SN.agora().slice(0, 10);
     // Dias trabalhados: automático = dias corridos do calendário já passados no mês; editado fica salvo
     // na configuração (vale para todos) e o cálculo refaz em cima dele. Só o planejamento edita.
     const dm = VR.diasAereaMes(mesSel, cfg, hojeIso), podeEditarDias = SN.temTela('vst_planejamento');
-    const k = VR.kpiAereo(rotas, aps, mesSel, cfg, { diasTrabalhados: dm.dias });
+    // Com período: dias trabalhados = dias corridos do período já passados (meta e projeção seguem o mês).
+    const diasPeriodo = (() => { if (!periodo) return null; const ini = fA.de || mesSel + '-01', fim = [fA.ate || fimDoMes(mesSel), hojeIso].sort()[0];
+      return fim < ini ? 0 : Math.round((Date.parse(fim) - Date.parse(ini)) / 864e5) + 1; })();
+    const k = VR.kpiAereo(rotas, apsMes, mesSel, cfg, { diasTrabalhados: periodo ? diasPeriodo : dm.dias });
+    // Metros por dia no mês (ou no período): visão separada do total do mês.
+    const porDia = {}; apsMes.forEach(a => { const dia = String(a.data).slice(0, 10); if (a.status_revisao !== 'REJEITADA' && dia.slice(0, 7) === mesSel) porDia[dia] = (porDia[dia] || 0) + (Number(a.metros) || 0); });
+    const diasSerie = Object.keys(porDia).sort(), maxDia = Math.max(1, ...diasSerie.map(x => porDia[x]));
     const serie = VR.serieAerea(aps, mesSel, 12, cfg);
     const t = k.total, noRitmo = k.projecao_m >= k.meta_m;
     const maxSerie = Math.max(k.meta_m, ...serie.map(s => s.metros), 1);
@@ -424,8 +462,10 @@
         <span class="small muted">${dm.salvo != null
           ? `editado e salvo para ${esc(nomeMes(mesSel))} (automático seria ${dm.automatico})${podeEditarDias ? ' · apague o campo para voltar ao automático' : ''}`
           : `automático: dias corridos do calendário já passados no mês (${dm.automatico})${podeEditarDias ? ' · digite outro valor para ajustar' : ''}`}${podeEditarDias ? '' : ' · só o planejamento edita'}</span></div>
+      ${barraFiltros(fA, 'fA', mesSel, equipesA, cidadesA)}
+      ${filtroAtivo(fA) ? `<div class="aviso info small" style="margin-bottom:12px">Filtrado: <b>${esc(txtFiltro(fA))}</b>${periodo ? ' · dias trabalhados = dias do período já passados' : ''}. O Excel segue o filtro; o PDF da diretoria sai com o mês inteiro.</div>` : ''}
       <div class="grid g4" style="margin-bottom:14px">
-        ${kpi('Percorrido no mês', SN.num(t.metros) + ' m', `meta ${SN.num(k.meta_m)} m · <b>${k.pct_meta ?? 0}%</b>`, true)}
+        ${kpi(periodo ? 'Percorrido no período' : 'Percorrido no mês', SN.num(t.metros) + ' m', `meta ${SN.num(k.meta_m)} m · <b>${k.pct_meta ?? 0}%</b>`, true)}
         ${kpi('Projeção (média × 30)', SN.num(k.projecao_m) + ' m', `<span class="badge ${noRitmo ? 'ok' : 'alerta'}">${noRitmo ? '✓ no ritmo da meta' : '⚠ abaixo da meta'}</span>`)}
         ${kpi('Média por dia', SN.num(k.media_dia_m) + ' m', `${k.dias_trabalhados} dia(s) trabalhado(s)`)}
         ${kpi('Falta para a meta', SN.num(k.falta_m) + ' m', `aprovado (base de pagamento): ${SN.num(k.aprovado.metros)} m`)}
@@ -434,6 +474,11 @@
         <div class="gauge ${k.pct_meta >= 100 ? '' : noRitmo ? '' : 'alerta'}" title="${k.pct_meta}% da meta"><div style="width:${Math.min(100, k.pct_meta || 0)}%"></div></div>
         <div class="kpis-fin" style="margin-top:12px">${[['Rotas', t.rotas, ''], ['Postes equipados', t.postes, ''], ['Cordoalha', t.cordoalha, ' m'], ['Plaquetas', t.plaquetas, ''], ['Sobra técnica', t.sobra, '']]
           .map(([r, v, u]) => `<div><div class="small muted">${r}</div><b style="font-size:1.2rem">${SN.num(v)}${u}</b></div>`).join('')}</div></div>
+      <div class="card"><div class="card-tit"><h3>Metros por dia · ${esc(periodo ? txtFiltro({ de: fA.de, ate: fA.ate }) : nomeMes(mesSel))}</h3><span class="small muted">${diasSerie.length} dia(s) com produção</span></div>
+        ${diasSerie.length ? `<div class="vst-colunas">${diasSerie.map(x => `<div class="vst-col-wrap" title="${esc(SN.vst.dia(x))}: ${SN.num(porDia[x])} m">
+            <div class="vst-col" style="height:${100 * porDia[x] / maxDia}%"></div><span class="vst-col-rot">${x.slice(8, 10)}</span></div>`).join('')}</div>
+          <details style="margin-top:8px"><summary class="small">Ver tabela</summary><table class="tab small"><thead><tr><th>Dia</th><th class="num">Metros</th></tr></thead>
+            <tbody>${diasSerie.map(x => `<tr><td>${esc(SN.vst.dia(x))}</td><td class="num">${SN.num(Math.round(porDia[x]))}</td></tr>`).join('')}</tbody></table></details>` : '<p class="muted small">Nenhuma produção neste período.</p>'}</div>
       <div class="card"><div class="card-tit"><h3>Metros percorridos por mês</h3><span class="small muted">linha tracejada = meta</span></div>
         <div class="vst-colunas">${serie.map(s => `<div class="vst-col-wrap" title="${esc(nomeMes(s.mes))}: ${SN.num(s.metros)} m · meta ${SN.num(s.meta_m)} m">
             <div class="vst-col ${s.mes === mesSel ? 'sel' : ''}" style="height:${100 * s.metros / maxSerie}%"></div>
@@ -453,7 +498,8 @@
         <div class="card"><h3>Por solicitante</h3>${barras(ordenar(k.por.solicitante, 'metros').map(([n, v, o]) => [n, v, o.rotas + ' rotas']), SN.num, ' m')}</div>
         <div class="card"><h3>Por cidade</h3>${barras(ordenar(k.por.cidade, 'metros').slice(0, 12), SN.num, ' m')}</div>
       </div>`;
-    SN.$('#dMes').onchange = e => { mesSel = e.target.value; pintarAerea(d, cfg, alvo); };
+    SN.$('#dMes').onchange = e => { mesSel = e.target.value; fA.de = ''; fA.ate = ''; pintarAerea(d, cfg, alvo); };
+    ligarFiltros(fA, 'fA', () => pintarAerea(d, cfg, alvo));
     SN.$('#dDias').onchange = async e => {
       const txt = e.target.value.trim(), n = txt === '' ? null : Number(txt);
       if (n != null && !(Number.isInteger(n) && n >= 0 && n <= 31)) { SN.toast('Informe um número inteiro de 0 a 31.', 'erro'); e.target.value = dm.salvo != null ? dm.salvo : ''; return; }
@@ -469,7 +515,7 @@
     };
     expA = () => {
       const rm = {}; rotas.forEach(r => { rm[r.id_rota] = r; });
-      SN.exportar('Preventiva aérea ' + mesSel, aps.filter(a => String(a.data).slice(0, 7) === mesSel && a.status_revisao !== 'REJEITADA').map(a => {
+      SN.exportar('Preventiva aérea ' + mesSel + (filtroAtivo(fA) ? ' (filtrado)' : ''), apsMes.filter(a => String(a.data).slice(0, 7) === mesSel && a.status_revisao !== 'REJEITADA').map(a => {
         const r = rm[a.id_rota] || {};
         return { Data: SN.vst.dia(a.data), Rota: a.id_rota, Tipo: a.tipo === 'final' ? 'Finalizado' : 'Parcial', Equipe: r.prestador, Cidade: r.cidade, Região: r.regiao, Motivo: r.motivo,
           Solicitante: r.solicitante, Protocolo: r.protocolo || r.id_chamado || '', 'Metros': a.metros, 'Postes equipados': a.postes, 'Cordoalha (m)': a.cordoalha, Plaquetas: a.plaquetas,
@@ -479,10 +525,28 @@
   };
 
   const pintarSub = (d, cfg, alvo = '#dCorpo') => {
-    const rotas = d.rotas.filter(r => r.segmento !== 'AEREA'), vs = d.vistorias;
-    const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs), mtr = VR.metragemRotas(rotas, vs);
     // Data do relatório: dia(s) em que o técnico fez as CS em campo (início da vistoria; sem ele, o envio).
     const diaLocal = iso => { const t = new Date(iso); return isNaN(t) ? '' : new Date(t.getTime() - t.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+    // Filtro de mês: a CS entra no mês em que foi feita em campo (mesma data da coluna Data). A rota entra
+    // se teve CS no mês; rota ainda sem CS enviada entra pelo mês planejado. 'TODOS' = acumulado de sempre.
+    const mesDaVistoria = v => diaLocal(v.inicio || v.enviado_em).slice(0, 7);
+    const rotasTodas = d.rotas.filter(r => r.segmento !== 'AEREA');
+    const meses = [...new Set(d.vistorias.map(mesDaVistoria).filter(Boolean).concat([mesAtual()]))].sort().reverse();
+    mesSub = mesSub === 'TODOS' || (mesSub && meses.includes(mesSub)) ? mesSub : mesAtual();
+    if (mesSub !== 'TODOS' && ((fS.de && fS.de.slice(0, 7) !== mesSub) || (fS.ate && fS.ate.slice(0, 7) !== mesSub))) { fS.de = ''; fS.ate = ''; }
+    const periodoS = !!(fS.de || fS.ate);
+    const rmS = {}; rotasTodas.forEach(r => { rmS[r.id_rota] = r; });
+    const eqDe = v => v.prestador || (rmS[v.id_rota] || {}).prestador || '', cidDe = v => VR.normCidade(v.cidade || (rmS[v.id_rota] || {}).cidade || '');
+    const equipesS = [...new Set(rotasTodas.map(r => r.prestador).concat(d.vistorias.map(eqDe)).filter(Boolean))].sort();
+    const cidadesS = [...new Set(rotasTodas.map(r => VR.normCidade(r.cidade)).concat(d.vistorias.map(cidDe)).filter(Boolean))].sort();
+    const vs = (mesSub === 'TODOS' ? d.vistorias : d.vistorias.filter(v => mesDaVistoria(v) === mesSub))
+      .filter(v => (!periodoS || noPeriodo(diaLocal(v.inicio || v.enviado_em), fS)) && (!fS.equipe || eqDe(v) === fS.equipe) && (!fS.cidade || cidDe(v) === fS.cidade));
+    const comCsNoMes = new Set(vs.map(v => v.id_rota)), comCs = new Set(d.vistorias.map(v => v.id_rota));
+    const rotaNoFiltro = r => (!fS.equipe || r.prestador === fS.equipe) && (!fS.cidade || VR.normCidade(r.cidade) === fS.cidade);
+    const planejadaNoFiltro = r => { const dp = String(r.data_planejada || '').slice(0, 10); return (mesSub === 'TODOS' || dp.slice(0, 7) === mesSub) && (!periodoS || noPeriodo(dp, fS)); };
+    const rotas = mesSub === 'TODOS' && !filtroAtivo(fS) ? rotasTodas
+      : rotasTodas.filter(r => comCsNoMes.has(r.id_rota) || (!comCs.has(r.id_rota) && rotaNoFiltro(r) && planejadaNoFiltro(r)));
+    const c = VR.conformidade(vs), p = VR.passivos(vs, cfg), dv = VR.divergencias(vs), med = VR.medicao(vs, rotas), prod = VR.producao(rotas, vs), mtr = VR.metragemRotas(rotas, vs);
     const diasCampo = id => { const ds = vs.filter(v => v.id_rota === id).map(v => diaLocal(v.inicio || v.enviado_em)).filter(Boolean).sort(); return ds.length ? [ds[0], ds[ds.length - 1]] : null; };
     const dataTxt = x => { const p = diasCampo(x.id_rota); if (!p) return `<span class="muted" title="Data planejada">${SN.vst.dia(x.data_planejada)}</span>`;
       return p[0] === p[1] ? SN.vst.dia(p[0]) : `${SN.vst.dia(p[0]).slice(0, 5)} a ${SN.vst.dia(p[1])}`; };
@@ -490,6 +554,11 @@
       return `<span class="${Math.abs(p) >= 20 ? 'badge alerta' : ''}">${x.diferenca_m > 0 ? '+' : ''}${SN.num(x.diferenca_m)} m (${p > 0 ? '+' : ''}${p}%)</span>`; };
     const pend = VR.pendenciasConfig(cfg);
     SN.$(alvo).innerHTML = `
+      <div class="acoes" style="margin-bottom:12px">
+        <label class="small">Mês <select class="inp" id="dMesSub" style="width:auto"><option value="TODOS" ${mesSub === 'TODOS' ? 'selected' : ''}>Todos os meses</option>${meses.map(m => `<option value="${m}" ${m === mesSub ? 'selected' : ''}>${esc(nomeMes(m))}</option>`).join('')}</select></label>
+        <span class="small muted">${mesSub === 'TODOS' ? 'acumulado de todas as rotas' : 'CS feitas em campo no mês (data do relatório do técnico)'}</span></div>
+      ${barraFiltros(fS, 'fS', mesSub, equipesS, cidadesS)}
+      ${filtroAtivo(fS) ? `<div class="aviso info small" style="margin-bottom:12px">Filtrado: <b>${esc(txtFiltro(fS))}</b> (data em que a CS foi feita em campo). O Excel segue o filtro; o PDF da diretoria sai sem ele.</div>` : ''}
       ${pend.length ? `<div class="aviso alerta small" style="margin-bottom:12px"><b>Configurações a definir:</b> ${pend.map(esc).join(' · ')}</div>` : ''}
       <div class="grid g4" style="margin-bottom:14px">
         ${kpi('CS aprovadas', SN.num(c.total.total), `${vs.filter(v => v.status_revisao === 'AGUARDANDO_REVISAO').length} aguardando revisão`, true)}
@@ -526,7 +595,9 @@
               <div class="small">${x.trechos.map(t => `${esc(t.de)} → ${esc(t.para)}: <b>${SN.num(t.metros)} m</b>${t.conferir ? ' <span class="badge alerta" title="Bem maior que os outros trechos: confira o GPS desta CS na revisão">conferir GPS</span>' : ''}`).join(' · ')}<div class="muted" style="margin-top:4px">Sequência: caminho contínuo entre os GPS de campo, a partir da 1ª CS da rota (não a ordem das abas do técnico).</div></div></details></td></tr>` : ''}`).join('')}
           <tr><td colspan="5"><b>Total</b></td><td class="num muted">${SN.num(mtr.reduce((s, x) => s + x.previsto_m, 0))}</td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros, 0))} m</b></td><td></td><td class="num"><b>${SN.num(mtr.reduce((s, x) => s + x.metros_aprovados, 0))} m</b></td></tr></tbody></table></div>`
           : '<p class="muted small">Nenhuma CS enviada ainda.</p>'}</div>`;
-    expS = () => SN.exportar('Preventiva subterrânea', vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
+    SN.$('#dMesSub').onchange = e => { mesSub = e.target.value; fS.de = ''; fS.ate = ''; pintarSub(d, cfg, alvo); };
+    ligarFiltros(fS, 'fS', () => pintarSub(d, cfg, alvo));
+    expS = () => SN.exportar('Preventiva subterrânea' + (mesSub === 'TODOS' ? '' : ' ' + mesSub) + (filtroAtivo(fS) ? ' (filtrado)' : ''), vs.map(v => ({ Rota: v.id_rota, CS: v.cs_nova ? '(fora do cadastro)' : v.id_cs, Cidade: v.cidade, Cluster: v.cluster,
       Prestador: v.prestador, Técnico: v.tecnico, Status: v.status_revisao, Conclusão: rot('conclusao', v.conclusao), Prioridade: rot('prioridade', v.prioridade), Abriu: sn(v.abriu),
       'Tampa': rot('tampa_estado', v.tampa_estado), 'Água': rot('agua', v.agua), 'Profundidade (cm)': v.profundidade_cm, 'Fora do critério': (v.flags || {}).fora_criterio ? 'SIM' : '',
       'Situação cadastro': rot('situacao_cadastro', v.situacao_cadastro), 'Enviada em': SN.dt(v.enviado_em), 'Revisor': v.revisor || '' })));

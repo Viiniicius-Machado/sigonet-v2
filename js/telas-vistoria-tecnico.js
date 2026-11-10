@@ -347,7 +347,8 @@
 
   const pintarCs = () => {
     const el = SN.$('#vstCs'); if (!el) return;
-    const s = slot(T.aba), v = s.dados, ro = !editavel(s);
+    // Aprovada na revisão ou rota concluída pela gestão: só leitura, mesmo com rascunho antigo no celular (10/11/2026).
+    const s = slot(T.aba), v = s.dados, ro = !editavel(s) || statusServidor(s) === 'APROVADA' || (T.rota && T.rota.status === 'CONCLUIDA');
     const y = window.scrollY;
     el.innerHTML = htmlCs(s, v, ro);
     ligarCs(el, s, v, ro);
@@ -407,7 +408,7 @@
     if (s.status_local === 'enviada' && st === 'REJEITADA' && !editavel(s)) {
       topo = `<div class="aviso erro" style="margin-bottom:10px"><b>Rejeitada na revisão</b> por ${esc(srv.revisor || '')} em ${SN.dt(srv.data_revisao)}:<br>
         ${(srv.motivo_rejeicao || []).map(m => '• ' + esc(L.rotulo('motivos_rejeicao', m))).join('<br>')}${srv.motivo_rejeicao_texto ? '<br>' + esc(srv.motivo_rejeicao_texto) : ''}
-        <button class="btn prim bloco" id="vRefazer" style="margin-top:8px">✏️ Refazer esta CS</button></div>`;
+        ${T.rota && T.rota.status === 'CONCLUIDA' ? '' : '<button class="btn prim bloco" id="vRefazer" style="margin-top:8px">✏️ Refazer esta CS</button>'}</div>`;
     } else if (s.status_local === 'enviada') {
       topo = `<div class="aviso ${st === 'APROVADA' ? 'ok' : 'info'}" style="margin-bottom:10px">${st === 'APROVADA' ? '✓ Aprovada na revisão.' : '✓ Enviada. Aguardando revisão.'}
         ${srv.enviado_em ? ' Enviada em ' + SN.dt(srv.enviado_em) + '.' : ''}
