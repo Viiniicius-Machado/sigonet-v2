@@ -25,12 +25,12 @@ SN.ligarAbasLpu = () => SN.$$('[data-abalpu]').forEach(b => b.onclick = () => { 
 SN.telaLpu = abrirId => {
   const f = SN.fLpu;
   if (f.aba === 'base') return SN.telaLpuBase(abrirId);
-  const base = SN.db.lpus.filter(l => (!f.conta || l.cab.conta === f.conta) && (!f.emp || l.cab.empresa === f.emp)
+  const base = SN.lpusValidas().filter(l => (!f.conta || l.cab.conta === f.conta) && (!f.emp || l.cab.empresa === f.emp)
     && (!f.q || SN.normal([l.id, l.chamadoId, l.cab.cliente, l.cab.tecnico, l.cab.etiqueta].join(' ')).includes(SN.normal(f.q))));
   const lista = base.filter(l => !f.st || l.status === f.st).sort((a, b) => (b.enviadoEm || '').localeCompare(a.enviadoEm || ''));
   // Obras concluídas cuja LPU ainda não foi apontada (por empresa) — não prende o chamado, só mostra a pendência.
   const pend = {};
-  SN.db.chamados.filter(c => ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status)).forEach(c => {
+  SN.db.chamados.filter(c => ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) && SN.chamadoNoCorte(c)).forEach(c => {
     const add = (emp, papel) => { if (!emp || SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) return;
       if (f.conta && c.conta !== f.conta) return; (pend[emp] = pend[emp] || []).push(c.id); };
     add(c.empresa, 'titular'); if (c.apoio) add(c.apoio.empresa, 'apoio');
@@ -97,7 +97,7 @@ SN.telaLpuBase = abrirId => {
   const iv = SN.intervaloMat(anual ? 'ano' : P.per, P.ref), ano = P.ref.slice(0, 4), q = SN.normal(f.q);
   const texto = l => SN.normal([l.id, l.chamadoId, l.cab.cliente, l.cab.etiqueta, l.cab.tecnico, l.cab.empresa, l.cab.conta, SN.contaTxt(l.cab.conta),
     l.assinaturaLider && l.assinaturaLider.nome, l.assinaturaSD && l.assinaturaSD.nome, ...(l.itens || []).map(i => i.cod + ' ' + ((SN.itemLpu(i.cod) || {}).desc || ''))].join(' '));
-  const base = SN.db.lpus.filter(l => SN.noIntervalo(SN.dataLpu(l, f.base), iv) && (!f.conta || l.cab.conta === f.conta) && (!f.emp || l.cab.empresa === f.emp) && (!q || texto(l).includes(q)));
+  const base = SN.lpusValidas().filter(l => SN.noIntervalo(SN.dataLpu(l, f.base), iv) && (!f.conta || l.cab.conta === f.conta) && (!f.emp || l.cab.empresa === f.emp) && (!q || texto(l).includes(q)));
   const lista = base.filter(l => !f.st || l.status === f.st).sort((a, b) => SN.dataLpu(b, f.base).localeCompare(SN.dataLpu(a, f.base)));
   const valor = lista.reduce((s, l) => s + SN.valorLpu(l), 0), hh = lista.reduce((s, l) => s + SN.hhLpu(l), 0);
   // Soma por serviço
@@ -260,11 +260,11 @@ SN.montarPdfLpu = async l => {
 SN.abaSD = 'contabil';
 SN.rota('/servicedesk', () => {
   const aba = SN.abaSD;
-  const noSD = SN.db.lpus.filter(l => l.status === 'NO_SERVICE_DESK');
-  const contab = SN.db.lpus.filter(l => l.status === 'CONTABILIZADA' && l.vinculo === 'PRESTADOR');
+  const noSD = SN.lpusValidas().filter(l => l.status === 'NO_SERVICE_DESK');
+  const contab = SN.lpusValidas().filter(l => l.status === 'CONTABILIZADA' && l.vinculo === 'PRESTADOR');
   const grupos = {};
   contab.forEach(l => { const k = l.cab.empresa + '|' + SN.cicloDe(l); (grupos[k] = grupos[k] || []).push(l); });
-  const pags = SN.db.pagamentos.slice().sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+  const pags = SN.db.pagamentos.filter(SN.pagNoCorte).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   let html = '';
   if (aba === 'contabil') html = `<div class="card"><div class="card-tit"><h3>Contabilização · LPUs aprovadas pelo líder</h3></div>
     <div class="tabela-wrap"><table class="tab"><thead><tr><th>LPU</th><th>Chamado</th><th>Etiqueta</th><th>Empresa</th><th>Conta</th><th>Vínculo</th><th class="num">Valor / h·h</th><th>Aprovado por</th></tr></thead><tbody>
@@ -351,7 +351,7 @@ SN.rota('/servicedesk', () => {
 // a 2ª aba traz os serviços (uma linha por item). Filtro por ciclo de pagamento e prestador.
 SN.LPU_APROVADAS = ['NO_SERVICE_DESK', 'CONTABILIZADA', 'EM_PAGAMENTO', 'PAGA'];
 SN.exportarObrasLpu = () => {
-  const todas = SN.db.lpus.filter(l => SN.LPU_APROVADAS.includes(l.status));
+  const todas = SN.lpusValidas().filter(l => SN.LPU_APROVADAS.includes(l.status));
   const ciclos = [...new Set(todas.map(SN.cicloDe).filter(Boolean))].sort().reverse();
   const emps = [...new Set(todas.map(l => l.cab.empresa).filter(Boolean))].sort();
   SN.modal({ titulo: 'Exportar obras (LPU) para Excel', corpo: `

@@ -53,7 +53,7 @@ SN.rota('/tec', () => {
   const pos = minhas.filter(c => ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) && SN.pendenciasPos(c).length)
     .sort((a, b) => (b.tempos.conclusaoTecnica || '').localeCompare(a.tempos.conclusaoTecnica || ''));
   const emp = SN.empresa(u.empresa);
-  const lpuEquipe = emp.responsavelLpu === u.nome ? SN.db.chamados.filter(c => !SN.papelNo(c) && ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) &&
+  const lpuEquipe = emp.responsavelLpu === u.nome ? SN.db.chamados.filter(c => !SN.papelNo(c) && ['CONCLUIDO_TECNICO', 'FECHADO'].includes(c.status) && SN.chamadoNoCorte(c) &&
     ((c.empresa === u.empresa && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === 'titular')) ||
      (c.apoio && c.apoio.empresa === u.empresa && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === 'apoio')))) : [];
   const card = c => {
@@ -119,11 +119,11 @@ SN.pendenciasPos = c => {
   const papel = SN.papelNo(c); if (!papel || !SN.faseModulos(c)) return [];
   const out = [];
   const lpuLiberada = !(c.preventiva && c.preventiva.id_rota && !c.preventiva.lpu_sugerida); // Preventiva: só após aprovação das CS
-  if (lpuLiberada && SN.podeLpu(c, papel) && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) out.push('LPU');
+  if (lpuLiberada && SN.chamadoNoCorte(c) && SN.podeLpu(c, papel) && !SN.db.lpus.some(l => l.chamadoId === c.id && l.papel === papel)) out.push('LPU');
   const fib = SN.db.fibras.find(f => f.chamadoId === c.id);
   if (fib && fib.status === 'CORRECAO') out.push('Corrigir fibra');
   const lp = SN.db.lpus.find(l => l.chamadoId === c.id && l.papel === papel);
-  if (lp && lp.status === 'REPROVADA') out.push('LPU reprovada');
+  if (lp && lp.status === 'REPROVADA' && SN.lpuNoCorte(lp)) out.push('LPU reprovada');
   return out;
 };
 
@@ -930,9 +930,9 @@ SN.rota('/tec/resumo', () => {
 SN.rota('/tec/financeiro', () => {
   const u = SN.usuario(), emp = SN.empresa(u.empresa);
   if (emp.vinculo !== 'PRESTADOR' || (emp.responsavelLpu && emp.responsavelLpu !== u.nome)) return SN.navegar('#/tec');
-  const lpus = SN.db.lpus.filter(l => l.cab.empresa === u.empresa);
+  const lpus = SN.lpusValidas().filter(l => l.cab.empresa === u.empresa); // só de 01/11/2026 em diante (SN.CORTE_LPU)
   const soma = st => lpus.filter(l => st.includes(l.status)).reduce((s, l) => s + SN.valorLpu(l), 0);
-  const pags = SN.db.pagamentos.filter(p => p.empresa === u.empresa && p.status !== 'DESFEITO').sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+  const pags = SN.db.pagamentos.filter(p => p.empresa === u.empresa && p.status !== 'DESFEITO' && SN.pagNoCorte(p)).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
   // Pedido do usuário (10/11/2026): o prestador não vê só o total — tocando no saldo (ou em
   // qualquer quadro) abre a lista de obras com quanto cada uma rendeu, e os serviços de cada uma.
   const GRUPOS = {
@@ -948,6 +948,7 @@ SN.rota('/tec/financeiro', () => {
     <div class="val">${SN.brl(soma(GRUPOS[k].st))}</div><div class="sub">ver obras ›</div></button>`;
   SN.cascaTec('fin', `
     <p class="muted">${SN.esc(u.empresa)} · CNPJ ${SN.esc(emp.cnpj || '—')}</p>
+    <p class="small muted" style="margin-top:-4px">Mostrando obras concluídas a partir de 01/11/2026.</p>
     ${quadro('TOTAL', 'destaque bloco-kpi')}
     <div class="grid g2" style="margin-top:10px">
       ${quadro('APROVACAO')}${quadro('APROVADO', 'destaque')}${quadro('PAGAMENTO')}${quadro('PAGO')}

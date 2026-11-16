@@ -356,6 +356,17 @@ SN.fotoDaGaleria = async (file, pasta) => SN.anexoLocal(await SN.comprimirImagem
 // Liberado para o técnico a partir de 21/10/2026 (antes disso o botão abre direto).
 SN.FASE_INICIO = Date.parse('2026-10-21T00:00:00-03:00');
 SN.faseAtiva = () => Date.now() >= SN.FASE_INICIO;
+// Corte da LPU (pedido de 16/11/2026): o fluxo valeu de fato a partir de 01/11/2026; o que veio antes
+// era teste e já foi pago por fora. Nada é apagado do banco — só deixa de aparecer na LPU, no
+// Service Desk e no Financeiro do prestador. Data da obra = conclusão do técnico (igual ao ciclo).
+SN.CORTE_LPU = Date.parse('2026-11-01T00:00:00-03:00');
+SN.CORTE_LPU_MES = '2026-11';
+SN.noCorteLpu = iso => { const t = Date.parse(iso || ''); return !t || t >= SN.CORTE_LPU; };
+SN.chamadoNoCorte = c => !c || SN.noCorteLpu((c.tempos && c.tempos.conclusaoTecnica) || c.criadoEm);
+SN.lpuNoCorte = l => { const c = SN.db.chamados.find(x => x.id === l.chamadoId);
+  return SN.noCorteLpu((c && c.tempos && c.tempos.conclusaoTecnica) || l.enviadoEm || l.criadoEm); };
+SN.pagNoCorte = p => !p.ciclo || p.ciclo >= SN.CORTE_LPU_MES;
+SN.lpusValidas = () => SN.db.lpus.filter(SN.lpuNoCorte);
 SN.FASES = { antes: { rot: 'ANTES', rgb: [200, 30, 30] }, depois: { rot: 'DEPOIS', rgb: [22, 140, 60] } };
 SN.faseDe = inp => (SN.faseAtiva() && inp && SN.FASES[inp.dataset.faseEsc]) ? inp.dataset.faseEsc : '';
 SN.faseTag = f => f && SN.FASES[f.fase] ? `<span class="fase-tag ${f.fase}">${SN.FASES[f.fase].rot}</span>` : '';
