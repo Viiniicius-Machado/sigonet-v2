@@ -61,9 +61,11 @@ SN.telaLpu = abrirId => {
   SN.$$('tr[data-id]').forEach(tr => tr.onclick = () => SN.detalheLpu(tr.dataset.id));
   SN.$('#bExpLpu').onclick = () => SN.exportar('lpu', lista.flatMap(l => (l.itens.length ? l.itens : [{}]).map(it => {
     const cat = SN.itemLpu(it.cod) || {};
-    return { LPU: l.id, Chamado: l.chamadoId, Etiqueta: l.cab.etiqueta || '', Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj, Tecnico: l.cab.tecnico, Papel: l.papel,
+    return { LPU: l.id, Chamado: l.chamadoId, Etiqueta: l.cab.etiqueta || '', DescricaoObra: SN.descObraLpu(l),
+      ValorTotalLPU: l.vinculo === 'PRESTADOR' ? SN.r2(SN.valorLpu(l)) : '', ValorTotalObra: l.vinculo === 'PRESTADOR' ? SN.valorObraLpu(l) : '',
+      Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj, Tecnico: l.cab.tecnico, Papel: l.papel,
       Conta: l.cab.conta, Vinculo: l.vinculo, Codigo: it.cod || '', Servico: cat.desc || '', Qtd: it.qtd || '', Fator: it.fator || '',
-      Fotos: (it.fotos || []).length || '', Valor: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot, Enviado: SN.dt(l.enviadoEm) };
+      Fotos: (it.fotos || []).length || '', ValorServico: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhDaLpu(l).horas.toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot, Enviado: SN.dt(l.enviadoEm) };
   })));
   if (abrirId) SN.detalheLpu(abrirId);
 };
@@ -77,6 +79,18 @@ SN.DATAS_LPU = [['enviado', 'Data de envio pelo técnico'], ['aprovado', 'Data d
 SN.dataLpu = (l, base) => base === 'aprovado' ? (l.aprovadoEm || (l.assinaturaLider && l.assinaturaLider.ts) || '')
   : base === 'contabilizado' ? (l.contabilizadoEm || (l.assinaturaSD && l.assinaturaSD.ts) || '') : (l.enviadoEm || l.criadoEm || '');
 SN.hhLpu = l => l.vinculo === 'CLT' ? (SN.hhDaLpu(l).horas || 0) : 0;
+SN.r2 = SN.r2 || (v => Math.round((Number(v) || 0) * 100) / 100);
+// Descrição da obra para o Excel: o que é a obra (rota/programa ou tipo + categoria), motivo, obs. e a solução do RFO.
+SN.descObraLpu = l => {
+  const c = SN.db.chamados.find(x => x.id === l.chamadoId) || {}, cab = l.cab || {}, rfo = c.rfo || {};
+  const obra = c.preventiva && SN.vst && SN.vst.nomeObra ? SN.vst.nomeObra(c.preventiva)
+    : [cab.tipo || c.tipo, [c.cat1, c.cat2, c.cat3, c.cat4].filter(Boolean).join(' › ') || cab.categoria].filter(Boolean).join(' · ');
+  return [obra, c.motivo && !String(obra).includes(c.motivo) ? 'Motivo: ' + c.motivo : '', [cab.endereco || c.endereco, cab.cidade || c.cidade].filter(Boolean).join(' - '),
+    c.obs ? 'Obs.: ' + c.obs : '', rfo.solucao ? 'Solução: ' + rfo.solucao : '', l.obs ? 'Obs. do técnico: ' + l.obs : '']
+    .map(x => String(x || '').trim()).filter(Boolean).join(' | ');
+};
+// Valor total da obra = soma de todas as LPUs de prestador do mesmo chamado (titular + apoio), menos as reprovadas.
+SN.valorObraLpu = l => SN.r2(SN.db.lpus.filter(x => x.chamadoId === l.chamadoId && x.status !== 'REPROVADA').reduce((s, x) => s + SN.valorLpu(x), 0));
 SN.telaLpuBase = abrirId => {
   const f = SN.fLpuB, P = SN.periodo, anual = f.vis === 'ano', de = () => SN.telaLpu();
   if (SN.buscarPeriodo('lpu', '/lpu', de, anual ? 'ano' : null)) return;
@@ -147,9 +161,11 @@ SN.telaLpuBase = abrirId => {
       .concat(anoConta.map(x => ({ ...x, rot: 'Conta R$ · ' + x.rot })), anoHh.map(x => ({ ...x, rot: 'h·h · ' + x.rot })), anoSrv.map(x => ({ ...x, rot: 'Qtd · ' + x.rot })))))
     : f.vis === 'servico' ? SN.exportar(nome + '_por_servico', servicos.map(x => ({ Codigo: x.cod, Servico: x.desc, Classe: x.classe, Medida: x.medida, Quantidade: x.qtd, Valor: x.valor, LPUs: x.lpus.size })))
     : SN.exportar(nome, lista.flatMap(l => (l.itens.length ? l.itens : [{}]).map(it => { const cat = SN.itemLpu(it.cod) || {};
-      return { Data: SN.dt(SN.dataLpu(l, f.base)), LPU: l.id, Chamado: l.chamadoId, Etiqueta: l.cab.etiqueta || '', Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj, Tecnico: l.cab.tecnico,
+      return { Data: SN.dt(SN.dataLpu(l, f.base)), LPU: l.id, Chamado: l.chamadoId, Etiqueta: l.cab.etiqueta || '', DescricaoObra: SN.descObraLpu(l),
+        ValorTotalLPU: l.vinculo === 'PRESTADOR' ? SN.r2(SN.valorLpu(l)) : '', ValorTotalObra: l.vinculo === 'PRESTADOR' ? SN.valorObraLpu(l) : '',
+        Cliente: l.cab.cliente, Empresa: l.cab.empresa, CNPJ: l.cab.cnpj, Tecnico: l.cab.tecnico,
         Papel: l.papel, Conta: l.cab.conta, Vinculo: l.vinculo, Codigo: it.cod || '', Servico: cat.desc || '', Qtd: it.qtd || '', Fator: it.fator || '',
-        Valor: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhLpu(l).toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot,
+        ValorServico: l.vinculo === 'PRESTADOR' && it.cod ? SN.valorItem(it) : '', HoraHomem: l.vinculo === 'CLT' ? +SN.hhLpu(l).toFixed(2) : '', Status: SN.LPU_STATUS[l.status].rot,
         EnviadoEm: SN.dt(l.enviadoEm), AprovadoPor: l.assinaturaLider ? l.assinaturaLider.nome : '', AprovadoEm: SN.dt(l.aprovadoEm || (l.assinaturaLider && l.assinaturaLider.ts)),
         ServiceDesk: l.assinaturaSD ? l.assinaturaSD.nome : '', ContabilizadoEm: SN.dt(l.contabilizadoEm || (l.assinaturaSD && l.assinaturaSD.ts)) }; })));
   if (abrirId) SN.detalheLpu(abrirId);
